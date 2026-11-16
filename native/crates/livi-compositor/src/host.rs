@@ -541,9 +541,11 @@ pub fn damage_all(state: &mut LiviState) {
     }
 }
 
-pub fn panel_mm(state: &LiviState, screen_idx: usize) -> Option<(i32, i32)> {
+pub fn panel(state: &LiviState, screen_idx: usize) -> Option<((i32, i32), (i32, i32))> {
+    let screen = state.screens.get(screen_idx)?;
     if state.drm.is_some() {
-        return crate::drm::panel_mm(state, screen_idx);
+        let mm = crate::drm::panel_mm(state, screen_idx)?;
+        return Some((mm, (screen.width, screen.height)));
     }
     let outputs = state.host.sctk_outputs.as_ref()?;
     let output = state
@@ -568,25 +570,7 @@ pub fn panel_mm(state: &LiviState, screen_idx: usize) -> Option<(i32, i32)> {
         let (mw, mh) = info.modes.iter().find(|m| m.current)?.dimensions;
         Some(if turned { (mh, mw) } else { (mw, mh) })
     });
-    let screen = state.screens.get(screen_idx)?;
-    Some(match output_size {
-        Some(output) => window_mm(mm, output, (screen.width, screen.height)),
-        None => mm,
-    })
-}
-
-pub(crate) fn window_mm(mm: (i32, i32), output: (i32, i32), window: (i32, i32)) -> (i32, i32) {
-    let part = |mm: i32, out: i32, win: i32| {
-        if out > 0 && win > 0 && win < out {
-            ((i64::from(mm) * i64::from(win) + i64::from(out) / 2) / i64::from(out)) as i32
-        } else {
-            mm
-        }
-    };
-    (
-        part(mm.0, output.0, window.0),
-        part(mm.1, output.1, window.1),
-    )
+    Some((mm, output_size.unwrap_or((screen.width, screen.height))))
 }
 
 #[cfg(test)]

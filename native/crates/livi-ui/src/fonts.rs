@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use slint::fontique_011::fontique::{Blob, Collection, FallbackKey, FamilyId, FontInfo, Script};
+use slint::fontique_012::fontique::{Blob, Collection, FallbackKey, FamilyId, FontInfo, Script};
 use slint::platform::WindowEvent;
 
 const SCRIPTS: [([u8; 4], char); 8] = [
@@ -74,7 +74,7 @@ pub fn shown() -> Vec<[u8; 4]> {
     if let Some(shown) = SHOWN.with_borrow(Clone::clone) {
         return shown;
     }
-    let mut collection = slint::fontique_011::shared_collection();
+    let mut collection = slint::fontique_012::shared_collection();
     let shown: Vec<[u8; 4]> = SCRIPTS
         .iter()
         .filter(|(script, probe)| readable(&mut collection, *script, *probe))
@@ -95,7 +95,7 @@ pub fn register(paths: &[String]) -> bool {
     if new.is_empty() {
         return false;
     }
-    let mut collection = slint::fontique_011::shared_collection();
+    let mut collection = slint::fontique_012::shared_collection();
     let mut added = false;
     for path in new {
         REGISTERED.with_borrow_mut(|done| done.insert(path.clone()));

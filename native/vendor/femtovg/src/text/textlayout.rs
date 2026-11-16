@@ -67,16 +67,16 @@ impl ShapingId {
         let mut hasher = FnvHasher::default();
         word.hash(&mut hasher);
         if let Some(max_width) = max_width {
-            (max_width.trunc() as i32).hash(&mut hasher);
+            max_width.to_bits().hash(&mut hasher);
         }
 
         Self {
-            size: (font_size * 10.0).trunc() as u32,
+            size: font_size.to_bits(),
             word_hash: hasher.finish(),
             font_ids,
             variation_hash: variations.hash(),
             rtl,
-            letter_spacing_key: (letter_spacing * 10.0).trunc() as u32,
+            letter_spacing_key: letter_spacing.to_bits(),
         }
     }
 }
@@ -570,7 +570,7 @@ fn layout(
     let mut descender: f32 = 0.;
 
     for glyph in &mut res.glyphs {
-        let font = context.font_mut(glyph.font_id).ok_or(ErrorKind::NoFontFound)?;
+        let font = context.font(glyph.font_id).ok_or(ErrorKind::NoFontFound)?;
         let metrics = font.metrics(text_settings.font_size);
         ascender = ascender.max(metrics.ascender());
         descender = descender.min(metrics.descender());

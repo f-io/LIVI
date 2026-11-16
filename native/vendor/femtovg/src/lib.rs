@@ -22,7 +22,12 @@ extern crate serde;
 
 #[cfg(feature = "textlayout")]
 use std::ops::Range;
-use std::{cell::RefCell, path::Path as FilePath, rc::Rc};
+use std::{
+    cell::{RefCell, RefMut},
+    collections::{HashMap, HashSet},
+    path::Path as FilePath,
+    rc::Rc,
+};
 
 use imgref::ImgVec;
 use rgb::RGBA8;
@@ -44,10 +49,28 @@ use text::{GlyphAtlas, TextContextImpl};
 
 mod image;
 use crate::image::ImageStore;
-pub use crate::image::{ImageFilter, ImageFlags, ImageId, ImageInfo, ImageSource, PixelFormat};
+
+mod budgets;
+mod clip;
+mod filters;
+mod layers;
+mod shadow;
+mod transient;
+pub use crate::image::{
+    BlendMode, ImageFilter, ImageFlags, ImageId, ImageInfo, ImageSource, MorphologyOperator, PixelFormat,
+    TurbulenceKind,
+};
+use crate::transient::TransientPool;
+use budgets::*;
+use clip::*;
+use filters::*;
+use layers::*;
+pub use layers::{LayerEffects, MaskKind};
+
+mod turbulence;
 
 mod color;
-pub use color::Color;
+pub use color::{Color, ColorSpace};
 
 pub mod renderer;
 pub use renderer::{RenderTarget, Renderer};
@@ -61,10 +84,11 @@ use geometry::*;
 mod paint;
 pub use paint::Paint;
 pub use paint::TextDecoration;
-use paint::{GlyphTexture, PaintFlavor, StrokeSettings};
+use paint::{GlyphTexture, PaintFlavor, StrokeSettings, Transfer};
+use renderer::{BlendPass, Fused};
 
 mod path;
-use path::Convexity;
+use path::PathCache;
 pub use path::{Path, PathIter, Solidity, Verb};
 
 mod gradient_store;
@@ -87,7 +111,11 @@ pub enum FillRule {
 }
 
 /// Blend factors.
+///
+/// Non-exhaustive: this mirrors the blend factors the backends expose and is
+/// currently a subset of them, so matching on it must carry a wildcard arm.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
+#[non_exhaustive]
 pub enum BlendFactor {
     /// Not all
     Zero,
@@ -114,7 +142,14 @@ pub enum BlendFactor {
 }
 
 /// Predefined composite oprations.
+///
+/// Non-exhaustive: the separable blend modes that Canvas 2D's
+/// `globalCompositeOperation` and CSS/SVG's `mix-blend-mode` also carry
+/// (`multiply`, `screen`, `overlay`, `color-burn` and the rest) belong in this
+/// enum and are not implemented yet, so matching on it must carry a wildcard
+/// arm.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
+#[non_exhaustive]
 pub enum CompositeOperation {
     /// Displays the source over the destination.
     SourceOver,
@@ -185,13 +220,28 @@ impl CompositeOperationState {
     }
 }
 
+impl CompositeOperationState {
+    /// Whether a source scaled by a coverage of zero leaves the destination
+    /// as it was: the destination factor is then one. `Copy`, `SourceIn`,
+    /// `SourceOut`, `DestinationIn` and `DestinationAtop` change it instead.
+    pub(crate) fn takes_coverage(&self) -> bool {
+        let kept = |factor| {
+            matches!(
+                factor,
+                BlendFactor::One | BlendFactor::OneMinusSrcAlpha | BlendFactor::OneMinusSrcColor
+            )
+        };
+        kept(self.dst_rgb) && kept(self.dst_alpha)
+    }
+}
+
 impl Default for CompositeOperationState {
     fn default() -> Self {
         Self::new(CompositeOperation::SourceOver)
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 struct Scissor {
     transform: Transform2D,
     extent: Option<[f32; 2]>,
@@ -227,6 +277,48 @@ impl Scissor {
 
         let half_width = extent[0];
         let half_height = extent[1];
+        Some(Rect::new(
+            x - half_width,
+            y - half_height,
+            half_width * 2.0,
+            half_height * 2.0,
+        ))
+    }
+
+    /// The device rect outside which the scissor's coverage is zero: its
+    /// corners under any transform, a fringe of `fringe_width` out. `None`
+    /// when it clips nothing, which [`Params`] takes an extent below -0.5 for.
+    fn reach(&self, fringe_width: f32) -> Option<Bounds> {
+        let extent = self.extent.filter(|&[x, y]| x >= -0.5 && y >= -0.5)?;
+        let [x, y] = extent.map(|v| v.max(0.0));
+        let corners = Bounds::from_points(
+            [[-x, -y], [x, -y], [x, y], [-x, y]].map(|[x, y]| self.transform.transform_point(x, y)),
+        );
+        Some(Bounds {
+            minx: corners.minx - fringe_width,
+            miny: corners.miny - fringe_width,
+            maxx: corners.maxx + fringe_width,
+            maxy: corners.maxy + fringe_width,
+        })
+    }
+
+    /// The scissor's device-space rect for sizing a layer's store: like
+    /// [`as_rect`](Self::as_rect) but tolerating an axis-aligned scale, which
+    /// every canvas drawn under a device-pixel ratio or a zoom carries. A
+    /// rotated, skewed or rounded scissor still has no rect (`None`).
+    fn device_bounds(&self, canvas_width: f32, canvas_height: f32) -> Option<Rect> {
+        let Some(extent) = self.extent else {
+            return Some(Rect::new(0., 0., canvas_width, canvas_height));
+        };
+        if self.radius > 0.0 {
+            return None;
+        }
+        let Transform2D([a, b, c, d, x, y]) = self.transform;
+        if b != 0.0 || c != 0.0 {
+            return None;
+        }
+        let half_width = extent[0] * a.abs();
+        let half_height = extent[1] * d.abs();
         Some(Rect::new(
             x - half_width,
             y - half_height,
@@ -279,6 +371,9 @@ struct State {
     transform: Transform2D,
     scissor: Scissor,
     alpha: f32,
+    // How many clip_path() entries this state level owns; restore() pops the
+    // clip stack back to the saved depth and marks affected planes for replay.
+    clip_depth: usize,
     // Canvas 2D drop-shadow attributes. Defaults match the HTML spec: a fully
     // transparent shadow color (which disables shadows entirely), zero blur and
     // zero offset. See `Canvas::set_shadow_color` and friends.
@@ -299,9 +394,19 @@ impl Default for State {
             shadow_color: Color::rgbaf(0.0, 0.0, 0.0, 0.0),
             shadow_blur: 0.0,
             shadow_offset: [0.0, 0.0],
+            clip_depth: 0,
         }
     }
 }
+
+// The most vertices a fill's fan is drawn with.
+const MAX_FAN: usize = 65_535;
+
+// At a dpi of 1: a cubic piece is flat once its control points' distances
+// from its chord sum to under the square root of TESS_TOL, in pixels, and
+// points nearer each other than DIST_TOL pixels may be taken as one.
+const TESS_TOL: f32 = 0.125;
+const DIST_TOL: f32 = 0.01;
 
 /// Main 2D drawing context.
 #[derive(Debug)]
@@ -315,18 +420,52 @@ pub struct Canvas<T: Renderer> {
     ephemeral_glyph_atlas: Option<Rc<GlyphAtlas>>,
     current_render_target: RenderTarget,
     state_stack: Vec<State>,
+    // Saves (false) and layers (true) taken past MAX_STATE_DEPTH, innermost
+    // last, so their restores and end_layers still pair; while any exist the
+    // canvas is saturated: nothing draws, and the changes made to the state
+    // are discarded when the last one pops.
+    overflow: Vec<bool>,
+    // The deepest real state as it was when saturation began, written back
+    // when the last entry past the limit pops.
+    overflow_state: State,
+    warned_overflow: bool,
     commands: Vec<Command>,
     verts: Vec<Vertex>,
     images: ImageStore<T::Image>,
+    pending_image_deletions: HashSet<ImageId>,
     fringe_width: f32,
     device_px_ratio: f32,
     tess_tol: f32,
     dist_tol: f32,
     gradients: GradientStore,
-    // Transient offscreen images allocated for drop-shadow passes. They are
-    // referenced by deferred draw commands, so they can only be freed once those
-    // commands have been submitted to the renderer (i.e. after flush).
-    shadow_images: Vec<ImageId>,
+    // Layer backing stores, filter scratches and shadow coverage, reused
+    // within the frame and deleted at the flush; see `transient.rs`.
+    transients: TransientPool,
+    filter_work: u64,
+    filter_work_budget: u64,
+    // Open layers from begin_layer(), innermost last.
+    layers: Vec<LayerRecord>,
+    // Effect passes in progress (a backdrop placed, a mask normalised): their
+    // draws are not suppressed by the depth limit or a pass-through layer.
+    offscreen_passes: usize,
+    // Turbulence lattice textures by seed, most recently used last. Bounded by
+    // `turbulence::LATTICE_CACHE_CAPACITY`; an evicted one is deleted after
+    // the next flush so a command already recorded against it still runs.
+    turbulence_lattices: Vec<(i32, ImageId)>,
+    // The active clip_path() stack, innermost last. Each entry lives on the
+    // stencil plane of the render target it was taken on and gates only
+    // draws into that target.
+    clip_stack: Vec<ClipEntry>,
+    clip_planes: HashMap<RenderTarget, ClipPlaneState>,
+    // The coverage masks of the clips that are no box.
+    clip_masks: ClipMasks,
+    // The coverage masks of thin fills.
+    fill_masks: FillMasks,
+    // The scissor and clip shape the last draw met, as the boxes they make.
+    last_clip_boxes: Option<ClipBoxes>,
+    // Whether the last draw carried a clip shape: the shader variant the
+    // renderer has bound.
+    shape_carried: bool,
 }
 
 /// Returns the enabled text-decoration lines as `(offset, thickness)` pairs,
@@ -363,6 +502,18 @@ impl<T> Canvas<T>
 where
     T: Renderer,
 {
+    /// The renderer this canvas draws with, for backend-specific settings
+    /// and diagnostics such as `WGPURenderer::set_submission_slicing` and
+    /// `WGPURenderer::last_frame_slices`.
+    pub fn renderer(&self) -> &T {
+        &self.renderer
+    }
+
+    /// The renderer this canvas draws with, mutably; see [`Self::renderer`].
+    pub fn renderer_mut(&mut self) -> &mut T {
+        &mut self.renderer
+    }
+
     /// Creates a new canvas.
     pub fn new(renderer: T) -> Result<Self, ErrorKind> {
         let text_context = Rc::new(RefCell::new(TextContextImpl::default()));
@@ -376,15 +527,30 @@ where
             ephemeral_glyph_atlas: None,
             current_render_target: RenderTarget::Screen,
             state_stack: Vec::new(),
+            overflow: Vec::new(),
+            overflow_state: State::default(),
+            warned_overflow: false,
             commands: Vec::new(),
             verts: Vec::new(),
             images: ImageStore::new(),
+            pending_image_deletions: HashSet::new(),
             fringe_width: 1.0,
             device_px_ratio: 1.0,
-            tess_tol: 0.25,
-            dist_tol: 0.01,
+            tess_tol: TESS_TOL,
+            dist_tol: DIST_TOL,
             gradients: GradientStore::new(),
-            shadow_images: Vec::new(),
+            transients: TransientPool::new(transient::DEFAULT_BUDGET),
+            filter_work: 0,
+            filter_work_budget: DEFAULT_FILTER_WORK_BUDGET,
+            layers: Vec::new(),
+            offscreen_passes: 0,
+            turbulence_lattices: Vec::new(),
+            clip_stack: Vec::new(),
+            clip_planes: HashMap::new(),
+            clip_masks: ClipMasks::default(),
+            fill_masks: FillMasks::default(),
+            last_clip_boxes: None,
+            shape_carried: false,
         };
 
         canvas.save();
@@ -406,15 +572,30 @@ where
             ephemeral_glyph_atlas: None,
             current_render_target: RenderTarget::Screen,
             state_stack: Vec::new(),
+            overflow: Vec::new(),
+            overflow_state: State::default(),
+            warned_overflow: false,
             commands: Vec::new(),
             verts: Vec::new(),
             images: ImageStore::new(),
+            pending_image_deletions: HashSet::new(),
             fringe_width: 1.0,
             device_px_ratio: 1.0,
-            tess_tol: 0.25,
-            dist_tol: 0.01,
+            tess_tol: TESS_TOL,
+            dist_tol: DIST_TOL,
             gradients: GradientStore::new(),
-            shadow_images: Vec::new(),
+            transients: TransientPool::new(transient::DEFAULT_BUDGET),
+            filter_work: 0,
+            filter_work_budget: DEFAULT_FILTER_WORK_BUDGET,
+            layers: Vec::new(),
+            offscreen_passes: 0,
+            turbulence_lattices: Vec::new(),
+            clip_stack: Vec::new(),
+            clip_planes: HashMap::new(),
+            clip_masks: ClipMasks::default(),
+            fill_masks: FillMasks::default(),
+            last_clip_boxes: None,
+            shape_carried: false,
         };
 
         canvas.save();
@@ -424,21 +605,70 @@ where
 
     /// Sets the size of the default framebuffer (screen size)
     pub fn set_size(&mut self, width: u32, height: u32, dpi: f32) {
+        let resized = width != self.width || height != self.height || dpi != self.device_px_ratio;
         self.width = width;
         self.height = height;
         self.fringe_width = 1.0 / dpi;
-        self.tess_tol = 0.25 / dpi;
-        self.dist_tol = 0.01 / dpi;
+        self.tess_tol = TESS_TOL / dpi;
+        self.dist_tol = DIST_TOL / dpi;
         self.device_px_ratio = dpi;
 
         self.renderer.set_size(width, height, dpi);
 
+        if resized {
+            // A resize invalidates the device-space bounds of every open
+            // layer: discard them, as a Canvas 2D reset discards pending layers
+            // (WPT 2d.layer.reset). Their draws so far are dropped and their
+            // images return to the pool.
+            self.discard_open_layers();
+        }
+        // The renderer starts the stream on the screen; the tracked target
+        // follows, or a later set_render_target(Image) is skipped as a no-op.
         self.append_cmd(Command::new(CommandType::SetRenderTarget(RenderTarget::Screen)));
+        self.current_render_target = RenderTarget::Screen;
+
+        if resized {
+            if let Some(plane) = self.clip_planes.get_mut(&RenderTarget::Screen) {
+                plane.dirty = true;
+            }
+            // Worked out for the fringe width before.
+            self.last_clip_boxes = None;
+        }
+        if let Some(image) = self.layers.last().and_then(|layer| layer.image) {
+            // Same size at a frame boundary: the open layer keeps capturing
+            // (WPT 2d.layer.flush-on-frame-presentation).
+            self.set_render_target(RenderTarget::Image(image));
+        }
+    }
+
+    /// The size of the current render target in device pixels.
+    fn render_target_size(&self) -> (f32, f32) {
+        match self.current_render_target {
+            RenderTarget::Image(id) => match self.images.info(id) {
+                Some(info) => (info.width() as f32, info.height() as f32),
+                None => (self.width as f32, self.height as f32),
+            },
+            RenderTarget::Screen => (self.width as f32, self.height as f32),
+        }
     }
 
     /// Clears the rectangle area defined by left upper corner (x,y), width and height with the provided color.
+    ///
+    /// This is a raw clear of device pixels: the transform, the scissor and
+    /// any [`clip_path`](Self::clip_path) do not apply. A Canvas 2D
+    /// `clearRect`, which the transform and clip do affect, is a fill of the
+    /// rect with an opaque paint under
+    /// [`CompositeOperation::DestinationOut`]. The stencil under the rect is
+    /// cleared with the color so nothing a fill left behind reaches the next
+    /// frame; a clip armed on the target survives it (only the winding bits
+    /// are cleared then, at the cost of a full-target quad on a tiler).
     pub fn clear_rect(&mut self, x: u32, y: u32, width: u32, height: u32, color: Color) {
-        let mut cmd = Command::new(CommandType::ClearRect { color });
+        self.reconcile_current_clip_plane();
+        // A clip armed on this target must survive the clear; without one
+        // the whole stencil can go, which is a plain tile clear on a tiler
+        // where a masked stencil clear is a full-target quad.
+        let keep_clip = self.clip_active();
+        let mut cmd = Command::new(CommandType::ClearRect { color, keep_clip });
         cmd.composite_operation = self.state().composite_operation;
 
         let x0 = x as f32;
@@ -486,6 +716,7 @@ where
     ///
     /// Call this at the end of each frame.
     pub fn flush_to_output(&mut self, output: impl Into<T::RenderOutput>) -> T::CommandBuffer {
+        self.upload_fill_masks();
         let command_buffer = self.renderer.render(
             output,
             &mut self.images,
@@ -493,12 +724,21 @@ where
             std::mem::take(&mut self.commands),
         );
         self.verts.clear();
+        for image in self.clip_masks.end_frame() {
+            self.images.remove(&mut self.renderer, image);
+        }
+        for image in self.fill_masks.end_frame() {
+            self.images.remove(&mut self.renderer, image);
+        }
+        self.release_pending_images();
         self.gradients
             .release_old_gradients(&mut self.images, &mut self.renderer);
-        self.release_shadow_images();
+        self.release_transient_images();
+        self.filter_work = self.layers.iter().map(|layer| layer.reserved_filter_work).sum();
         if let Some(atlas) = self.ephemeral_glyph_atlas.take() {
             atlas.clear(self);
         }
+        self.reissue_render_target_after_flush();
         command_buffer
     }
 
@@ -511,27 +751,80 @@ where
 
     /// Pushes and saves the current render state into a state stack.
     ///
-    /// A matching `restore()` must be used to restore the state.
+    /// A matching [`restore`](Self::restore) pops it. Layers share this
+    /// stack: [`begin_layer`](Self::begin_layer) pushes an entry of its own
+    /// that [`end_layer`](Self::end_layer), or a `restore()` reaching it,
+    /// pops. The stack is bounded at 16,384 levels; a save past that is
+    /// still paired with its restore, but nothing draws at that level and
+    /// the changes made to the state there are discarded when it unwinds.
     pub fn save(&mut self) {
+        if self.push_past_depth_limit(false) {
+            return;
+        }
         let state = self.state_stack.last().map_or_else(State::default, |state| *state);
 
         self.state_stack.push(state);
     }
 
-    /// Restores the previous render state
+    /// Restores the previous render state.
     ///
-    /// Restoring the initial/first state will just reset it to the defaults
+    /// A layer opened by [`begin_layer`](Self::begin_layer) is an entry on
+    /// the same stack, so a `restore()` with the layer's own entry on top
+    /// closes the layer exactly as [`end_layer`](Self::end_layer) would
+    /// (Skia's `saveLayer()` / `restore()` pairing). An unmatched restore at
+    /// the base state is ignored.
     pub fn restore(&mut self) {
-        if self.state_stack.len() > 1 {
-            self.state_stack.pop();
-        } else {
-            self.reset();
+        if self.pop_past_depth_limit().is_some() {
+            // A save or layer past the limit: nothing was drawn.
+            return;
         }
+        if self
+            .layers
+            .last()
+            .is_some_and(|layer| layer.state_depth == self.state_stack.len())
+        {
+            self.end_layer();
+            return;
+        }
+        if self.state_stack.len() == 1 {
+            return;
+        }
+        self.pop_state();
+    }
+
+    /// Pops the state on top and the clips it owned.
+    fn pop_state(&mut self) {
+        self.state_stack.pop();
+        let depth = self.state().clip_depth;
+        self.pop_clips_to(depth);
     }
 
     /// Resets current state to default values. Does not affect the state stack.
+    ///
+    /// Clips added at this state level are dropped with the rest of the
+    /// level's state; clips established by outer levels stay in force, as
+    /// they would after a `restore()`.
     pub fn reset(&mut self) {
-        *self.state_mut() = State::default();
+        // A reset discards pending layers along with the state (WPT
+        // 2d.layer.reset); drawing continues where the outermost one began.
+        // Entries past the depth limit go with them.
+        self.overflow.clear();
+        self.discard_open_layers();
+        // The clip stack is shared across state levels: this level owns the
+        // entries past the depth it inherited from its parent (none at the
+        // base level). Resetting the recorded depth without dropping those
+        // entries would leave the stencil plane clipping draws the state
+        // says are unclipped.
+        let inherited_depth = self
+            .state_stack
+            .len()
+            .checked_sub(2)
+            .map_or(0, |parent| self.state_stack[parent].clip_depth);
+        *self.state_mut() = State {
+            clip_depth: inherited_depth,
+            ..State::default()
+        };
+        self.pop_clips_to(inherited_depth);
     }
 
     /// Saves the current state before calling the callback and restores it afterwards
@@ -552,63 +845,6 @@ where
     /// Already transparent paths will get proportionally more transparent as well.
     pub fn set_global_alpha(&mut self, alpha: f32) {
         self.state_mut().alpha = alpha;
-    }
-
-    /// Sets the color of drop shadows drawn behind subsequent fills, strokes and text.
-    ///
-    /// This mirrors the Canvas 2D `shadowColor` attribute. The default is a fully
-    /// transparent color (`rgba(0, 0, 0, 0)`), which disables shadows: when the
-    /// shadow color is fully transparent no offscreen shadow pass is performed and
-    /// drawing adds zero overhead. The shadow color's own alpha multiplies the
-    /// shadow's coverage.
-    ///
-    /// # Performance
-    ///
-    /// Shadows are not cheap: every shadowed fill, stroke or text draw renders the
-    /// shape's coverage into a transient offscreen image sized to its padded
-    /// bounds, runs a two-pass Gaussian blur over it (when `shadowBlur` is
-    /// non-zero), and composites the result — per draw, every frame. Prefer
-    /// shadowing a few composed shapes over many small primitives, and if the
-    /// same shadowed shape is drawn every frame, consider rendering it once into
-    /// an [image](Self::create_image_empty) via
-    /// [`set_render_target`](Self::set_render_target) and re-drawing that cached
-    /// image instead. Setting a fully transparent shadow color restores the
-    /// zero-overhead path.
-    pub fn set_shadow_color(&mut self, color: Color) {
-        self.state_mut().shadow_color = color;
-    }
-
-    /// Sets the blur radius applied to drop shadows.
-    ///
-    /// This mirrors the Canvas 2D `shadowBlur` attribute. Following the HTML
-    /// drawing model, the shadow image is blurred with a Gaussian whose standard
-    /// deviation is `shadowBlur / 2`, expressed in output (device) pixels. The
-    /// default is `0` (no blur). Negative or non-finite values are ignored.
-    ///
-    /// Known limitation: the blur shader caps its kernel reach at +/-24 px (a
-    /// GLES 2.0 constraint on loop bounds). This covers the full +/-3 sigma for
-    /// `shadowBlur` <= 16, which matches reference browsers exactly; larger values
-    /// render marginally tighter than spec (about 94% of the target sigma at
-    /// `shadowBlur` 24).
-    pub fn set_shadow_blur(&mut self, blur: f32) {
-        if blur.is_finite() && blur >= 0.0 {
-            self.state_mut().shadow_blur = blur;
-        }
-    }
-
-    /// Sets the drop shadow offset, in output (device) pixels.
-    ///
-    /// This mirrors the Canvas 2D `shadowOffsetX`/`shadowOffsetY` attributes.
-    /// Positive `x` shifts the shadow right and positive `y` shifts it down. Per
-    /// the spec the offset is *not* affected by the current transformation
-    /// matrix: it keeps the same magnitude and direction relative to the shape
-    /// regardless of scale or rotation. Non-finite values are ignored (the
-    /// previous offset is preserved), matching the Canvas setter semantics used
-    /// by `set_shadow_blur`. The default is `(0, 0)`.
-    pub fn set_shadow_offset(&mut self, x: f32, y: f32) {
-        if x.is_finite() && y.is_finite() {
-            self.state_mut().shadow_offset = [x, y];
-        }
     }
 
     /// Sets the composite operation.
@@ -639,6 +875,11 @@ where
 
     /// Sets a new render target. All drawing operations after this call will happen on the provided render target
     pub fn set_render_target(&mut self, target: RenderTarget) {
+        if let RenderTarget::Image(id) = target {
+            if self.pending_image_deletions.contains(&id) || self.images.info(id).is_none() {
+                return;
+            }
+        }
         if self.current_render_target != target {
             self.append_cmd(Command::new(CommandType::SetRenderTarget(target)));
             self.current_render_target = target;
@@ -646,7 +887,36 @@ where
     }
 
     fn append_cmd(&mut self, cmd: Command) {
+        if self.commands_suppressed()
+            && !matches!(
+                &cmd.cmd_type,
+                CommandType::SetRenderTarget(_) | CommandType::RenderFilteredImage { .. }
+            )
+        {
+            return;
+        }
+        let mut cmd = cmd;
+        // Stencil bookkeeping commands and target switches carry no fragments
+        // to gate; clear_rect is a raw write that neither backend clips; a
+        // filter pass or a blur's first draw writes its own target image,
+        // not the clipped one.
+        if !matches!(
+            cmd.cmd_type,
+            CommandType::ClipFill
+                | CommandType::ClipReset { .. }
+                | CommandType::SetRenderTarget(_)
+                | CommandType::ClearRect { .. }
+                | CommandType::RenderFilteredImage { .. }
+                | CommandType::StartBlur { .. }
+        ) {
+            cmd.clip_active = self.clip_active();
+        }
         self.commands.push(cmd);
+    }
+
+    fn commands_suppressed(&self) -> bool {
+        self.offscreen_passes == 0
+            && (self.saturated() || self.layers.iter().any(|layer| layer.discard && layer.image.is_none()))
     }
 
     // Images
@@ -671,6 +941,9 @@ where
     /// It is necessary to call `[Self::delete_image`] to free femtovg specific
     /// book-keeping data structures, the underlying backend-specific texture memory
     /// will not be freed. It is the caller's responsible to delete it.
+    ///
+    /// With the OpenGL renderer, the texture must belong to the same OpenGL context,
+    /// or in the browser, the same WebGL context as the canvas that the renderer draws into.
     pub fn create_image_from_native_texture(
         &mut self,
         texture: T::NativeTexture,
@@ -716,11 +989,17 @@ where
 
     /// Retrieves a reference to the image with the specified ID.
     pub fn get_image(&self, id: ImageId) -> Option<&T::Image> {
+        if self.pending_image_deletions.contains(&id) {
+            return None;
+        }
         self.images.get(id)
     }
 
     /// Retrieves a mutable reference to the image with the specified ID.
     pub fn get_image_mut(&mut self, id: ImageId) -> Option<&mut T::Image> {
+        if self.pending_image_deletions.contains(&id) {
+            return None;
+        }
         self.images.get_mut(id)
     }
 
@@ -733,8 +1012,15 @@ where
         format: PixelFormat,
         flags: ImageFlags,
     ) -> Result<(), ErrorKind> {
+        if self.pending_image_deletions.contains(&id) || self.transients.owns(id) {
+            return Err(ErrorKind::ImageIdNotFound);
+        }
         let info = ImageInfo::new(flags, width, height, format);
-        self.images.realloc(&mut self.renderer, id, info)
+        self.images.realloc(&mut self.renderer, id, info)?;
+        if let Some(plane) = self.clip_planes.get_mut(&RenderTarget::Image(id)) {
+            plane.dirty = true;
+        }
+        Ok(())
     }
 
     /// Decode an image from file
@@ -769,16 +1055,27 @@ where
         x: usize,
         y: usize,
     ) -> Result<(), ErrorKind> {
+        if self.pending_image_deletions.contains(&id) || self.transients.owns(id) {
+            return Err(ErrorKind::ImageIdNotFound);
+        }
         self.images.update(&mut self.renderer, id, src.into(), x, y)
     }
 
-    /// Deletes created image.
+    /// Deletes an image at the next flush, after earlier commands are encoded.
+    /// An open layer borrowing it as a mask or a blend backdrop keeps it
+    /// through that layer's composite and the following flush. A layer's own
+    /// store is the canvas's, not the caller's: it is left alone here and by
+    /// [`realloc_image`](Self::realloc_image) and
+    /// [`update_image`](Self::update_image).
     pub fn delete_image(&mut self, id: ImageId) {
-        self.images.remove(&mut self.renderer, id);
+        self.defer_image_deletion(id);
     }
 
     /// Returns image info
     pub fn image_info(&self, id: ImageId) -> Result<ImageInfo, ErrorKind> {
+        if self.pending_image_deletions.contains(&id) {
+            return Err(ErrorKind::ImageIdNotFound);
+        }
         if let Some(info) = self.images.info(id) {
             Ok(info)
         } else {
@@ -790,50 +1087,6 @@ where
     pub fn image_size(&self, id: ImageId) -> Result<(usize, usize), ErrorKind> {
         let info = self.image_info(id)?;
         Ok((info.width(), info.height()))
-    }
-
-    /// Renders the given `source_image` into `target_image` while applying a filter effect.
-    ///
-    /// The target image must have the same size as the source image. The filtering is recorded
-    /// as a drawing command and run by the renderer when [`Self::flush()`] is called.
-    ///
-    /// The filtering does not take any transformation set on the Canvas into account nor does it
-    /// change the current rendering target.
-    pub fn filter_image(&mut self, target_image: ImageId, filter: ImageFilter, source_image: ImageId) {
-        let Ok((image_width, image_height)) = self.image_size(source_image) else {
-            return;
-        };
-
-        // The renderer will receive a RenderFilteredImage command with two triangles attached that
-        // cover the image and the source image.
-        let mut cmd = Command::new(CommandType::RenderFilteredImage { target_image, filter });
-        cmd.image = Some(source_image);
-
-        let vertex_offset = self.verts.len();
-
-        let image_width = image_width as f32;
-        let image_height = image_height as f32;
-
-        let quad_x0 = 0.0;
-        let quad_y0 = -image_height;
-        let quad_x1 = image_width;
-        let quad_y1 = image_height;
-
-        let texture_x0 = -(image_width / 2.);
-        let texture_y0 = -(image_height / 2.);
-        let texture_x1 = (image_width) / 2.;
-        let texture_y1 = (image_height) / 2.;
-
-        self.verts.push(Vertex::new(quad_x0, quad_y0, texture_x0, texture_y0));
-        self.verts.push(Vertex::new(quad_x1, quad_y1, texture_x1, texture_y1));
-        self.verts.push(Vertex::new(quad_x1, quad_y0, texture_x1, texture_y0));
-        self.verts.push(Vertex::new(quad_x0, quad_y0, texture_x0, texture_y0));
-        self.verts.push(Vertex::new(quad_x0, quad_y1, texture_x0, texture_y1));
-        self.verts.push(Vertex::new(quad_x1, quad_y1, texture_x1, texture_y1));
-
-        cmd.triangles_verts = Some((vertex_offset, 6));
-
-        self.append_cmd(cmd)
     }
 
     // Transforms
@@ -1047,12 +1300,25 @@ where
 
     /// Fills the provided Path with the specified Paint.
     pub fn fill_path(&mut self, path: &Path, paint: &Paint) {
-        self.fill_path_internal(path, &paint.flavor, paint.shape_anti_alias, paint.fill_rule);
+        self.fill_path_internal(path, None, &paint.flavor, paint.shape_anti_alias, paint.fill_rule);
     }
 
-    fn fill_path_internal(&mut self, path: &Path, paint_flavor: &PaintFlavor, anti_alias: bool, fill_rule: FillRule) {
+    /// Fills `path` with its points mapped through `path_transform` and then
+    /// through the current transform. The paint's coordinates are mapped
+    /// through the current transform only. `render_direct()` passes the
+    /// transform that places a glyph's outline in its run.
+    fn fill_path_internal(
+        &mut self,
+        path: &Path,
+        path_transform: Option<&Transform2D>,
+        paint_flavor: &PaintFlavor,
+        anti_alias: bool,
+        fill_rule: FillRule,
+    ) {
+        self.reconcile_current_clip_plane();
         let mut paint_flavor = paint_flavor.clone();
-        let transform = self.state().transform;
+        let paint_transform = self.state().transform;
+        let transform = path_transform.map_or(paint_transform, |t| *t * paint_transform);
 
         let canvas_width = self.width();
         let canvas_height = self.height();
@@ -1074,19 +1340,19 @@ where
                 let path = path.clone();
                 let shadow_flavor = paint_flavor.clone();
                 self.render_shadow(bounds, move |canvas| {
-                    canvas.fill_path_internal(&path, &shadow_flavor, anti_alias, fill_rule);
+                    canvas.fill_path_internal(&path, path_transform, &shadow_flavor, anti_alias, fill_rule);
                 });
             }
         }
 
         // The path cache saves a flattened and transformed version of the path.
-        let mut path_cache = path.cache(&transform, self.tess_tol, self.dist_tol);
+        let bounds = path.cache(&transform, self.tess_tol, self.dist_tol).bounds;
 
         // Early out if path is outside the canvas bounds
-        if path_cache.bounds.maxx < 0.0
-            || path_cache.bounds.minx > canvas_width as f32
-            || path_cache.bounds.maxy < 0.0
-            || path_cache.bounds.miny > canvas_height as f32
+        if bounds.maxx < 0.0
+            || bounds.minx > canvas_width as f32
+            || bounds.maxy < 0.0
+            || bounds.miny > canvas_height as f32
         {
             return;
         }
@@ -1094,61 +1360,78 @@ where
         // Apply global alpha
         paint_flavor.mul_alpha(self.state().alpha);
 
-        let scissor = self.state().scissor;
+        // A thin fill, which the fringe would over-ink, is drawn through a
+        // coverage mask instead, unless its operation changes
+        // what coverage does not reach: it would change the whole quad.
+        if anti_alias && self.fill_masks.enabled() && self.state().composite_operation.takes_coverage() {
+            let mut path_cache = path.cache(&transform, self.tess_tol, self.dist_tol);
+            if (bounds.maxx - bounds.minx) * (bounds.maxy - bounds.miny) <= THIN_FILL_SPAN
+                && clip::is_thin(path_cache.mean_width(fill_rule))
+                && self.fill_through_mask(
+                    path,
+                    &mut path_cache,
+                    &transform,
+                    &paint_transform,
+                    &paint_flavor,
+                    fill_rule,
+                )
+            {
+                return;
+            }
+        }
 
-        // Calculate fill vertices.
-        // expand_fill will fill path_cache.contours[].{stroke, fill} with vertex data for the GPU
-        // fringe_with is the size of the strip of triangles generated at the path border used for AA
-        let fringe_width = if anti_alias { self.fringe_width } else { 0.0 };
-        path_cache.expand_fill(fringe_width, LineJoin::Miter, 2.4);
+        let mut shared = None;
+        let (clip, path_cache, fringe_width) = self.fill_outline(path, &transform, anti_alias, fill_rule, &mut shared);
 
         // Detect if this path fill is in fact just an unclipped image copy
 
-        if let (Some(path_rect), Some(scissor_rect), true) = (
+        if let (Some(path_rect), Some(scissor_rect), true, true) = (
             path_cache.path_fill_is_rect(),
-            scissor.as_rect(canvas_width as f32, canvas_height as f32),
+            clip.scissor.as_rect(canvas_width as f32, canvas_height as f32),
             paint_flavor.is_straight_tinted_image(anti_alias),
+            // The unclipped blit bypasses the stencil clip plane and the
+            // clip shape (the #292 rounded-scissor precedent): route clipped
+            // blits through the normal masked path.
+            !self.clip_active() && clip.shape.is_none() && clip.mask.is_none(),
         ) {
             if scissor_rect.contains_rect(&path_rect) {
-                self.render_unclipped_image_blit(&path_rect, &transform, &paint_flavor);
+                self.render_unclipped_image_blit(&path_rect, &paint_transform, &paint_flavor);
             } else if let Some(intersection) = path_rect.intersection(&scissor_rect) {
-                self.render_unclipped_image_blit(&intersection, &transform, &paint_flavor);
+                self.render_unclipped_image_blit(&intersection, &paint_transform, &paint_flavor);
             }
 
             return;
         }
 
         // GPU uniforms
-        let flavor = if path_cache.contours.len() == 1 && path_cache.contours[0].convexity == Convexity::Convex {
+        let flavor = if path_cache.is_convex() {
             let params = Params::new(
                 &self.images,
-                &transform,
+                &paint_transform,
                 &paint_flavor,
                 &GlyphTexture::default(),
-                &scissor,
+                &clip.scissor,
                 self.fringe_width,
                 self.fringe_width,
                 -1.0,
-            );
+            )
+            .with_clip(&clip);
 
             CommandType::ConvexFill { params }
         } else {
-            let stencil_params = Params {
-                stroke_thr: -1.0,
-                shader_type: ShaderType::Stencil,
-                ..Params::default()
-            };
+            let stencil_params = Params::stencil().with_hard_clip_mask(&clip);
 
             let fill_params = Params::new(
                 &self.images,
-                &transform,
+                &paint_transform,
                 &paint_flavor,
                 &GlyphTexture::default(),
-                &scissor,
+                &clip.scissor,
                 self.fringe_width,
                 self.fringe_width,
                 -1.0,
-            );
+            )
+            .with_clip(&clip);
 
             CommandType::ConcaveFill {
                 stencil_params,
@@ -1170,21 +1453,81 @@ where
                 .ok();
         }
 
+        self.push_fill(&mut cmd, &path_cache, fringe_width);
+        self.append_cmd(cmd);
+    }
+
+    /// Expands a fill of `path` under `transform` into its fans and fringes.
+    /// Returns what clips the fill, the expanded outline and the fringe's width.
+    /// The outline is the path, or the rect it shares with the clip, kept in `shared`.
+    fn fill_outline<'a>(
+        &mut self,
+        path: &'a Path,
+        transform: &Transform2D,
+        anti_alias: bool,
+        fill_rule: FillRule,
+        shared: &'a mut Option<Path>,
+    ) -> (DrawClip, RefMut<'a, PathCache>, f32) {
+        let mut path_cache = path.cache(transform, self.tess_tol, self.dist_tol);
+        let (clip, rect) = self.fill_clip(
+            || path_cache.bounds,
+            Some((&path_cache, 0.0)),
+            anti_alias.then_some((path, transform)),
+        );
+        // An upright rect under an upright clip shape is filled as the rect
+        // the two share, or as the shape it covers: an edge they have in
+        // common is antialiased once, by the rect's fringe or by the shape.
+        let (rect, fringed) = match rect {
+            Some(RectFill::Shared(rect)) => (Some(rect), anti_alias),
+            Some(RectFill::Covered(rect)) => (Some(rect), false),
+            None => (None, anti_alias),
+        };
+        if let Some(rect) = rect {
+            drop(path_cache);
+            path_cache = shared
+                .insert(rect.path())
+                .cache(&rect.frame, self.tess_tol, self.dist_tol);
+        }
+
+        let fringe_width = if fringed { self.fringe_width } else { 0.0 };
+        path_cache.expand_fill(fringe_width, LineJoin::Miter, 2.4, fill_rule);
+        (clip, path_cache, fringe_width)
+    }
+
+    /// Pushes the vertices of `path_cache`'s fill, expanded with a fringe of
+    /// `fringe_width`, as `cmd`'s drawables, and for a concave fill the
+    /// quad covering it.
+    fn push_fill(&mut self, cmd: &mut Command, path_cache: &PathCache, fringe_width: f32) {
         // All verts from all shapes are kept in a single buffer here in the canvas.
         // Drawable struct is used to describe the range of vertices each draw call will operate on
         let mut offset = self.verts.len();
 
-        cmd.drawables.reserve_exact(path_cache.contours.len());
+        cmd.drawables.reserve(path_cache.contours.len());
         for contour in &path_cache.contours {
             let mut drawable = Drawable::default();
 
             // Fill commands can have both fill and stroke vertices. Fill vertices are used to fill
             // the body of the shape while stroke vertices are used to prodice antialiased edges
 
-            if !contour.fill.is_empty() {
-                drawable.fill_verts = Some((offset, contour.fill.len()));
-                self.verts.extend_from_slice(&contour.fill);
-                offset += contour.fill.len();
+            if let Some((&hub, rim)) = contour.fill.split_first() {
+                // A driver may split a fan longer than MAX_FAN about the wrong vertex (Mesa's
+                // vc4 does), so a longer one goes as several about the same first vertex.
+                let mut rim = rim;
+                while rim.len() >= MAX_FAN {
+                    cmd.drawables.push(Drawable {
+                        fill_verts: Some((offset, MAX_FAN)),
+                        ..Drawable::default()
+                    });
+                    self.verts.push(hub);
+                    self.verts.extend_from_slice(&rim[..MAX_FAN - 1]);
+                    offset += MAX_FAN;
+                    // The next fan starts at this one's last vertex.
+                    rim = &rim[MAX_FAN - 2..];
+                }
+                drawable.fill_verts = Some((offset, 1 + rim.len()));
+                self.verts.push(hub);
+                self.verts.extend_from_slice(rim);
+                offset += 1 + rim.len();
             }
 
             if !contour.stroke.is_empty() {
@@ -1196,7 +1539,7 @@ where
             cmd.drawables.push(drawable);
         }
 
-        if let CommandType::ConcaveFill { .. } = cmd.cmd_type {
+        if !path_cache.is_convex() {
             // Concave shapes are first filled by writing to a stencil buffer and then drawing a quad
             // over the shape area with stencil test enabled to produce the final fill. These are
             // the verts needed for the covering quad
@@ -1227,24 +1570,31 @@ where
 
             cmd.triangles_verts = Some((offset, 4));
         }
-
-        self.append_cmd(cmd);
     }
 
     /// Strokes the provided Path with the specified Paint.
     pub fn stroke_path(&mut self, path: &Path, paint: &Paint) {
-        self.stroke_path_internal(path, &paint.flavor, paint.shape_anti_alias, &paint.stroke);
+        self.stroke_path_internal(path, None, &paint.flavor, paint.shape_anti_alias, &paint.stroke);
     }
 
+    /// Strokes `path` with its points mapped through `path_transform` and then
+    /// through the current transform. The paint's coordinates are mapped
+    /// through the current transform only, as in
+    /// [`fill_path_internal`](Self::fill_path_internal). The line width
+    /// and the dash lengths of `stroke` are in the path's own coordinates, so
+    /// both transforms scale them.
     fn stroke_path_internal(
         &mut self,
         path: &Path,
+        path_transform: Option<&Transform2D>,
         paint_flavor: &PaintFlavor,
         anti_alias: bool,
         stroke: &StrokeSettings,
     ) {
+        self.reconcile_current_clip_plane();
         let mut paint_flavor = paint_flavor.clone();
-        let transform = self.state().transform;
+        let paint_transform = self.state().transform;
+        let transform = path_transform.map_or(paint_transform, |t| *t * paint_transform);
 
         if !stroke.line_dash.is_empty() {
             let dashed_path = path.dashed_with_tolerance(&stroke.line_dash, stroke.line_dash_offset, self.tess_tol);
@@ -1255,7 +1605,7 @@ where
             let mut solid_stroke = stroke.clone();
             solid_stroke.line_dash.clear();
             solid_stroke.line_dash_offset = 0.0;
-            self.stroke_path_internal(&dashed_path, &paint_flavor, anti_alias, &solid_stroke);
+            self.stroke_path_internal(&dashed_path, path_transform, &paint_flavor, anti_alias, &solid_stroke);
             return;
         }
 
@@ -1285,7 +1635,7 @@ where
                 let stroke = stroke.clone();
                 let shadow_flavor = paint_flavor.clone();
                 self.render_shadow(bounds, move |canvas| {
-                    canvas.stroke_path_internal(&path, &shadow_flavor, anti_alias, &stroke);
+                    canvas.stroke_path_internal(&path, path_transform, &shadow_flavor, anti_alias, &stroke);
                 });
             }
         }
@@ -1302,8 +1652,6 @@ where
             return;
         }
 
-        let scissor = self.state().scissor;
-
         // Scale stroke width by current transform scale.
         // Note: I don't know why the original author clamped the max stroke width to 200, but it didn't
         // look correct when zooming in. There was probably a good reson for doing so and I may have
@@ -1312,16 +1660,32 @@ where
         let mut line_width = (stroke.line_width * transform.average_scale()).max(0.0);
 
         if line_width < self.fringe_width {
-            // If the stroke width is less than pixel size, use alpha to emulate coverage.
-            // Since coverage is area, scale by alpha*alpha.
+            // A stroke thinner than the fringe is drawn at fringe width with its
+            // alpha scaled by the ratio, so it puts down the ink its area calls
+            // for: a fringe-wide stroke integrates to one pixel per unit length,
+            // so a w-pixel line carries w. That is the linear coverage Skia's
+            // hairline path applies (SkDrawTreatAAStrokeAsHairline scales the
+            // paint alpha by the device width); nanovg squared the ratio, which
+            // left a 0.5 px line at a quarter of its coverage.
             let alpha = (line_width / self.fringe_width).clamp(0.0, 1.0);
 
-            paint_flavor.mul_alpha(alpha * alpha);
+            paint_flavor.mul_alpha(alpha);
             line_width = self.fringe_width;
         }
 
         // Apply global alpha
         paint_flavor.mul_alpha(self.state().alpha);
+
+        let reach = stroke.reach(line_width);
+        let clip = self.draw_clip(
+            || Bounds {
+                minx: path_cache.bounds.minx - reach,
+                miny: path_cache.bounds.miny - reach,
+                maxx: path_cache.bounds.maxx + reach,
+                maxy: path_cache.bounds.maxy + reach,
+            },
+            Some((&path_cache, reach)),
+        );
 
         // Calculate stroke vertices.
         // expand_stroke will fill path_cache.contours[].stroke with vertex data for the GPU
@@ -1339,26 +1703,28 @@ where
         // GPU uniforms
         let params = Params::new(
             &self.images,
-            &transform,
+            &paint_transform,
             &paint_flavor,
             &GlyphTexture::default(),
-            &scissor,
+            &clip.scissor,
             line_width,
             self.fringe_width,
             -1.0,
-        );
+        )
+        .with_clip(&clip);
 
         let flavor = if stroke.stencil_strokes {
             let params2 = Params::new(
                 &self.images,
-                &transform,
+                &paint_transform,
                 &paint_flavor,
                 &GlyphTexture::default(),
-                &scissor,
+                &clip.scissor,
                 line_width,
                 self.fringe_width,
                 1.0 - 0.5 / 255.0,
-            );
+            )
+            .with_clip(&clip);
 
             CommandType::StencilStroke {
                 params1: params,
@@ -1401,238 +1767,18 @@ where
         self.append_cmd(cmd);
     }
 
-    /// Returns `true` when the current state would paint a visible drop shadow.
-    ///
-    /// Matching the Canvas spec, a shadow is only drawn when the shadow color is
-    /// not fully transparent *and* at least one of the blur or offset components
-    /// is non-zero. (An opaque shadow color with zero blur and zero offset would
-    /// land exactly under the shape and contribute nothing, so the spec treats it
-    /// as no shadow.) When this returns `false` the drawing entry points skip the
-    /// whole offscreen shadow pass, so the common (no-shadow) case has zero added
-    /// cost.
-    fn shadow_enabled(&self) -> bool {
-        let state = self.state();
-        state.shadow_color.a > 0.0
-            && (state.shadow_blur != 0.0 || state.shadow_offset[0] != 0.0 || state.shadow_offset[1] != 0.0)
-    }
-
-    /// Returns `true` when the drop shadow for a shape with the given device-space
-    /// `shape_bounds` could land on the render target once the (device-space)
-    /// shadow offset and blur spread are taken into account.
-    ///
-    /// Drawing entry points must not cull a shadow on the shape's own bounds
-    /// alone: a shape entirely off-screen can still cast a visible shadow when the
-    /// offset and/or blur pull the shadow back onto the target. The blur spread is
-    /// `ceil(3 * sigma)` (sigma = `shadowBlur / 2`), which covers >99.7% of the
-    /// Gaussian — the same reach `render_shadow` uses to pad its offscreen image.
-    fn shadow_could_be_visible(&self, shape_bounds: Bounds) -> bool {
-        let state = self.state();
-        let [ox, oy] = state.shadow_offset;
-        let spread = (state.shadow_blur / 2.0 * 3.0).ceil();
-        let minx = shape_bounds.minx + ox - spread;
-        let miny = shape_bounds.miny + oy - spread;
-        let maxx = shape_bounds.maxx + ox + spread;
-        let maxy = shape_bounds.maxy + oy + spread;
-        maxx >= 0.0 && minx <= self.width() as f32 && maxy >= 0.0 && miny <= self.height() as f32
-    }
-
-    /// Renders a drop shadow for a shape whose device-space bounding box is
-    /// `shape_bounds`, using the supplied closure to draw the shape's coverage.
-    ///
-    /// Per the Canvas drawing model the shadow is built from the *alpha of the
-    /// actually-rendered source*, not from a forced-opaque tint: a semi-transparent
-    /// fill, or a gradient/image with transparent texels, must cast a
-    /// correspondingly weaker shadow. To achieve this the closure draws the real
-    /// source (its actual paint and per-pixel alpha) into a transient offscreen
-    /// image, then a solid `shadowColor` is composited over it with
-    /// `CompositeOperation::SourceIn`, which masks the shadow color by the source's
-    /// alpha. The result carries `shadowColor.rgb` with alpha
-    /// `source.alpha * shadowColor.a` per pixel. That image is then
-    /// Gaussian-blurred via the existing `filter_image` path (standard deviation
-    /// `shadowBlur / 2`) and finally composited back into the current render
-    /// target, translated by the device-space shadow offset and drawn *under* the
-    /// actual shape. The current scissor, global alpha and composite operation are
-    /// honored when compositing.
-    ///
-    /// `draw_coverage` is expected to issue the shape's normal draw command(s) with
-    /// its real paint; the canvas transform in effect during the call already maps
-    /// the shape's device-space coordinates into the offscreen image.
-    fn render_shadow(&mut self, shape_bounds: Bounds, draw_coverage: impl FnOnce(&mut Self)) {
-        // Degenerate / off-screen bounds: nothing to cast a shadow from.
-        if shape_bounds.maxx <= shape_bounds.minx || shape_bounds.maxy <= shape_bounds.miny {
-            return;
-        }
-
-        let state = *self.state();
-        let shadow_color = state.shadow_color;
-
-        // Standard deviation in device pixels (HTML drawing model: sigma = blur/2).
-        let sigma = state.shadow_blur / 2.0;
-
-        // The shadow offset is expressed in output (device) pixels and, per the
-        // Canvas spec, is NOT affected by the current transformation matrix: it
-        // keeps the same magnitude and direction relative to the shape under any
-        // scale or rotation. Apply the raw components directly when positioning
-        // the blurred shadow (matching WebKit: "canvas shadows must not be
-        // affected by any transformation and keep the same offset relative to the
-        // shape").
-        let [txx, txy] = state.shadow_offset;
-
-        // Pad the offscreen image for the blur kernel reach (~3 sigma covers
-        // >99.7% of the Gaussian) plus a fringe pixel for antialiased edges.
-        let pad = (sigma * 3.0).ceil() + 2.0;
-
-        // Coverage is rendered at the shape's own location; the offset is applied
-        // later when compositing, so the offscreen only needs to bound the shape.
-        let minx = (shape_bounds.minx - pad).floor();
-        let miny = (shape_bounds.miny - pad).floor();
-        let maxx = (shape_bounds.maxx + pad).ceil();
-        let maxy = (shape_bounds.maxy + pad).ceil();
-
-        let width = (maxx - minx) as usize;
-        let height = (maxy - miny) as usize;
-
-        // Guard against absurd allocations (e.g. enormous blur on a huge shape).
-        if width == 0 || height == 0 || width > 8192 || height > 8192 {
-            return;
-        }
-
-        // Offscreen render targets store premultiplied-alpha results, so flag the
-        // images as PREMULTIPLIED. Otherwise the image-sampling shader would
-        // re-premultiply on composite (multiplying rgb by alpha a second time),
-        // darkening partially-transparent shadow texels — which the source-alpha
-        // shadow now produces wherever the source is semi-transparent or
-        // antialiased.
-        //
-        // Image render targets store their content vertically flipped in texture
-        // space: both backends keep the GL FBO convention where canvas y = 0 lands
-        // on the *last* texture row (the wgpu backend's texture-target vertex
-        // stage reproduces it deliberately, and the glyph atlas pre-flips its
-        // rasterization coordinates to compensate). FLIP_Y declares that
-        // orientation so the composite below samples the coverage upright;
-        // without it the shadow is mirrored about its rect's horizontal midline.
-        // The Gaussian blur is unaffected: each of its two passes flips once, so
-        // the blurred image keeps the coverage image's orientation.
-        let image_flags = ImageFlags::PREMULTIPLIED | ImageFlags::FLIP_Y;
-        let Ok(coverage_image) = self.create_image_empty(width, height, PixelFormat::Rgba8, image_flags) else {
-            return;
-        };
-        // The blur kernel divides by sigma, so a zero (or sub-pixel) blur skips
-        // the filter pass entirely — and with it the second offscreen image.
-        let blurred_image = if sigma >= 0.01 {
-            match self.create_image_empty(width, height, PixelFormat::Rgba8, image_flags) {
-                Ok(image) => Some(image),
-                Err(_) => {
-                    self.delete_image(coverage_image);
-                    return;
-                }
-            }
-        } else {
-            None
-        };
-
-        let previous_target = self.current_render_target;
-
-        // Draw the *real* source (its actual paint and per-pixel alpha) into the
-        // offscreen image, then recolor it by the shadow color while preserving the
-        // source alpha. The image space is the device space translated so the
-        // padded bbox origin maps to (0, 0): pre-translate the CTM by (-minx, -miny).
-        self.save();
-        self.set_render_target(RenderTarget::Image(coverage_image));
-        self.clear_rect(0, 0, width as u32, height as u32, Color::rgbaf(0.0, 0.0, 0.0, 0.0));
-
-        // Build the offset transform for coverage rendering: original CTM with an
-        // extra device-space translation that shifts the shape into the offscreen.
-        let mut coverage_transform = Transform2D::translation(-minx, -miny);
-        coverage_transform.premultiply(&state.transform);
-        self.state_mut().transform = coverage_transform;
-        // Render the source at full strength: the shadow color's alpha and the
-        // global alpha are applied later (the former via the SourceIn mask below,
-        // the latter when compositing the finished shadow under the shape).
-        self.state_mut().alpha = 1.0;
-        self.state_mut().scissor = Scissor::default();
-        self.state_mut().composite_operation = CompositeOperationState::default();
-        self.state_mut().shadow_color = Color::rgbaf(0.0, 0.0, 0.0, 0.0);
-
-        // 1. Rasterize the source with its real paint so the offscreen holds the
-        //    source's true per-pixel alpha (semi-transparent fills, gradient/image
-        //    transparency, antialiased edges, ...).
-        draw_coverage(self);
-
-        // 2. Recolor by the shadow color, masked by the source alpha. SourceIn
-        //    keeps `shadowColor * dst.alpha`, so the offscreen ends up carrying
-        //    shadowColor.rgb with per-pixel alpha = source.alpha * shadowColor.a.
-        //    Where the source was transparent the shadow stays transparent, so a
-        //    fully transparent source casts no shadow and a 50%-alpha source casts
-        //    a half-strength shadow. The mask must cover the whole offscreen in its
-        //    own pixel space, so draw it with the identity transform (not the
-        //    shape's coverage transform, which is scaled/translated).
-        self.state_mut().transform = Transform2D::identity();
-        self.state_mut().composite_operation = CompositeOperationState::new(CompositeOperation::SourceIn);
-        let mut mask_rect = Path::new();
-        mask_rect.rect(0.0, 0.0, width as f32, height as f32);
-        self.fill_path_internal(&mask_rect, &PaintFlavor::Color(shadow_color), false, FillRule::NonZero);
-
-        self.restore();
-
-        // Blur the coverage into the second offscreen image; a sharp shadow (no
-        // blur image allocated) composites the coverage directly.
-        let source_image = if let Some(blurred_image) = blurred_image {
-            self.filter_image(blurred_image, ImageFilter::GaussianBlur { sigma }, coverage_image);
-            blurred_image
-        } else {
-            coverage_image
-        };
-
-        // Composite the shadow back into the original target, offset by the
-        // device-space shadow offset and drawn under the shape. The shadow color's
-        // alpha is already baked into the image (via the SourceIn mask); only the
-        // global alpha is folded into the image tint here.
-        self.set_render_target(previous_target);
-
-        let dst_x = minx + txx;
-        let dst_y = miny + txy;
-
-        // The shadow image already carries shadowColor.rgb and per-pixel alpha
-        // `source.alpha * shadowColor.a` (baked in by the SourceIn mask above), so
-        // here we only fold in the current global alpha.
-        let tint = Color::rgbaf(1.0, 1.0, 1.0, state.alpha);
-        let mut shadow_paint = Paint::image_tint(source_image, dst_x, dst_y, width as f32, height as f32, 0.0, tint);
-        shadow_paint.set_anti_alias(false);
-
-        // Composite in plain device space (identity transform) at the offset
-        // position, honoring the caller's scissor and composite operation.
-        let saved_transform = self.state().transform;
-        let saved_alpha = self.state().alpha;
-        self.state_mut().transform = Transform2D::identity();
-        self.state_mut().alpha = 1.0;
-        self.state_mut().shadow_color = Color::rgbaf(0.0, 0.0, 0.0, 0.0);
-
-        let mut shadow_rect = Path::new();
-        shadow_rect.rect(dst_x, dst_y, width as f32, height as f32);
-        self.fill_path_internal(&shadow_rect, &shadow_paint.flavor, false, FillRule::NonZero);
-
-        self.state_mut().transform = saved_transform;
-        self.state_mut().alpha = saved_alpha;
-        self.state_mut().shadow_color = shadow_color;
-
-        // The transient images are referenced by deferred draw commands, so they
-        // can only be freed after the next flush. Queue them for later cleanup.
-        self.shadow_images.push(coverage_image);
-        if let Some(blurred_image) = blurred_image {
-            self.shadow_images.push(blurred_image);
-        }
-    }
-
-    /// Frees offscreen images allocated by drop-shadow passes during the frame.
-    /// Called after the renderer has consumed the frame's commands.
-    fn release_shadow_images(&mut self) {
-        for id in std::mem::take(&mut self.shadow_images) {
-            self.images.remove(&mut self.renderer, id);
+    /// After a flush the renderer starts the next command stream on the
+    /// screen target; if drawing is currently redirected (an open layer, or a
+    /// caller-selected image target), the redirect must be re-issued so the
+    /// next frame's commands keep landing where the canvas state says.
+    fn reissue_render_target_after_flush(&mut self) {
+        if self.current_render_target != RenderTarget::Screen {
+            self.append_cmd(Command::new(CommandType::SetRenderTarget(self.current_render_target)));
         }
     }
 
     fn render_unclipped_image_blit(&mut self, target_rect: &Rect, transform: &Transform2D, paint_flavor: &PaintFlavor) {
+        self.reconcile_current_clip_plane();
         let scissor = self.state().scissor;
 
         let mut params = Params::new(
@@ -2047,8 +2193,8 @@ where
             if self.shadow_could_be_visible(device) {
                 let text = text.to_owned();
                 // Draw the text with its *real* paint so the shadow is built from
-                // the glyphs' true coverage/alpha; render_shadow recolors it by the
-                // shadow color while preserving that alpha.
+                // the glyphs' true coverage/alpha; render_shadow keeps that alpha
+                // and colours it by the shadow color after the blur.
                 let shadow_paint = paint.clone();
                 self.render_shadow(device, move |canvas| {
                     let _ = canvas.draw_text(x, y, &text, &shadow_paint, render_mode);
@@ -2057,9 +2203,8 @@ where
         }
 
         // The run-level shadow above is the only shadow this text should cast.
-        // Glyph runs that fall back to outline rendering are drawn through
-        // fill/stroke_path_internal, whose own shadow hooks would otherwise add a
-        // second shadow per glyph on top of it — so suppress shadows while the
+        // draw_glyph_run casts its own shadow for each glyph run, which would
+        // otherwise add a second shadow on top of it — so suppress shadows while the
         // actual glyphs are drawn, restoring afterwards (also on error).
         let saved_shadow_color = self.state().shadow_color;
         self.state_mut().shadow_color = Color::rgbaf(0.0, 0.0, 0.0, 0.0);
@@ -2160,7 +2305,7 @@ where
         // TODO: Early out if text is outside the canvas bounds, or maybe even check for each character in layout.
 
         let text_context = self.text_context.clone();
-        let mut text_context = text_context.borrow_mut();
+        let text_context = text_context.borrow();
 
         // How this glyph run is rasterized for the current canvas transform.
         #[derive(Clone, Copy)]
@@ -2223,7 +2368,7 @@ where
         let mut stroke = paint.stroke.clone();
         stroke.line_width *= effective_scale;
 
-        let Some(font) = text_context.font_mut(font_id) else {
+        let Some(font) = text_context.font(font_id) else {
             return Err(ErrorKind::NoFontFound);
         };
 
@@ -2236,10 +2381,7 @@ where
         let glyphs_it = glyphs.into_iter();
         let non_color_glyphs = glyphs_it
             .filter(|glyph| {
-                if font
-                    .glyph(&font_face, glyph.glyph_id, normalized_coords)
-                    .is_some_and(|glyph| glyph.path.is_none())
-                {
+                if font.is_bitmap_glyph(&font_face, glyph.glyph_id, normalized_coords) {
                     color_glyphs.push(glyph.clone());
 
                     false
@@ -2248,6 +2390,43 @@ where
                 }
             })
             .collect::<Vec<_>>();
+
+        // Cast one shadow for the whole run, as draw_text() does. Its bounds are the union of the
+        // glyphs' boxes in user space, for atlas and outline glyphs alike. render_shadow() turns
+        // shadows off while it draws the run again into the shadow's coverage image.
+        if self.shadow_enabled() {
+            let scale = font.scale(paint.text.font_size);
+            // The same slack for antialiased edges as draw_text(), and half the stroke width.
+            let mut margin = paint.text.font_size * 0.2;
+            if render_mode == RenderMode::Stroke {
+                margin += paint.stroke.line_width / 2.0;
+            }
+            let transform = self.state().transform;
+            let device = Bounds::from_points(
+                non_color_glyphs
+                    .iter()
+                    .chain(&color_glyphs)
+                    .filter_map(|glyph| {
+                        let glyph_data = font.glyph(&font_face, glyph.glyph_id, normalized_coords)?;
+                        let metrics = &glyph_data.metrics;
+                        let x0 = glyph.x + metrics.bearing_x * scale - margin;
+                        let y0 = glyph.y - metrics.bearing_y * scale - margin;
+                        let x1 = glyph.x + (metrics.bearing_x + metrics.width) * scale + margin;
+                        let y1 = glyph.y + (metrics.height - metrics.bearing_y) * scale + margin;
+                        Some([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+                    })
+                    .flatten()
+                    .map(|(x, y)| transform.transform_point(x, y)),
+            );
+
+            // Bounds without a glyph are empty and cannot be visible.
+            if self.shadow_could_be_visible(device) {
+                self.render_shadow(device, |canvas| {
+                    let glyphs = non_color_glyphs.iter().chain(&color_glyphs).cloned();
+                    let _ = canvas.draw_glyph_run(glyphs, paint, font_id, normalized_coords, render_mode);
+                });
+            }
+        }
 
         // When baking scale into the rasterization, pre-multiply glyph positions
         // by `effective_scale` so that under a translation-only canvas transform
@@ -2259,7 +2438,12 @@ where
         };
 
         let mut draw_commands = if need_direct_rendering {
-            text::render_direct(
+            // render_direct() draws each glyph with fill_path_internal() or stroke_path_internal(),
+            // which would cast a shadow for each glyph on top of the run's shadow. The atlas path
+            // casts none.
+            let saved_shadow_color = self.state().shadow_color;
+            self.state_mut().shadow_color = Color::rgbaf(0.0, 0.0, 0.0, 0.0);
+            let result = text::render_direct(
                 self,
                 font,
                 non_color_glyphs.into_iter(),
@@ -2269,7 +2453,9 @@ where
                 paint.text.font_size,
                 render_mode,
                 normalized_coords,
-            )?;
+            );
+            self.state_mut().shadow_color = saved_shadow_color;
+            result?;
             GlyphDrawCommands::default()
         } else {
             self.glyph_atlas.clone().render_atlas(
@@ -2295,6 +2481,11 @@ where
                     self.glyph_atlas.clone()
                 };
 
+                // A bitmap glyph is drawn at a whole pixel: neither rasterizer shifts it by the
+                // fraction of x. Truncating x, as render_atlas() does to place the quad, gives the
+                // glyph one atlas entry instead of one for each subpixel offset.
+                let whole_pixel = |g: PositionedGlyph| PositionedGlyph { x: g.x.trunc(), ..g };
+
                 // Color glyphs on the atlas path follow the same scale baking.
                 // On the direct path we leave them at the original font_size —
                 // that already matches today's behavior.
@@ -2304,7 +2495,7 @@ where
                         font_id,
                         font,
                         &font_face,
-                        color_glyphs.into_iter(),
+                        color_glyphs.into_iter().map(whole_pixel),
                         paint.text.font_size,
                         stroke.line_width,
                         render_mode,
@@ -2316,7 +2507,7 @@ where
                         font_id,
                         font,
                         &font_face,
-                        color_glyphs.iter().map(scaled),
+                        color_glyphs.iter().map(scaled).map(whole_pixel),
                         effective_font_size,
                         stroke.line_width,
                         render_mode,
@@ -2366,18 +2557,30 @@ where
         paint_flavor: &PaintFlavor,
         glyph_texture: GlyphTexture,
     ) {
-        let scissor = self.state().scissor;
+        self.reconcile_current_clip_plane();
+        let clip = self.draw_clip(
+            || {
+                verts.iter().fold(Bounds::default(), |bounds, vertex| Bounds {
+                    minx: bounds.minx.min(vertex.x),
+                    miny: bounds.miny.min(vertex.y),
+                    maxx: bounds.maxx.max(vertex.x),
+                    maxy: bounds.maxy.max(vertex.y),
+                })
+            },
+            None,
+        );
 
         let params = Params::new(
             &self.images,
             transform,
             paint_flavor,
             &glyph_texture,
-            &scissor,
+            &clip.scissor,
             1.0,
             self.fringe_width,
             -1.0,
-        );
+        )
+        .with_clip(&clip);
 
         let mut cmd = Command::new(CommandType::Triangles { params });
         cmd.composite_operation = self.state().composite_operation;
@@ -2446,15 +2649,25 @@ where
     ///
     /// Call this at the end of each frame.
     pub fn flush(&mut self) {
+        self.upload_fill_masks();
         self.renderer
             .render_surfaceless(&mut self.images, &self.verts, std::mem::take(&mut self.commands));
         self.verts.clear();
+        for image in self.clip_masks.end_frame() {
+            self.images.remove(&mut self.renderer, image);
+        }
+        for image in self.fill_masks.end_frame() {
+            self.images.remove(&mut self.renderer, image);
+        }
+        self.release_pending_images();
         self.gradients
             .release_old_gradients(&mut self.images, &mut self.renderer);
-        self.release_shadow_images();
+        self.release_transient_images();
+        self.filter_work = self.layers.iter().map(|layer| layer.reserved_filter_work).sum();
         if let Some(atlas) = self.ephemeral_glyph_atlas.take() {
             atlas.clear(self);
         }
+        self.reissue_render_target_after_flush();
     }
 }
 
@@ -2492,6 +2705,19 @@ pub struct RecordingRenderer {
     pub last_commands: Rc<RefCell<Vec<renderer::Command>>>,
     /// Vertex buffer submitted with the last render call.
     pub last_verts: Rc<RefCell<Vec<renderer::Vertex>>>,
+    /// Texture limit to report; 0 means the trait default.
+    pub max_texture_size: usize,
+    /// Makes image allocation fail for resource-pressure tests.
+    pub fail_image_allocations: bool,
+    /// Makes image updates fail for upload-failure tests.
+    pub fail_image_updates: bool,
+    /// Number of image allocation attempts.
+    pub image_allocation_attempts: usize,
+    /// Number of backend images released.
+    pub image_deletion_count: usize,
+    /// When true, each image stores the pixels of every RGBA `update_image` call it
+    /// receives.
+    pub retain_image_updates: bool,
 }
 
 #[cfg(test)]
@@ -2516,7 +2742,14 @@ impl Renderer for RecordingRenderer {
     }
 
     fn alloc_image(&mut self, info: crate::ImageInfo) -> Result<Self::Image, ErrorKind> {
-        Ok(Self::Image { info })
+        self.image_allocation_attempts += 1;
+        if self.fail_image_allocations {
+            return Err(ErrorKind::UnknownError);
+        }
+        Ok(Self::Image {
+            info,
+            updates: Vec::new(),
+        })
     }
 
     fn create_image_from_native_texture(
@@ -2542,13 +2775,32 @@ impl Renderer for RecordingRenderer {
         x: usize,
         y: usize,
     ) -> Result<(), ErrorKind> {
-        data.check_update(&image.info, x, y)
+        data.check_update(&image.info, x, y)?;
+        if self.fail_image_updates {
+            return Err(ErrorKind::UnknownError);
+        }
+        if let (true, crate::ImageSource::Rgba(pixels)) = (self.retain_image_updates, data) {
+            let (pixels, width, height) = pixels.to_contiguous_buf();
+            let pixels = imgref::ImgVec::new(pixels.into_owned(), width, height);
+            image.updates.push((x, y, pixels));
+        }
+        Ok(())
     }
 
-    fn delete_image(&mut self, _image: Self::Image, _image_id: crate::ImageId) {}
+    fn delete_image(&mut self, _image: Self::Image, _image_id: crate::ImageId) {
+        self.image_deletion_count += 1;
+    }
 
     fn screenshot(&mut self) -> Result<imgref::ImgVec<rgb::RGBA8>, ErrorKind> {
         Ok(imgref::ImgVec::new(Vec::new(), 0, 0))
+    }
+
+    fn max_texture_size(&self) -> usize {
+        if self.max_texture_size == 0 {
+            8192
+        } else {
+            self.max_texture_size
+        }
     }
 }
 
@@ -2557,6 +2809,70 @@ impl Renderer for RecordingRenderer {
 #[derive(Debug)]
 pub struct DummyImage {
     info: ImageInfo,
+    /// The destination `(x, y)` and the pixels of each RGBA `update_image` call on this image,
+    /// in call order. Empty unless `RecordingRenderer::retain_image_updates` is set.
+    updates: Vec<(usize, usize, imgref::ImgVec<rgb::RGBA8>)>,
+}
+
+/// A contour longer than a fan may be goes as several fans about its first
+/// vertex, none longer than [`MAX_FAN`], each starting at the last rim vertex
+/// of the one before: together they make the contour's own fan's triangles.
+#[test]
+fn a_contour_longer_than_a_fan_goes_as_several() {
+    use renderer::CommandType;
+
+    let renderer = RecordingRenderer::default();
+    let recorded_commands = renderer.last_commands.clone();
+    let recorded_verts = renderer.last_verts.clone();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(1024, 1024, 1.0);
+    // Further apart than two points that count as one.
+    let points = 2 * MAX_FAN + 100;
+    let mut path = Path::new();
+    for i in 0..points {
+        let a = i as f32 / points as f32 * std::f32::consts::TAU;
+        let (x, y) = (512.0 + 450.0 * a.cos(), 512.0 + 450.0 * a.sin());
+        if i == 0 {
+            path.move_to(x, y);
+        } else {
+            path.line_to(x, y);
+        }
+    }
+    path.close();
+    canvas.fill_path(&path, &Paint::color(Color::white()));
+    let contour_fan = path
+        .cache(&Transform2D::identity(), canvas.tess_tol, canvas.dist_tol)
+        .contours[0]
+        .fill
+        .clone();
+    canvas.flush_to_output(());
+
+    let commands = recorded_commands.borrow();
+    let verts = recorded_verts.borrow();
+    let fill = commands
+        .iter()
+        .find(|command| {
+            matches!(
+                command.cmd_type,
+                CommandType::ConvexFill { .. } | CommandType::ConcaveFill { .. }
+            )
+        })
+        .unwrap();
+    let fans: Vec<&[Vertex]> = fill
+        .drawables
+        .iter()
+        .filter_map(|drawable| drawable.fill_verts)
+        .map(|(start, count)| &verts[start..start + count])
+        .collect();
+    assert_eq!(fans.len(), 3);
+    assert!(fans.iter().all(|fan| fan.len() <= MAX_FAN));
+    let mut joined = fans[0].to_vec();
+    for fan in &fans[1..] {
+        assert_eq!(fan[0], joined[0], "about the same first vertex");
+        assert_eq!(fan[1], *joined.last().unwrap(), "from where the last fan ended");
+        joined.extend_from_slice(&fan[2..]);
+    }
+    assert_eq!(joined, contour_fan);
 }
 
 #[test]
@@ -2637,12 +2953,29 @@ fn assert_approx_eq(actual: f32, expected: f32) {
     );
 }
 
+/// Fills across the canvas with a path that is no rect, so that whatever
+/// scissor is set cuts the fill and the draw carries it.
 #[cfg(test)]
-fn fill_rect_with_current_scissor(canvas: &mut Canvas<RecordingRenderer>) {
-    let mut path = Path::new();
-    path.rect(0.0, 0.0, 100.0, 100.0);
+fn fill_across_current_scissor(canvas: &mut Canvas<RecordingRenderer>) {
+    let path = clip::notched_rect(0.0, 0.0, 100.0, 100.0);
     canvas.fill_path(&path, &Paint::color(Color::white()));
     canvas.flush_to_output(());
+}
+
+#[test]
+fn failed_image_reallocation_preserves_the_existing_image() {
+    let mut canvas = Canvas::new(RecordingRenderer::default()).unwrap();
+    let image = canvas
+        .create_image_empty(32, 24, PixelFormat::Rgba8, ImageFlags::empty())
+        .unwrap();
+    canvas.renderer.fail_image_allocations = true;
+
+    assert!(canvas
+        .realloc_image(image, 64, 48, PixelFormat::Rgba8, ImageFlags::empty())
+        .is_err());
+    let info = canvas.image_info(image).unwrap();
+    assert_eq!((info.width(), info.height()), (32, 24));
+    assert_eq!(canvas.renderer.image_deletion_count, 0);
 }
 
 #[test]
@@ -2653,7 +2986,7 @@ fn rounded_scissor_radius_is_clamped_into_render_params() {
     canvas.set_size(100, 100, 1.0);
 
     canvas.rounded_scissor(10.0, 10.0, 40.0, 20.0, 100.0);
-    fill_rect_with_current_scissor(&mut canvas);
+    fill_across_current_scissor(&mut canvas);
 
     let commands = recorded_commands.borrow();
     let params = first_draw_params(&commands);
@@ -2701,7 +3034,7 @@ fn intersect_scissor_preserves_contained_rounded_clip() {
 
     canvas.rounded_scissor(10.0, 10.0, 40.0, 20.0, 8.0);
     canvas.intersect_scissor(0.0, 0.0, 100.0, 100.0);
-    fill_rect_with_current_scissor(&mut canvas);
+    fill_across_current_scissor(&mut canvas);
 
     let commands = recorded_commands.borrow();
     let params = first_draw_params(&commands);
@@ -2718,7 +3051,7 @@ fn intersect_scissor_inside_rounded_clip_uses_rectangular_inner_clip() {
 
     canvas.rounded_scissor(10.0, 10.0, 80.0, 80.0, 20.0);
     canvas.intersect_scissor(35.0, 35.0, 20.0, 20.0);
-    fill_rect_with_current_scissor(&mut canvas);
+    fill_across_current_scissor(&mut canvas);
 
     let commands = recorded_commands.borrow();
     let params = first_draw_params(&commands);
@@ -2737,7 +3070,7 @@ fn intersect_rounded_scissor_partial_overlap_falls_back_to_rectangular_intersect
 
     canvas.rounded_scissor(10.0, 10.0, 40.0, 40.0, 12.0);
     canvas.intersect_rounded_scissor(35.0, 35.0, 40.0, 40.0, 12.0);
-    fill_rect_with_current_scissor(&mut canvas);
+    fill_across_current_scissor(&mut canvas);
 
     let commands = recorded_commands.borrow();
     let params = first_draw_params(&commands);
@@ -2757,7 +3090,7 @@ fn rounded_scissor_captures_transform_at_clip_time() {
     canvas.scale(2.0, 3.0);
     canvas.rounded_scissor(10.0, 10.0, 20.0, 10.0, 4.0);
     canvas.reset_transform();
-    fill_rect_with_current_scissor(&mut canvas);
+    fill_across_current_scissor(&mut canvas);
 
     let commands = recorded_commands.borrow();
     let params = first_draw_params(&commands);
@@ -2778,7 +3111,7 @@ fn intersect_rounded_scissor_uses_inner_radius_when_contained() {
 
     canvas.scissor(0.0, 0.0, 100.0, 100.0);
     canvas.intersect_rounded_scissor(10.0, 10.0, 40.0, 20.0, 100.0);
-    fill_rect_with_current_scissor(&mut canvas);
+    fill_across_current_scissor(&mut canvas);
 
     let commands = recorded_commands.borrow();
     let params = first_draw_params(&commands);
@@ -2990,14 +3323,21 @@ fn fill_text_selects_atlas_or_path_rendering() {
         // Atlas rendering blits glyphs from a glyph texture; outline rendering only
         // ever emits plain path fills (note: atlas cache misses also emit path fills
         // while rasterizing into the atlas, so the glyph texture is the reliable
-        // discriminator, not the absence of fills).
-        let used_atlas = commands.iter().any(|c| !matches!(c.glyph_texture, GlyphTexture::None));
-        let filled_outlines = commands.iter().any(|c| {
-            matches!(c.glyph_texture, GlyphTexture::None)
-                && matches!(
-                    c.cmd_type,
-                    CommandType::ConvexFill { .. } | CommandType::ConcaveFill { .. }
-                )
+        // discriminator, not the absence of fills). A thin outline is filled through
+        // the atlas of fill masks, which is no glyph atlas.
+        let fill_masks = canvas.fill_masks.image;
+        let used_atlas = commands.iter().any(|c| match c.glyph_texture {
+            GlyphTexture::None => false,
+            GlyphTexture::AlphaMask(id) => Some(id) != fill_masks,
+            GlyphTexture::ColorTexture(_) => true,
+        });
+        let filled_outlines = commands.iter().any(|c| match c.glyph_texture {
+            GlyphTexture::None => matches!(
+                c.cmd_type,
+                CommandType::ConvexFill { .. } | CommandType::ConcaveFill { .. }
+            ),
+            GlyphTexture::AlphaMask(id) => Some(id) == fill_masks,
+            GlyphTexture::ColorTexture(_) => false,
         });
 
         match expect {
@@ -3010,309 +3350,320 @@ fn fill_text_selects_atlas_or_path_rendering() {
     }
 }
 
-/// The Canvas 2D shadow attributes must start at their spec-mandated defaults:
-/// a fully transparent shadow color, zero blur and zero offset.
+/// A thin glyph drawn through a coverage mask gets the run's paint matrix too,
+/// not the glyph's own placement.
+#[cfg(feature = "textlayout")]
 #[test]
-fn shadow_attribute_defaults_match_spec() {
-    let canvas = Canvas::new(RecordingRenderer::default()).unwrap();
-    let state = canvas.state();
-
-    assert_eq!(state.shadow_color, Color::rgbaf(0.0, 0.0, 0.0, 0.0));
-    assert_eq!(state.shadow_blur, 0.0);
-    assert_eq!(state.shadow_offset, [0.0, 0.0]);
-    // Transparent shadow color disables shadows entirely.
-    assert!(!canvas.shadow_enabled());
-
-    // Per the enable rule, even an opaque shadow color stays disabled while blur
-    // and offset are both zero (the shadow would land exactly under the shape).
-    let mut canvas = canvas;
-    canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
-    assert!(
-        !canvas.shadow_enabled(),
-        "opaque color alone (zero blur, zero offset) must not enable a shadow"
-    );
-    canvas.set_shadow_offset(1.0, 0.0);
-    assert!(
-        canvas.shadow_enabled(),
-        "a non-zero offset with an opaque color must enable the shadow"
-    );
-}
-
-/// `set_shadow_blur` ignores negative and non-finite values, matching the Canvas
-/// spec ("on setting, if the value is negative, infinite, or NaN, it must be
-/// ignored").
-#[test]
-fn shadow_blur_rejects_invalid_values() {
-    let mut canvas = Canvas::new(RecordingRenderer::default()).unwrap();
-
-    canvas.set_shadow_blur(4.0);
-    assert_eq!(canvas.state().shadow_blur, 4.0);
-
-    canvas.set_shadow_blur(-1.0);
-    assert_eq!(canvas.state().shadow_blur, 4.0, "negative blur must be ignored");
-
-    canvas.set_shadow_blur(f32::NAN);
-    assert_eq!(canvas.state().shadow_blur, 4.0, "NaN blur must be ignored");
-
-    canvas.set_shadow_blur(f32::INFINITY);
-    assert_eq!(canvas.state().shadow_blur, 4.0, "infinite blur must be ignored");
-}
-
-/// `set_shadow_offset` ignores non-finite values, preserving the previous offset.
-/// This matches the Canvas setter semantics already used by `set_shadow_blur` and
-/// keeps NaN/inf out of the offscreen geometry.
-#[test]
-fn shadow_offset_rejects_non_finite_values() {
-    let mut canvas = Canvas::new(RecordingRenderer::default()).unwrap();
-
-    canvas.set_shadow_offset(10.0, -5.0);
-    assert_eq!(canvas.state().shadow_offset, [10.0, -5.0]);
-
-    canvas.set_shadow_offset(f32::NAN, 7.0);
-    assert_eq!(
-        canvas.state().shadow_offset,
-        [10.0, -5.0],
-        "NaN x must be ignored, previous offset preserved"
-    );
-
-    canvas.set_shadow_offset(3.0, f32::INFINITY);
-    assert_eq!(
-        canvas.state().shadow_offset,
-        [10.0, -5.0],
-        "infinite y must be ignored, previous offset preserved"
-    );
-
-    canvas.set_shadow_offset(f32::NEG_INFINITY, f32::NAN);
-    assert_eq!(
-        canvas.state().shadow_offset,
-        [10.0, -5.0],
-        "non-finite components must be ignored, previous offset preserved"
-    );
-
-    // A subsequent finite update still applies.
-    canvas.set_shadow_offset(2.0, 4.0);
-    assert_eq!(canvas.state().shadow_offset, [2.0, 4.0]);
-}
-
-/// Per the Canvas spec a shadow is painted only when the shadow color is
-/// non-transparent AND at least one of blur, offsetX or offsetY is non-zero. An
-/// opaque shadow color with zero blur and zero offset must therefore emit no
-/// offscreen shadow pass; flipping on a non-zero offset *or* a non-zero blur must
-/// re-enable it.
-#[test]
-fn shadow_enable_rule_requires_blur_or_offset() {
+fn thin_text_drawn_through_masks_uses_one_paint_matrix_for_the_run() {
     use renderer::CommandType;
 
-    let run = |configure: &dyn Fn(&mut Canvas<RecordingRenderer>)| -> bool {
+    // At 3 px under a scale of 2, the glyphs' outlines are thin fills, each
+    // drawn as a quad over its mask; the circle is drawn as a convex fill.
+    let renderer = RecordingRenderer::default();
+    let recorded = renderer.last_commands.clone();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(400, 400, 1.0);
+    let font = canvas
+        .add_font_mem(include_bytes!("../examples/assets/RobotoFlex-VariableFont.ttf"))
+        .expect("failed to load test font");
+    canvas.scale(2.0, 2.0);
+    let paint = Paint::linear_gradient(0.0, 0.0, 100.0, 0.0, Color::black(), Color::white());
+    let mut path = Path::new();
+    path.circle(50.0, 50.0, 40.0);
+    canvas.fill_path(&path, &paint);
+    canvas
+        .fill_text(10.0, 40.0, "MI", &paint.with_font(&[font]).with_font_size(3.0))
+        .unwrap();
+    canvas.flush_to_output(());
+
+    let commands = recorded.borrow();
+    let on_a_path = commands
+        .iter()
+        .find_map(|command| match &command.cmd_type {
+            CommandType::ConvexFill { params } => Some(params.paint_mat),
+            _ => None,
+        })
+        .expect("the circle's fill");
+    let on_text: Vec<_> = commands
+        .iter()
+        .filter_map(|command| match &command.cmd_type {
+            CommandType::Triangles { params } if params.glyph_texture_type == 1 => Some(params.paint_mat),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(on_text.len(), 2, "one masked quad for each glyph");
+    assert!(
+        on_text.iter().all(|matrix| *matrix == on_a_path),
+        "expected {on_a_path:?} for every glyph, got {on_text:?}"
+    );
+}
+
+/// Every glyph of text drawn as outlines gets the paint matrix that a path
+/// drawn under the same transform gets, so a gradient or image paint continues
+/// across the text and does not start again in each glyph.
+#[cfg(feature = "textlayout")]
+#[test]
+fn text_drawn_as_outlines_uses_one_paint_matrix_for_the_run() {
+    use renderer::CommandType;
+
+    // The paint matrices of the fills and strokes that `draw` records under a
+    // scale of 2. With a gradient or image paint under a scale, `draw_glyph_run`
+    // draws each glyph's outline instead of using the glyph atlas.
+    fn paint_matrices(draw: impl FnOnce(&mut Canvas<RecordingRenderer>, FontId, ImageId)) -> Vec<[f32; 12]> {
         let renderer = RecordingRenderer::default();
         let recorded = renderer.last_commands.clone();
         let mut canvas = Canvas::new(renderer).unwrap();
-        canvas.set_size(100, 100, 1.0);
-        configure(&mut canvas);
-
-        let mut path = Path::new();
-        path.rect(10.0, 10.0, 30.0, 30.0);
-        canvas.fill_path(&path, &Paint::color(Color::rgb(255, 0, 0)));
+        canvas.set_size(400, 400, 1.0);
+        let font = canvas
+            .add_font_mem(include_bytes!("../examples/assets/RobotoFlex-VariableFont.ttf"))
+            .expect("failed to load test font");
+        let image = canvas
+            .create_image_empty(64, 64, PixelFormat::Rgba8, ImageFlags::empty())
+            .unwrap();
+        canvas.scale(2.0, 2.0);
+        draw(&mut canvas, font, image);
         canvas.flush_to_output(());
 
         let commands = recorded.borrow();
-        commands
-            .iter()
-            .any(|c| matches!(c.cmd_type, CommandType::SetRenderTarget(RenderTarget::Image(_))))
-    };
-
-    // Opaque color, zero blur, zero offset: no shadow.
-    assert!(
-        !run(&|canvas| {
-            canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
-            canvas.set_shadow_blur(0.0);
-            canvas.set_shadow_offset(0.0, 0.0);
-        }),
-        "opaque color with zero blur and zero offset must not emit a shadow pass"
-    );
-
-    // A non-zero offsetX re-enables the shadow.
-    assert!(
-        run(&|canvas| {
-            canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
-            canvas.set_shadow_offset(5.0, 0.0);
-        }),
-        "a non-zero offset must re-enable the shadow"
-    );
-
-    // A non-zero offsetY re-enables the shadow.
-    assert!(
-        run(&|canvas| {
-            canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
-            canvas.set_shadow_offset(0.0, 5.0);
-        }),
-        "a non-zero offsetY must re-enable the shadow"
-    );
-
-    // A non-zero blur re-enables the shadow.
-    assert!(
-        run(&|canvas| {
-            canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
-            canvas.set_shadow_blur(4.0);
-        }),
-        "a non-zero blur must re-enable the shadow"
-    );
-
-    // Non-zero blur/offset but transparent color stays disabled.
-    assert!(
-        !run(&|canvas| {
-            canvas.set_shadow_color(Color::rgba(0, 0, 0, 0));
-            canvas.set_shadow_blur(4.0);
-            canvas.set_shadow_offset(5.0, 5.0);
-        }),
-        "transparent shadow color must keep the shadow disabled"
-    );
-}
-
-/// Shadow attributes are part of the drawing state and must be stacked by
-/// save()/restore() like every other state member.
-#[test]
-fn shadow_state_is_saved_and_restored() {
-    let mut canvas = Canvas::new(RecordingRenderer::default()).unwrap();
-
-    canvas.set_shadow_color(Color::rgba(10, 20, 30, 40));
-    canvas.set_shadow_blur(5.0);
-    canvas.set_shadow_offset(3.0, 7.0);
-
-    canvas.save();
-    canvas.set_shadow_color(Color::rgba(99, 99, 99, 99));
-    canvas.set_shadow_blur(11.0);
-    canvas.set_shadow_offset(-1.0, -2.0);
-    assert_eq!(canvas.state().shadow_blur, 11.0);
-    canvas.restore();
-
-    assert_eq!(canvas.state().shadow_color, Color::rgba(10, 20, 30, 40));
-    assert_eq!(canvas.state().shadow_blur, 5.0);
-    assert_eq!(canvas.state().shadow_offset, [3.0, 7.0]);
-}
-
-/// With a transparent shadow color (the default), filling a path must NOT emit
-/// any offscreen shadow work: no SetRenderTarget and no RenderFilteredImage
-/// commands, just the plain fill. This guards the "zero added overhead" rule.
-#[test]
-fn transparent_shadow_emits_no_offscreen_work() {
-    use renderer::CommandType;
-
-    let renderer = RecordingRenderer::default();
-    let recorded = renderer.last_commands.clone();
-    let mut canvas = Canvas::new(renderer).unwrap();
-    canvas.set_size(100, 100, 1.0);
-
-    // Shadow color left at its transparent default.
-    canvas.set_shadow_blur(10.0);
-    canvas.set_shadow_offset(5.0, 5.0);
-
-    let mut path = Path::new();
-    path.rect(10.0, 10.0, 30.0, 30.0);
-    canvas.fill_path(&path, &Paint::color(Color::rgb(255, 0, 0)));
-    canvas.flush_to_output(());
-
-    let commands = recorded.borrow();
-    assert!(
-        !commands
-            .iter()
-            .any(|c| matches!(c.cmd_type, CommandType::RenderFilteredImage { .. })),
-        "transparent shadow must not run the blur filter"
-    );
-    assert!(
-        !commands
-            .iter()
-            .any(|c| matches!(c.cmd_type, CommandType::SetRenderTarget(RenderTarget::Image(_)))),
-        "transparent shadow must not allocate an offscreen render target"
-    );
-}
-
-/// With an opaque shadow color and a non-zero blur, filling a path must emit the
-/// offscreen shadow pass: render the coverage into an image target and run the
-/// Gaussian blur filter before the final fill.
-#[test]
-fn opaque_shadow_emits_offscreen_blur_pass() {
-    use renderer::CommandType;
-
-    let renderer = RecordingRenderer::default();
-    let recorded = renderer.last_commands.clone();
-    let mut canvas = Canvas::new(renderer).unwrap();
-    canvas.set_size(100, 100, 1.0);
-
-    canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
-    canvas.set_shadow_blur(6.0);
-    canvas.set_shadow_offset(4.0, 4.0);
-
-    let mut path = Path::new();
-    path.rect(10.0, 10.0, 30.0, 30.0);
-    canvas.fill_path(&path, &Paint::color(Color::rgb(255, 0, 0)));
-    canvas.flush_to_output(());
-
-    let commands = recorded.borrow();
-    let filtered = commands.iter().find_map(|c| match c.cmd_type {
-        CommandType::RenderFilteredImage { filter, .. } => Some(filter),
-        _ => None,
-    });
-
-    match filtered {
-        Some(ImageFilter::GaussianBlur { sigma }) => {
-            // HTML drawing model: sigma == shadowBlur / 2.
-            assert!(
-                (sigma - 3.0).abs() < 1e-4,
-                "expected sigma 3.0 for blur 6.0, got {sigma}"
-            );
+        let mut matrices = Vec::new();
+        for command in commands.iter() {
+            match &command.cmd_type {
+                CommandType::ConvexFill { params } | CommandType::Stroke { params } => matrices.push(params.paint_mat),
+                CommandType::ConcaveFill { fill_params, .. } => matrices.push(fill_params.paint_mat),
+                CommandType::StencilStroke { params1, params2 } => {
+                    matrices.extend([params1.paint_mat, params2.paint_mat]);
+                }
+                _ => {}
+            }
         }
-        Some(other) => panic!("opaque shadow must run the Gaussian blur filter, got {other:?}"),
-        None => panic!("opaque shadow must run the Gaussian blur filter"),
+        matrices
     }
 
-    assert!(
-        commands
-            .iter()
-            .any(|c| matches!(c.cmd_type, CommandType::SetRenderTarget(RenderTarget::Image(_)))),
-        "opaque shadow must render coverage into an offscreen image target"
-    );
+    let cases: [(&str, fn(ImageId) -> Paint); 2] = [
+        ("gradient", |_| {
+            Paint::linear_gradient(0.0, 0.0, 100.0, 0.0, Color::black(), Color::white())
+        }),
+        ("image", |image| Paint::image(image, 0.0, 0.0, 64.0, 64.0, 0.0, 1.0)),
+    ];
+
+    for (case, make_paint) in cases {
+        let on_a_path = paint_matrices(|canvas, _font, image| {
+            let mut path = Path::new();
+            path.circle(50.0, 50.0, 40.0);
+            canvas.fill_path(&path, &make_paint(image));
+        });
+
+        for stroke in [false, true] {
+            // "M" is a concave outline and "I" a convex one, which a fill draws
+            // with different commands.
+            let on_text = paint_matrices(|canvas, font, image| {
+                let paint = make_paint(image).with_font(&[font]);
+                if stroke {
+                    canvas.stroke_text(10.0, 40.0, "MI", &paint).unwrap();
+                } else {
+                    canvas.fill_text(10.0, 40.0, "MI", &paint).unwrap();
+                }
+            });
+
+            // A fill records one paint matrix for each glyph and a stroke two.
+            assert_eq!(on_text.len(), if stroke { 4 } else { 2 }, "{case}, stroke {stroke}");
+            assert!(
+                on_text.iter().all(|matrix| *matrix == on_a_path[0]),
+                "{case}, stroke {stroke}: expected {:?} for every glyph, got {on_text:?}",
+                on_a_path[0]
+            );
+        }
+    }
 }
 
-/// Known limitation: the blur shader uses the true (spec) Gaussian weights but
-/// caps the kernel *reach* (tap count) at +/-24 px, because GLES 2.0 forbids
-/// non-constant loop bounds (see `render_gaussian_blur` in the OpenGL backend and
-/// `gaussian_blur_filter` in the wgpu backend). The reach covers the full +/-3
-/// sigma for sigma <= 8 (`shadowBlur` <= 16), so those blurs match the reference
-/// renderers exactly. For larger `shadowBlur` the reach is below 3 sigma, so the
-/// blur renders marginally tighter than spec (about 94% of the target sigma at
-/// `shadowBlur` 24). femtovg still records the un-clamped, spec-correct sigma
-/// (`shadowBlur / 2`) in the draw command; this test documents that.
+/// With a canvas shadow set, `fill_glyph_run()` and `stroke_glyph_run()` draw
+/// each outline glyph twice, once into the coverage image of the run's shadow
+/// and once on the canvas. Both draws sample an image paint at the vertex's
+/// position in user space, so the coverage image gets the alpha that the glyph
+/// has on the canvas.
+#[cfg(feature = "textlayout")]
 #[test]
-fn large_shadow_blur_records_unclamped_spec_sigma() {
+fn shadow_of_a_glyph_drawn_as_an_outline_uses_the_paint_of_the_run() {
+    use renderer::CommandType;
+
+    // The scale of the canvas transform. With an image paint under a scale,
+    // `draw_glyph_run` draws each glyph's outline instead of using the glyph
+    // atlas.
+    const SCALE: f32 = 2.0;
+    // How far, in image pixels, the position a draw samples may be from the
+    // vertex's position in user space. The two draws of a glyph go through
+    // different matrices, so they differ by rounding. A paint mapped through
+    // the glyph's own transform is sampled at the vertex's font-unit
+    // coordinates instead, which is far outside this tolerance.
+    const TOLERANCE: f32 = 0.01;
+
+    // The dash lengths are in font units, like the outline they are cut from.
+    let cases: [(&str, bool, &[f32]); 3] = [
+        ("fill", false, &[]),
+        ("stroke", true, &[]),
+        ("dashed stroke", true, &[300.0, 200.0]),
+    ];
+
+    for (case, stroke, dash) in cases {
+        let renderer = RecordingRenderer::default();
+        let recorded_commands = renderer.last_commands.clone();
+        let recorded_verts = renderer.last_verts.clone();
+        let mut canvas = Canvas::new(renderer).unwrap();
+        canvas.set_size(400, 400, 1.0);
+        let font = canvas
+            .add_font_mem(include_bytes!("../examples/assets/RobotoFlex-VariableFont.ttf"))
+            .expect("failed to load test font");
+        let image = canvas
+            .create_image_empty(64, 64, PixelFormat::Rgba8, ImageFlags::empty())
+            .unwrap();
+        // The paint puts the image's origin at the origin of user space, so a
+        // point is sampled at its own user-space coordinates.
+        let paint = Paint::image(image, 0.0, 0.0, 64.0, 64.0, 0.0, 1.0)
+            .with_font(&[font])
+            .with_line_dash(dash);
+        let glyphs = canvas.measure_text(10.0, 40.0, "MI", &paint).unwrap().glyphs;
+        let glyphs: Vec<_> = glyphs
+            .iter()
+            .map(|glyph| PositionedGlyph {
+                x: glyph.x,
+                y: glyph.y,
+                glyph_id: glyph.glyph_id,
+            })
+            .collect();
+
+        canvas.scale(SCALE, SCALE);
+        canvas.set_shadow_color(Color::black());
+        canvas.set_shadow_offset(4.0, 4.0);
+        if stroke {
+            canvas
+                .stroke_glyph_run(font, &[], glyphs.iter().cloned(), &paint)
+                .unwrap();
+        } else {
+            canvas
+                .fill_glyph_run(font, &[], glyphs.iter().cloned(), &paint)
+                .unwrap();
+        }
+        canvas.flush_to_output(());
+
+        // The first vertex of every draw with `paint`, and the position in the
+        // image that the draw samples there.
+        let commands = recorded_commands.borrow();
+        let verts = recorded_verts.borrow();
+        let mut draws = Vec::new();
+        for command in commands.iter().filter(|command| command.image == Some(image)) {
+            let params = match &command.cmd_type {
+                CommandType::ConvexFill { params } | CommandType::StencilStroke { params1: params, .. } => params,
+                CommandType::ConcaveFill { fill_params, .. } => fill_params,
+                other => panic!("{case}: unexpected draw {other:?}"),
+            };
+            let drawable = &command.drawables[0];
+            let (first, _) = drawable.fill_verts.or(drawable.stroke_verts).unwrap();
+            let vertex = verts[first];
+            let [a, b, _, _, c, d, _, _, x, y, ..] = params.paint_mat;
+            let sampled = [a * vertex.x + c * vertex.y + x, b * vertex.x + d * vertex.y + y];
+            draws.push((vertex, sampled));
+        }
+
+        // Every glyph is drawn into the coverage image of the run's shadow, and
+        // then every glyph on the canvas.
+        assert_eq!(draws.len(), 2 * glyphs.len(), "{case}");
+        let (shadow_draws, canvas_draws) = draws.split_at(glyphs.len());
+        for ((glyph, shadow_draw), canvas_draw) in glyphs.iter().zip(shadow_draws).zip(canvas_draws) {
+            let (on_canvas, _) = canvas_draw;
+            let in_user_space = [on_canvas.x / SCALE, on_canvas.y / SCALE];
+            // The outline is at the glyph's position. "M" and "I" are smaller
+            // than the font size, so the vertex is within that distance of the
+            // glyph's origin.
+            assert!(
+                (in_user_space[0] - glyph.x).abs() < paint.font_size()
+                    && (in_user_space[1] - glyph.y).abs() < paint.font_size(),
+                "{case}: the glyph at {:?} has a vertex at {in_user_space:?}",
+                (glyph.x, glyph.y)
+            );
+            for (draw, (_, sampled)) in ["shadow coverage", "canvas"].iter().zip([shadow_draw, canvas_draw]) {
+                assert!(
+                    (sampled[0] - in_user_space[0]).abs() < TOLERANCE
+                        && (sampled[1] - in_user_space[1]).abs() < TOLERANCE,
+                    "{case}, {draw}: a vertex at {in_user_space:?} samples the image at {sampled:?}"
+                );
+            }
+        }
+    }
+}
+
+/// A shadow blur above the shader's per-pass bound (sigma 8, the 24-tap
+/// GLES 2.0 loop) runs down the planner's pyramid: `shadowBlur` 40 is sigma
+/// 20, so the coverage is halved twice, blurred by 5 at a quarter size and
+/// scaled back up into the blurred image, which the composite reads. The
+/// offscreen pads by the true reach, 62 px per side, not the 26 of the
+/// per-pass bound, and the pyramid's images are a fraction of it.
+#[test]
+fn a_large_shadow_blur_runs_down_the_pyramid() {
     use renderer::CommandType;
 
     let renderer = RecordingRenderer::default();
     let recorded = renderer.last_commands.clone();
     let mut canvas = Canvas::new(renderer).unwrap();
-    canvas.set_size(100, 100, 1.0);
+    canvas.set_size(300, 300, 1.0);
 
-    // shadowBlur 40 => spec sigma 20, well past the renderers' 8.0 clamp.
     canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
     canvas.set_shadow_blur(40.0);
 
     let mut path = Path::new();
-    path.rect(40.0, 40.0, 20.0, 20.0);
-    canvas.fill_path(&path, &Paint::color(Color::rgb(255, 0, 0)));
+    path.rect(100.0, 100.0, 20.0, 20.0);
+    let mut paint = Paint::color(Color::rgb(255, 0, 0));
+    paint.set_anti_alias(false);
+    canvas.fill_path(&path, &paint);
+    // The coverage and blurred images, 20 + 2 * 62 = 144 px square (shadow
+    // images round to 8), the level the coverage is halved into, and the
+    // second level with the blur's target and scratch.
+    let size_of: HashMap<ImageId, usize> = canvas
+        .transients
+        .images
+        .iter()
+        .map(|&id| (id, canvas.image_size(id).unwrap().0))
+        .collect();
+    let mut sizes: Vec<usize> = size_of.values().copied().collect();
+    sizes.sort();
+    assert_eq!(sizes, [36, 36, 36, 72, 144, 144]);
     canvas.flush_to_output(());
 
     let commands = recorded.borrow();
-    let sigma = commands.iter().find_map(|c| match c.cmd_type {
-        CommandType::RenderFilteredImage {
-            filter: ImageFilter::GaussianBlur { sigma },
-            ..
-        } => Some(sigma),
-        _ => None,
-    });
+    let passes: Vec<(ImageId, ImageId, ImageFilter)> = commands
+        .iter()
+        .filter_map(|c| match c.cmd_type {
+            CommandType::RenderFilteredImage { target_image, filter } => {
+                Some((c.image.expect("a pass reads an image"), target_image, filter))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(passes.len(), 4);
+    for (i, (src, dst, filter)) in passes.iter().enumerate() {
+        let (expected_src, expected_dst) = [(144, 72), (72, 36), (36, 36), (36, 144)][i];
+        assert_eq!((size_of[src], size_of[dst]), (expected_src, expected_dst), "pass {i}");
+        match filter {
+            ImageFilter::GaussianBlur { sigma_x, sigma_y } => {
+                assert_eq!(i, 2);
+                assert_eq!(sigma_x, sigma_y, "a shadow blurs both axes alike");
+                assert!((sigma_x - 5.0).abs() < 1e-5, "{sigma_x}");
+            }
+            ImageFilter::ColorMatrix { matrix } => assert_eq!(*matrix, ImageFilter::IDENTITY_MATRIX),
+            other => panic!("{other:?}"),
+        }
+        if i > 0 {
+            assert_eq!(*src, passes[i - 1].1, "each pass reads the previous pass's target");
+        }
+    }
+    let composite = commands
+        .iter()
+        .rev()
+        .find(|c| c.image.is_some() && !matches!(c.cmd_type, CommandType::RenderFilteredImage { .. }))
+        .expect("the shadow composite");
     assert_eq!(
-        sigma,
-        Some(20.0),
-        "the command must carry the unclamped spec sigma (blur/2); the 8.0 clamp is a renderer-side limitation"
+        composite.image,
+        Some(passes[3].1),
+        "the composite reads the image the pyramid scaled back up into"
     );
 }
 
@@ -3363,6 +3714,76 @@ fn outline_text_shadow_pass_count_is_glyph_count_invariant() {
     );
 }
 
+/// With a canvas shadow set, `fill_glyph_run()` and `stroke_glyph_run()` cast
+/// one shadow for the run, as `fill_text()` does, whether the glyphs are drawn
+/// from the glyph atlas or as outlines.
+#[cfg(feature = "textlayout")]
+#[test]
+fn glyph_run_casts_one_shadow() {
+    use renderer::CommandType;
+
+    let target_switches = |text: &str, font_size: f32, stroke: bool, shadow: bool| -> usize {
+        let renderer = RecordingRenderer::default();
+        let recorded = renderer.last_commands.clone();
+        let mut canvas = Canvas::new(renderer).unwrap();
+        canvas.set_size(600, 300, 1.0);
+
+        let font = canvas
+            .add_font("examples/assets/RobotoFlex-VariableFont.ttf")
+            .expect("Font not found");
+        let paint = Paint::color(Color::white())
+            .with_font(&[font])
+            .with_font_size(font_size);
+        let glyphs: Vec<_> = canvas
+            .measure_text(20.0, 150.0, text, &paint)
+            .unwrap()
+            .glyphs
+            .iter()
+            .map(|glyph| PositionedGlyph {
+                x: glyph.x,
+                y: glyph.y,
+                glyph_id: glyph.glyph_id,
+            })
+            .collect();
+
+        if shadow {
+            canvas.set_shadow_color(Color::rgba(0, 0, 0, 255));
+            canvas.set_shadow_offset(10.0, 10.0);
+        }
+        if stroke {
+            canvas.stroke_glyph_run(font, &[], glyphs, &paint).unwrap();
+        } else {
+            canvas.fill_glyph_run(font, &[], glyphs, &paint).unwrap();
+        }
+        canvas.flush_to_output(());
+
+        let commands = recorded.borrow();
+        commands
+            .iter()
+            .filter(|c| matches!(c.cmd_type, CommandType::SetRenderTarget(RenderTarget::Image(_))))
+            .count()
+    };
+    // Drawing glyph masks into the atlas also switches the render target, so
+    // count the switches the shadow adds.
+    let shadow_target_switches = |text: &str, font_size: f32, stroke: bool| {
+        target_switches(text, font_size, stroke, true) - target_switches(text, font_size, stroke, false)
+    };
+
+    // At 20 px the glyphs are drawn from the atlas, and at 100 px, above the
+    // atlas cap, as outlines.
+    for font_size in [20.0, 100.0] {
+        for stroke in [false, true] {
+            let single = shadow_target_switches("I", font_size, stroke);
+            let many = shadow_target_switches("Illuminate", font_size, stroke);
+            assert!(single > 0, "{font_size} px, stroke {stroke}: no shadow pass");
+            assert_eq!(
+                single, many,
+                "{font_size} px, stroke {stroke}: one shadow pass per glyph"
+            );
+        }
+    }
+}
+
 /// Fills `path` once on `canvas`, flushes, and returns the raw bytes of the
 /// vertex buffer handed to the renderer for that single fill.
 #[cfg(test)]
@@ -3410,6 +3831,34 @@ fn shared_arc_path_across_canvases_keeps_tessellation_isolated() {
     assert_eq!(a1, a2, "canvas A geometry changed after canvas B used the shared path");
     assert_eq!(b1, b2, "canvas B geometry changed after canvas A used the shared path");
     assert_ne!(a1, b1, "the two transforms must produce different geometry");
+}
+
+/// A path filled, then extended, then filled again under the same transform
+/// is filled as the extended path: the same vertices as a path built with
+/// every verb before its first fill.
+#[test]
+fn a_path_extended_after_a_fill_is_filled_as_the_extended_path() {
+    let renderer = RecordingRenderer::default();
+    let verts = renderer.last_verts.clone();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(100, 100, 1.0);
+
+    let mut path = Path::new();
+    path.rect(0.0, 0.0, 10.0, 10.0);
+    let before = record_fill_bytes(&mut canvas, &verts, &path);
+    path.rect(20.0, 0.0, 10.0, 10.0);
+    let after = record_fill_bytes(&mut canvas, &verts, &path);
+
+    let mut both = Path::new();
+    both.rect(0.0, 0.0, 10.0, 10.0);
+    both.rect(20.0, 0.0, 10.0, 10.0);
+    let fresh = record_fill_bytes(&mut canvas, &verts, &both);
+
+    assert_ne!(fresh, before, "one rect and two rects must not fill the same");
+    assert_eq!(
+        after, fresh,
+        "the extended path was not filled as a path built with both rects"
+    );
 }
 
 /// Switching the render target between an image and the screen must not
@@ -4187,6 +4636,132 @@ fn letter_spacing_does_not_collide_in_the_shaping_cache() {
         spaced > plain + 4.0 * 6.0 - 1.0,
         "letter spacing must widen the cached word: plain {plain}, spaced {spaced}"
     );
+
+    let tight = canvas
+        .measure_text(20.0, 100.0, "cache", &base.clone().with_letter_spacing(-2.0))
+        .unwrap()
+        .width();
+    assert!(
+        tight < plain - 4.0 * 2.0 + 1.0,
+        "negative letter spacing must narrow the cached word: plain {plain}, tight {tight}"
+    );
+
+    let slight = canvas
+        .measure_text(20.0, 100.0, "cache", &base.clone().with_letter_spacing(0.05))
+        .unwrap()
+        .width();
+    assert!(
+        slight > plain + 4.0 * 0.05,
+        "letter spacing under a tenth must widen the cached word: plain {plain}, slight {slight}"
+    );
+}
+
+/// The shaped-word cache keys on the exact font size: `shape_word` scales
+/// every advance by it, so the same word measured at two sizes must not
+/// share an entry.
+#[cfg(feature = "textlayout")]
+#[test]
+fn font_size_does_not_collide_in_the_shaping_cache() {
+    let renderer = RecordingRenderer::default();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(1000, 300, 1.0);
+    let font_id = canvas
+        .add_font_mem(include_bytes!("../examples/assets/RobotoFlex-VariableFont.ttf"))
+        .expect("failed to load test font");
+    let base = Paint::color(Color::black()).with_font(&[font_id]);
+
+    let at_30 = canvas
+        .measure_text(20.0, 100.0, "cache", &base.clone().with_font_size(30.0))
+        .unwrap()
+        .width();
+    let at_30_09 = canvas
+        .measure_text(20.0, 100.0, "cache", &base.with_font_size(30.09))
+        .unwrap()
+        .width();
+    // Advances are linear in the font size, so the width must grow by the same ratio.
+    assert!(
+        (at_30_09 / at_30 - 30.09 / 30.0).abs() < 1e-4,
+        "a size in the same tenth as a cached one must get its own width: at 30 {at_30}, at 30.09 {at_30_09}"
+    );
+}
+
+/// The run cache keys on the exact `max_width`: `shape_run` breaks where the
+/// accumulated width reaches it, so the same text broken at two widths must
+/// not share an entry.
+#[cfg(feature = "textlayout")]
+#[test]
+fn max_width_does_not_collide_in_the_shaping_cache() {
+    let renderer = RecordingRenderer::default();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(1000, 300, 1.0);
+    let font_id = canvas
+        .add_font_mem(include_bytes!("../examples/assets/RobotoFlex-VariableFont.ttf"))
+        .expect("failed to load test font");
+    let paint = Paint::color(Color::black()).with_font(&[font_id]).with_font_size(30.0);
+
+    let text = "cache key";
+    let width = canvas.measure_text(20.0, 100.0, text, &paint).unwrap().width();
+    // The two widths below must lie in the same whole unit, or the test
+    // passes without exercising the collision.
+    assert!(
+        width.fract() > 0.1 && width.fract() < 0.9,
+        "pick a text whose width is not within 0.1 of a whole number: {width}"
+    );
+
+    let broken = canvas.break_text(width - 0.1, text, &paint).unwrap();
+    let whole = canvas.break_text(width + 0.1, text, &paint).unwrap();
+    assert!(
+        broken < text.len(),
+        "the text must not fit in {}: broke at {broken}",
+        width - 0.1
+    );
+    assert_eq!(
+        whole,
+        text.len(),
+        "the whole text fits in {} and must not get the break position cached for {}",
+        width + 0.1,
+        width - 0.1
+    );
+}
+
+/// Adding a font clears the run shaping cache. A paint falls back to every
+/// registered font for characters its own fonts lack, so text measured before
+/// the font was added is shaped again and takes its glyphs from that font.
+#[cfg(feature = "textlayout")]
+#[test]
+fn text_measured_before_a_font_is_added_takes_its_glyphs_from_that_font() {
+    let renderer = RecordingRenderer::default();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(1000, 300, 1.0);
+    let roboto = canvas
+        .add_font_mem(include_bytes!("../examples/assets/RobotoFlex-VariableFont.ttf"))
+        .expect("failed to load test font");
+    let paint = Paint::color(Color::black()).with_font(&[roboto]).with_font_size(30.0);
+    let arabic = "\u{0633}\u{0644}\u{0627}\u{0645}";
+    let font_ids = |canvas: &Canvas<RecordingRenderer>| {
+        canvas
+            .measure_text(20.0, 100.0, arabic, &paint)
+            .unwrap()
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.font_id)
+            .collect::<Vec<_>>()
+    };
+
+    let before = font_ids(&canvas);
+    assert!(
+        !before.is_empty() && before.iter().all(|&font_id| font_id == roboto),
+        "with only Roboto Flex registered, the Arabic text must be shaped with it: {before:?}"
+    );
+
+    let amiri = canvas
+        .add_font_mem(include_bytes!("../examples/assets/amiri-regular.ttf"))
+        .expect("failed to load test font");
+    let after = font_ids(&canvas);
+    assert!(
+        !after.is_empty() && after.iter().all(|&font_id| font_id == amiri),
+        "after Amiri is added, the Arabic text must take its glyphs from it: {after:?}"
+    );
 }
 
 /// Bidi control characters are default-ignorable: isolate marks (U+2066..
@@ -4394,63 +4969,248 @@ fn layout_stores_the_run_baseline() {
     }
 }
 
-/// Rebuilds a sfnt/TrueType font byte buffer with the named 4-byte tables
-/// removed, so the fallback metric paths can be exercised on real assets.
-#[cfg(all(test, feature = "textlayout"))]
-fn font_without_tables(data: &[u8], drop_tags: &[&[u8; 4]]) -> Vec<u8> {
-    let read_u16 = |buf: &[u8], at: usize| u16::from_be_bytes([buf[at], buf[at + 1]]);
-    let read_u32 =
-        |buf: &[u8], at: usize| u32::from_be_bytes([buf[at], buf[at + 1], buf[at + 2], buf[at + 3]]) as usize;
+/// Chain execution stays within a bounded transient budget: a run of
+/// range-safe color matrices folds to a single pass (zero transient images);
+/// a matrix that can leave [0, 1] keeps its own clamped pass rather than
+/// folding (see [`ImageFilter::fold_with`]); and any chain - however long,
+/// whatever the mix - ping-pongs between at most two transient scratches. The
+/// WebKit-600MB-intermediates class (bug 218422) made into an invariant.
+#[test]
+fn filter_chain_bounds_transient_images() {
+    use crate::ImageFilter;
+    let make = || {
+        let renderer = RecordingRenderer::default();
+        let mut canvas = Canvas::new(renderer).unwrap();
+        canvas.set_size(64, 64, 1.0);
+        let src = canvas
+            .create_image_empty(16, 16, PixelFormat::Rgba8, ImageFlags::empty())
+            .unwrap();
+        let dst = canvas
+            .create_image_empty(16, 16, PixelFormat::Rgba8, ImageFlags::FLIP_Y)
+            .unwrap();
+        (canvas, src, dst)
+    };
 
-    let num_tables = read_u16(data, 4) as usize;
+    // A run of range-safe color ops folds into ONE pass: no scratches at all.
+    // Each matrix but the last stays within [0, 1]; the last may overflow
+    // (brightness(1.5)) since its output is clamped at the end of the pass.
+    let (mut canvas, src, dst) = make();
+    canvas
+        .filter_image_chain(
+            dst,
+            &[
+                ImageFilter::saturate(0.7),
+                ImageFilter::grayscale(0.5),
+                ImageFilter::opacity(0.8),
+                ImageFilter::invert(1.0),
+                ImageFilter::brightness(1.5),
+            ],
+            src,
+        )
+        .unwrap();
+    assert_eq!(
+        canvas.transients.images.len(),
+        0,
+        "folded range-safe color run must not allocate scratches"
+    );
 
-    // Collect (tag, offset, length) for the tables we keep, in directory order.
-    let mut kept: Vec<([u8; 4], usize, usize)> = Vec::new();
-    for i in 0..num_tables {
-        let rec = 12 + i * 16;
-        let tag = [data[rec], data[rec + 1], data[rec + 2], data[rec + 3]];
-        if drop_tags.iter().any(|d| **d == tag) {
-            continue;
-        }
-        let offset = read_u32(data, rec + 8);
-        let length = read_u32(data, rec + 12);
-        kept.push((tag, offset, length));
+    // An overflow-capable matrix breaks the fold so its clamp is preserved,
+    // but the chain still caps at two scratches. brightness(2) cannot fold
+    // into the next matrix, and sepia(1)*saturate(0) is not range-safe either,
+    // so this runs as three passes ping-ponging through two scratches.
+    let (mut canvas, src, dst) = make();
+    canvas
+        .filter_image_chain(
+            dst,
+            &[
+                ImageFilter::brightness(2.0),
+                ImageFilter::saturate(0.0),
+                ImageFilter::sepia(1.0),
+                ImageFilter::invert(1.0),
+            ],
+            src,
+        )
+        .unwrap();
+    assert_eq!(
+        canvas.transients.images.len(),
+        2,
+        "overflow-broken folds still ping-pong between at most two scratches"
+    );
+
+    // A long mixed chain (blurs break the folds) caps at two ping-pong
+    // scratches plus one horizontal blur scratch.
+    let (mut canvas, src, dst) = make();
+    canvas
+        .filter_image_chain(
+            dst,
+            &[
+                ImageFilter::gaussian_blur(1.0),
+                ImageFilter::sepia(1.0),
+                ImageFilter::gaussian_blur(2.0),
+                ImageFilter::invert(1.0),
+                ImageFilter::gaussian_blur(1.5),
+                ImageFilter::brightness(1.3),
+            ],
+            src,
+        )
+        .unwrap();
+    assert_eq!(
+        canvas.transients.images.len(),
+        3,
+        "mixed chains use one scratch pair and one blur scratch"
+    );
+    assert_eq!(
+        canvas.transients.free.len(),
+        3,
+        "a finished chain returns all scratches"
+    );
+
+    // The empty chain is a single identity pass - a copy, no scratches.
+    let (mut canvas, src, dst) = make();
+    canvas.filter_image_chain(dst, &[], src).unwrap();
+    assert_eq!(canvas.transients.images.len(), 0);
+}
+
+/// A layer's root origin accumulates the shift of every enclosing capture -
+/// what places a root-device-space mask rect at any depth - while its local
+/// origin stays the composite's: an outer capture from (16, 8) and a middle
+/// one from (24, 16), which is (8, 8) of the outer store, put the inner
+/// store's (0, 0) at root (24, 16). A pass-through layer draws on the
+/// enclosing target unchanged, so it carries that target's root origin along
+/// rather than adding the origin of the store it never got.
+#[test]
+fn nested_layers_accumulate_their_root_origin() {
+    use crate::ImageFilter;
+    let renderer = RecordingRenderer::default();
+    let mut canvas = Canvas::new(renderer).unwrap();
+    canvas.set_size(64, 64, 1.0);
+    // Three 64 x 64 stores: the deepest nesting below.
+    canvas.set_transient_image_budget(4 * 64 * 64 * 4);
+    let origins = |canvas: &Canvas<RecordingRenderer>| {
+        let record = canvas.layers.last().unwrap();
+        (record.origin, record.root_origin)
+    };
+    canvas.save();
+    canvas.scissor(16.0, 8.0, 48.0, 56.0);
+    assert!(canvas.begin_layer(&LayerEffects::new()));
+    assert_eq!(origins(&canvas), ((16.0, 8.0), (16.0, 8.0)));
+    // Device space inside the capture is shifted by (-16, -8).
+    canvas.scissor(24.0, 16.0, 40.0, 48.0);
+    assert!(canvas.begin_layer(&LayerEffects::new()));
+    assert_eq!(origins(&canvas), ((8.0, 8.0), (24.0, 16.0)));
+    assert!(canvas.begin_layer(&LayerEffects::new()));
+    assert_eq!(origins(&canvas), ((0.0, 0.0), (24.0, 16.0)));
+    canvas.end_layer();
+    canvas.end_layer();
+
+    // Over the whole outer store, a blurred middle layer wants a 128 x 128
+    // store the budget refuses: it passes through at its padded origin
+    // without shifting anything, and the layer inside it still captures
+    // against the outer store.
+    canvas.reset_scissor();
+    let blur = ImageFilter::gaussian_blur(4.0);
+    assert!(!canvas.begin_layer(&LayerEffects::new().with_filters(&[blur])));
+    assert_eq!(origins(&canvas), ((-14.0, -14.0), (16.0, 8.0)));
+    assert!(canvas.begin_layer(&LayerEffects::new()));
+    assert_eq!(origins(&canvas), ((0.0, 0.0), (16.0, 8.0)));
+    canvas.end_layer();
+    canvas.end_layer();
+    canvas.end_layer();
+    canvas.restore();
+}
+
+/// A stroke thinner than the fringe is drawn at fringe width with its alpha
+/// scaled by the width ratio itself - the linear coverage Skia's hairline
+/// path applies - not by its square, the nanovg heuristic that left a 0.4 px
+/// line at 16% (`tests/hairline_stroke_wgpu.rs` measures the rendered
+/// coverage). The scale is applied to the paint before the `Params` are
+/// built, so pinning it on the recorded command holds for every backend.
+#[test]
+fn sub_pixel_stroke_alpha_scales_linearly_with_width() {
+    /// The stroke `Params` recorded for a horizontal white line of
+    /// `line_width` user units on a canvas at `dpi`, drawn as a stencilled
+    /// stroke (the default) or a plain one.
+    fn stroke_params(line_width: f32, dpi: f32, stencil: bool) -> Params {
+        let renderer = RecordingRenderer::default();
+        let recorded = renderer.last_commands.clone();
+        let mut canvas = Canvas::new(renderer).unwrap();
+        canvas.set_size(100, 100, dpi);
+
+        let mut path = Path::new();
+        path.move_to(10.0, 50.0);
+        path.line_to(90.0, 50.0);
+        let paint = Paint::color(Color::white())
+            .with_line_width(line_width)
+            .with_anti_alias(true)
+            .with_stencil_strokes(stencil);
+        canvas.stroke_path(&path, &paint);
+        canvas.flush_to_output(());
+
+        let params = recorded
+            .borrow()
+            .iter()
+            .find_map(|cmd| match &cmd.cmd_type {
+                CommandType::Stroke { params } => Some(*params),
+                CommandType::StencilStroke { params1, params2 } => {
+                    // Both passes of a stencilled stroke carry the same paint.
+                    assert_eq!(params1.inner_col, params2.inner_col);
+                    Some(*params1)
+                }
+                _ => None,
+            })
+            .expect("expected a stroke command");
+        params
     }
 
-    let new_num = kept.len();
-    let mut out = Vec::new();
-    // Offset table header: keep the original sfnt version, fix up the table count
-    // and the binary-search hint fields for the new count.
-    out.extend_from_slice(&data[0..4]);
-    out.extend_from_slice(&(new_num as u16).to_be_bytes());
-    let max_pow2: u16 = 1 << (15 - (new_num.max(1) as u16).leading_zeros());
-    out.extend_from_slice(&(max_pow2 * 16).to_be_bytes());
-    out.extend_from_slice(&(15 - max_pow2.leading_zeros() as u16).to_be_bytes());
-    out.extend_from_slice(&((new_num as u16 * 16).wrapping_sub(max_pow2 * 16)).to_be_bytes());
+    let thin = stroke_params(0.4, 1.0, true);
+    let thick = stroke_params(0.8, 1.0, true);
 
-    let mut data_offset = 12 + new_num * 16;
-    let mut records = Vec::new();
-    let mut blobs = Vec::new();
-    for (tag, offset, length) in kept {
-        let padded = (length + 3) & !3;
-        let mut blob = data[offset..offset + length].to_vec();
-        blob.resize(padded, 0);
-        let mut rec = Vec::new();
-        rec.extend_from_slice(&tag);
-        rec.extend_from_slice(&0u32.to_be_bytes()); // checksum (ignored by ttf-parser)
-        rec.extend_from_slice(&(data_offset as u32).to_be_bytes());
-        rec.extend_from_slice(&(length as u32).to_be_bytes());
-        records.push(rec);
-        blobs.push(blob);
-        data_offset += padded;
-    }
-    for rec in records {
-        out.extend_from_slice(&rec);
-    }
-    for blob in blobs {
-        out.extend_from_slice(&blob);
-    }
-    out
+    // `inner_col` is the premultiplied paint colour, so white carries the
+    // scaled alpha in every channel.
+    assert!(
+        (thin.inner_col[3] - 0.4).abs() < 1e-6,
+        "0.4 px stroke recorded alpha {}, expected 0.4 (the squared scale gave 0.16)",
+        thin.inner_col[3]
+    );
+    assert!(
+        thin.inner_col[..3].iter().all(|c| (c - 0.4).abs() < 1e-6),
+        "premultiplied colour {:?} does not carry the scaled alpha",
+        thin.inner_col
+    );
+    assert!(
+        (thick.inner_col[3] - 0.8).abs() < 1e-6,
+        "0.8 px stroke recorded alpha {}, expected 0.8",
+        thick.inner_col[3]
+    );
+    let ratio = thick.inner_col[3] / thin.inner_col[3];
+    assert!(
+        (ratio - 2.0).abs() < 1e-6,
+        "0.8 px / 0.4 px alpha ratio {ratio}, expected 2 (the squared scale gave 4)"
+    );
+
+    // Both are widened to the fringe: the geometry carries no trace of the
+    // requested width, only the alpha does.
+    assert_eq!(thin.stroke_mult, 1.0);
+    assert_eq!(thick.stroke_mult, 1.0);
+
+    // The ratio is against the fringe (one device pixel), not one user unit:
+    // at 2x DPI the fringe is half a unit, so a 0.25-unit line is half a pixel.
+    let hidpi = stroke_params(0.25, 2.0, true);
+    assert!(
+        (hidpi.inner_col[3] - 0.5).abs() < 1e-6,
+        "0.25-unit stroke at 2x DPI recorded alpha {}, expected 0.5",
+        hidpi.inner_col[3]
+    );
+
+    // A plain (non-stencilled) stroke goes through the same scale.
+    assert!(
+        (stroke_params(0.4, 1.0, false).inner_col[3] - 0.4).abs() < 1e-6,
+        "plain 0.4 px stroke did not record alpha 0.4"
+    );
+
+    // A stroke at the fringe or wider keeps its full alpha.
+    assert_eq!(stroke_params(1.0, 1.0, true).inner_col[3], 1.0);
+    assert_eq!(stroke_params(3.0, 1.0, true).inner_col[3], 1.0);
 }
 
 /// A font without an OS/2 table (so no strikeout metric) and without a post
@@ -4460,6 +5220,8 @@ fn font_without_tables(data: &[u8], drop_tags: &[&[u8; 4]]) -> Vec<u8> {
 #[cfg(feature = "textlayout")]
 #[test]
 fn decoration_metrics_fall_back_without_os2_and_post() {
+    use crate::text::test_fonts::font_without_tables;
+
     let original = include_bytes!("../examples/assets/amiri-regular.ttf");
 
     // Sanity: ttf-parser sees no strikeout/underline once the tables are gone.
@@ -4529,4 +5291,494 @@ fn decoration_metrics_fall_back_without_os2_and_post() {
         2,
         "expected underline + strikethrough rects in one fill, got {fills:?}"
     );
+}
+
+/// Glyphs are drawn directly instead of through the shared atlas when the
+/// transform is more than a uniform scale and translation, when they are too
+/// large to cache, or when a gradient or image paint is scaled. PNG glyphs
+/// have no outline to draw, so they go through an atlas that lives from the
+/// first such draw of a frame until the flush.
+#[cfg(any(feature = "textlayout", feature = "swash"))]
+#[test]
+fn png_glyphs_drawn_directly_use_an_ephemeral_atlas() {
+    use crate::paint::GlyphTexture;
+    use crate::text::test_fonts::png_glyph_font;
+
+    let font_data = png_glyph_font();
+    let solid = Paint::color(Color::black());
+    let gradient = Paint::linear_gradient(0.0, 0.0, 100.0, 0.0, Color::black(), Color::white());
+    // `draw_glyph_run` draws a run directly when its font size times the scale
+    // of the canvas transform is above 92.
+    let small = 24.0;
+    let oversized = 96.0;
+    let cases = [
+        ("rotated", Transform2D::rotation(0.2), &solid, small),
+        ("oversized", Transform2D::identity(), &solid, oversized),
+        ("scaled gradient", Transform2D::scaling(2.0, 2.0), &gradient, small),
+    ];
+    // A frame fills the glyph this many times and strokes it after each fill.
+    let fills_per_frame = 2;
+    for (case, transform, paint, font_size) in cases {
+        let paint = paint.clone().with_font_size(font_size);
+        let renderer = RecordingRenderer::default();
+        let recorded_commands = renderer.last_commands.clone();
+        let text_context = TextContext::default();
+        let font = text_context.add_font_mem(&font_data).unwrap();
+        let mut canvas = Canvas::new_with_text_context(renderer, text_context).unwrap();
+        canvas.set_size(400, 400, 1.0);
+        canvas.set_transform(&transform);
+        let glyph = PositionedGlyph {
+            x: 50.0,
+            y: 100.0,
+            glyph_id: 0,
+        };
+
+        for _frame in 0..2 {
+            for _draw in 0..fills_per_frame {
+                canvas.fill_glyph_run(font, &[], [glyph.clone()], &paint).unwrap();
+                assert!(canvas.ephemeral_glyph_atlas.is_some(), "{case}");
+                canvas.stroke_glyph_run(font, &[], [glyph.clone()], &paint).unwrap();
+            }
+            canvas.flush_to_output(());
+            assert!(canvas.ephemeral_glyph_atlas.is_none(), "{case}");
+
+            // Every fill and stroke draws the bitmap, which takes `swash` or
+            // `image-loading` to decode.
+            if cfg!(any(feature = "swash", feature = "image-loading")) {
+                let commands = recorded_commands.borrow();
+                let color_draws = commands
+                    .iter()
+                    .filter(|command| matches!(command.glyph_texture, GlyphTexture::ColorTexture(_)));
+                let fills_and_strokes = 2 * fills_per_frame;
+                assert_eq!(color_draws.count(), fills_and_strokes, "{case}");
+            }
+        }
+    }
+}
+
+/// A PNG glyph is drawn at a whole pixel, so drawing it at two subpixel offsets
+/// places it in the atlas once, at 24 px (glyph atlas) and at 96 px (ephemeral atlas).
+#[cfg(any(feature = "textlayout", feature = "swash"))]
+#[test]
+fn png_glyphs_at_different_subpixel_offsets_share_one_atlas_entry() {
+    use crate::text::test_fonts::png_glyph_font;
+
+    for font_size in [24.0, 96.0] {
+        let text_context = TextContext::default();
+        let font = text_context.add_font_mem(&png_glyph_font()).unwrap();
+        let mut canvas = Canvas::new_with_text_context(RecordingRenderer::default(), text_context).unwrap();
+        canvas.set_size(400, 400, 1.0);
+        let paint = Paint::color(Color::black()).with_font_size(font_size);
+        let glyphs = [10.0, 10.5].map(|x| PositionedGlyph {
+            x,
+            y: 100.0,
+            glyph_id: 0,
+        });
+        canvas.fill_glyph_run(font, &[], glyphs, &paint).unwrap();
+
+        // `draw_glyph_run` draws a run directly when its font size is above 92.
+        assert_eq!(canvas.ephemeral_glyph_atlas.is_some(), font_size > 92.0);
+        let atlas = canvas.ephemeral_glyph_atlas.as_ref().unwrap_or(&canvas.glyph_atlas);
+        assert_eq!(atlas.rendered_glyphs.borrow().len(), 1, "font size {font_size}");
+    }
+}
+
+/// The atlas draws an oversized PNG glyph from a smaller copy, at its position
+/// and size at the font size.
+#[cfg(any(feature = "swash", all(feature = "textlayout", feature = "image-loading")))]
+#[test]
+fn png_glyphs_too_large_for_the_atlas_are_drawn_at_the_font_size() {
+    use crate::paint::GlyphTexture;
+    use crate::text::test_fonts::{offset_png_glyph_font, png_glyph_font};
+    use crate::text::{GLYPH_PADDING, MAX_GLYPH_SIDE, TEXTURE_SIZE};
+
+    // (font, [width, height, x offset, y offset]) in pixels of the 24 ppem strike. The
+    // offsets place the bitmap's bottom left corner relative to the glyph origin, y up.
+    let square: (Vec<u8>, [f32; 4]) = (png_glyph_font(), [24.0, 24.0, 0.0, 0.0]);
+    let wide: (Vec<u8>, [f32; 4]) = (offset_png_glyph_font(), [36.0, 24.0, 3.0, -5.0]);
+    // The atlas shrinks a bitmap if its longer side is more than 507 pixels (MAX_GLYPH_SIDE),
+    // so the square bitmap keeps its size at 507 and is shrunk from 508 on. At 517.0958, f32
+    // rounding puts the copy's side just above 506 texels, and the atlas rounds it up to 507.
+    // The last number in each case is the allowed error per edge, in pixels. A glyph drawn at
+    // the font size has its bearing rounded to a whole pixel. A copy is placed exactly.
+    let cases = [
+        (&square, 507.0, 0.0),
+        (&square, 508.0, 0.0),
+        (&square, 1000.0, 0.0),
+        (&square, 517.0958, 0.0),
+        (&wide, 300.0, 0.5),
+        (&wide, 700.0, 0.0),
+        (&wide, 1000.0, 0.0),
+    ];
+    let (x, y) = (800.0, 1100.0);
+
+    for (bitmap, font_size, tolerance) in cases {
+        let [width, height, offset_x, offset_y] = bitmap.1;
+        let pixel = font_size / 24.0;
+        let shrunk = width.max(height) * pixel > MAX_GLYPH_SIDE as f32;
+        for stroke in [false, true] {
+            let case = format!("{width} by {height} bitmap at size {font_size}, stroke: {stroke}");
+            let renderer = RecordingRenderer::default();
+            let recorded_commands = renderer.last_commands.clone();
+            let recorded_verts = renderer.last_verts.clone();
+            let text_context = TextContext::default();
+            let font = text_context.add_font_mem(&bitmap.0).unwrap();
+            let mut canvas = Canvas::new_with_text_context(renderer, text_context).unwrap();
+            canvas.set_size(2000, 2000, 1.0);
+            let paint = Paint::color(Color::black()).with_font_size(font_size);
+            let glyph = [PositionedGlyph { x, y, glyph_id: 0 }];
+
+            let result = if stroke {
+                canvas.stroke_glyph_run(font, &[], glyph, &paint)
+            } else {
+                canvas.fill_glyph_run(font, &[], glyph, &paint)
+            };
+            assert!(result.is_ok(), "{case}: {result:?}");
+            canvas.flush_to_output(());
+
+            let color_quads: Vec<_> = recorded_commands
+                .borrow()
+                .iter()
+                .filter(|command| matches!(command.glyph_texture, GlyphTexture::ColorTexture(_)))
+                .filter_map(|command| command.triangles_verts)
+                .collect();
+            assert_eq!(color_quads.len(), 1, "{case}");
+
+            let (offset, count) = color_quads[0];
+            assert_eq!(count, 6, "{case}");
+            let verts = &recorded_verts.borrow()[offset..offset + count];
+            // The first two vertices are the quad's top left and bottom right corners.
+            let (left, top, right, bottom) = (verts[0].x, verts[0].y, verts[1].x, verts[1].y);
+            let texels = [
+                (verts[1].u - verts[0].u) * TEXTURE_SIZE as f32,
+                (verts[1].v - verts[0].v) * TEXTURE_SIZE as f32,
+            ];
+            let texel_size = [(right - left) / texels[0], (bottom - top) / texels[1]];
+            if shrunk {
+                // The copy without its padding.
+                let longest_side = texels[0].max(texels[1]) - 2.0 * GLYPH_PADDING as f32;
+                assert!(
+                    longest_side >= (MAX_GLYPH_SIDE - 1) as f32,
+                    "{case}: the copy is {texels:?}"
+                );
+            } else {
+                assert!(
+                    texel_size.iter().all(|side| (side - 1.0).abs() < 1e-4),
+                    "{case}: {texel_size:?}"
+                );
+            }
+
+            // Inset the quad by its one texel of padding to get the bitmap's rectangle.
+            let drawn = [
+                left + texel_size[0],
+                top + texel_size[1],
+                right - texel_size[0],
+                bottom - texel_size[1],
+            ];
+            let bitmap_left = x + offset_x * pixel;
+            let bitmap_bottom = y - offset_y * pixel;
+            let expected = [
+                bitmap_left,
+                bitmap_bottom - height * pixel,
+                bitmap_left + width * pixel,
+                bitmap_bottom,
+            ];
+            for (actual, wanted) in drawn.into_iter().zip(expected) {
+                assert!(
+                    (actual - wanted).abs() <= tolerance + 0.01,
+                    "{case}: the bitmap is drawn at {drawn:?}, expected {expected:?}"
+                );
+            }
+        }
+    }
+}
+
+/// The atlas makes a smaller copy of a PNG glyph from its largest strike, the
+/// one its size is estimated from, even when a strike nearer the copy's size
+/// covers more of the em and would not fit.
+#[cfg(feature = "swash")]
+#[test]
+fn png_glyphs_are_shrunk_from_their_largest_strike() {
+    use crate::paint::GlyphTexture;
+    use crate::text::test_fonts::two_strike_png_glyph_font;
+    use crate::text::TEXTURE_SIZE;
+
+    let renderer = RecordingRenderer::default();
+    let recorded_commands = renderer.last_commands.clone();
+    let recorded_verts = renderer.last_verts.clone();
+    let text_context = TextContext::default();
+    let font = text_context.add_font_mem(&two_strike_png_glyph_font()).unwrap();
+    let mut canvas = Canvas::new_with_text_context(renderer, text_context).unwrap();
+    canvas.set_size(2000, 2000, 1.0);
+    // At 1000 pixels the 1024 ppem strike's bitmap is 1000 pixels wide, so the copy is made at
+    // about 506 pixels. The 512 ppem strike's bitmap would be 593 texels wide there.
+    let font_size = 1000.0;
+    let paint = Paint::color(Color::black()).with_font_size(font_size);
+    let glyph = PositionedGlyph {
+        x: 100.0,
+        y: 1500.0,
+        glyph_id: 0,
+    };
+    canvas.fill_glyph_run(font, &[], [glyph], &paint).unwrap();
+    canvas.flush_to_output(());
+
+    let color_quads: Vec<_> = recorded_commands
+        .borrow()
+        .iter()
+        .filter(|command| matches!(command.glyph_texture, GlyphTexture::ColorTexture(_)))
+        .filter_map(|command| command.triangles_verts)
+        .collect();
+    assert_eq!(color_quads.len(), 1);
+    let (offset, count) = color_quads[0];
+    let verts = &recorded_verts.borrow()[offset..offset + count];
+    // The first two vertices are the quad's top left and bottom right corners. Inset by the
+    // copy's one texel of padding, the quad is the 1024 ppem strike's bitmap at the font size.
+    let texels = (verts[1].u - verts[0].u) * TEXTURE_SIZE as f32;
+    let texel_width = (verts[1].x - verts[0].x) / texels;
+    let drawn_width = verts[1].x - verts[0].x - 2.0 * texel_width;
+    let expected_width = 1024.0 * font_size / 1024.0;
+    assert!(
+        (drawn_width - expected_width).abs() < 0.01,
+        "{drawn_width} {expected_width}"
+    );
+}
+
+/// With `textlayout`, `Font::glyph` finds a PNG glyph without decoding it. When
+/// swash then cannot decode it, a stroke skips the glyph instead of drawing
+/// swash's fallback outline as a fill.
+#[cfg(all(feature = "textlayout", feature = "swash"))]
+#[test]
+fn stroked_png_glyphs_that_do_not_decode_are_skipped() {
+    use crate::paint::GlyphTexture;
+    use crate::text::test_fonts::outline_glyph_with_broken_png_font;
+
+    let renderer = RecordingRenderer::default();
+    let recorded_commands = renderer.last_commands.clone();
+    let text_context = TextContext::default();
+    let font = text_context
+        .add_font_mem(&outline_glyph_with_broken_png_font())
+        .unwrap();
+    let mut canvas = Canvas::new_with_text_context(renderer, text_context).unwrap();
+    canvas.set_size(400, 400, 1.0);
+    let paint = Paint::color(Color::black()).with_font_size(24.0).with_line_width(6.0);
+    let glyph = PositionedGlyph {
+        x: 50.0,
+        y: 100.0,
+        glyph_id: 0,
+    };
+    canvas.stroke_glyph_run(font, &[], [glyph], &paint).unwrap();
+    canvas.flush_to_output(());
+
+    let glyph_draws = recorded_commands
+        .borrow()
+        .iter()
+        .filter(|command| !matches!(command.glyph_texture, GlyphTexture::None))
+        .count();
+    assert_eq!(glyph_draws, 0);
+}
+
+/// When swash cannot decode a PNG glyph and draws its outline instead, the atlas
+/// rasterizes the outline at the font size and does not shrink it like a bitmap.
+#[cfg(all(feature = "textlayout", feature = "swash"))]
+#[test]
+fn png_glyphs_that_do_not_decode_are_not_shrunk() {
+    use crate::paint::GlyphTexture;
+    use crate::text::test_fonts::outline_glyph_with_broken_png_font;
+    use crate::text::TEXTURE_SIZE;
+
+    let renderer = RecordingRenderer::default();
+    let recorded_commands = renderer.last_commands.clone();
+    let recorded_verts = renderer.last_verts.clone();
+    let text_context = TextContext::default();
+    let font = text_context
+        .add_font_mem(&outline_glyph_with_broken_png_font())
+        .unwrap();
+    let mut canvas = Canvas::new_with_text_context(renderer, text_context).unwrap();
+    canvas.set_size(2000, 2000, 1.0);
+    // The PNG's header gives a bitmap one em square, 1000 pixels here, which is too large for
+    // the atlas. The outline is a 500-unit square, which fits.
+    let paint = Paint::color(Color::black()).with_font_size(1000.0);
+    let glyph = PositionedGlyph {
+        x: 100.0,
+        y: 1100.0,
+        glyph_id: 0,
+    };
+    canvas.fill_glyph_run(font, &[], [glyph], &paint).unwrap();
+    canvas.flush_to_output(());
+
+    let mask_quads: Vec<_> = recorded_commands
+        .borrow()
+        .iter()
+        .filter(|command| matches!(command.glyph_texture, GlyphTexture::AlphaMask(_)))
+        .filter_map(|command| command.triangles_verts)
+        .collect();
+    assert_eq!(mask_quads.len(), 1);
+    let (offset, count) = mask_quads[0];
+    let verts = &recorded_verts.borrow()[offset..offset + count];
+    // The first two vertices are the quad's top left and bottom right corners.
+    let texel_width = (verts[1].x - verts[0].x) / ((verts[1].u - verts[0].u) * TEXTURE_SIZE as f32);
+    assert!((texel_width - 1.0).abs() < 1e-4, "{texel_width}");
+}
+
+/// Random interleavings of save / restore / begin_layer / end_layer /
+/// translate / clip_path / fill / flush / set_render_target against a model
+/// of one stack whose entries are saves or layers, each owning the clips
+/// taken at its level. After every step: the state stack and the layer list
+/// agree with the model, the clip stack holds exactly the levels' clips and
+/// the top level records its depth, every target's plane counts its own
+/// entries, the render target is the model's, and outside layers the
+/// transform is the model's.
+#[cfg(test)]
+#[test]
+fn random_api_sequences_keep_one_consistent_stack() {
+    use rand::{RngExt, SeedableRng};
+
+    #[derive(Clone, Copy)]
+    struct Level {
+        layer: bool,
+        transform: Transform2D,
+        clips: usize,
+        // The render target to return to when this level is a layer.
+        previous_target: RenderTarget,
+    }
+
+    for seed in 0..48u64 {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let mut canvas = Canvas::new(RecordingRenderer::default()).unwrap();
+        canvas.set_size(128, 128, 1.0);
+        if seed % 2 == 1 {
+            canvas.set_clip_mask_budget(0);
+        }
+        let image = canvas
+            .create_image_empty(64, 64, PixelFormat::Rgba8, ImageFlags::empty())
+            .unwrap();
+        let mut model = vec![Level {
+            layer: false,
+            transform: Transform2D::identity(),
+            clips: 0,
+            previous_target: RenderTarget::Screen,
+        }];
+        let mut target = RenderTarget::Screen;
+        let effects = LayerEffects::new().with_opacity(0.5);
+        let mut rect = Path::new();
+        rect.rect(4.0, 4.0, 20.0, 20.0);
+
+        for step in 0..160 {
+            match rng.random_range(0..9) {
+                0 => {
+                    canvas.save();
+                    let top = *model.last().unwrap();
+                    model.push(Level {
+                        layer: false,
+                        clips: 0,
+                        previous_target: target,
+                        ..top
+                    });
+                }
+                1 => {
+                    canvas.restore();
+                    if model.len() > 1 {
+                        let popped = model.pop().unwrap();
+                        if popped.layer {
+                            target = popped.previous_target;
+                        }
+                    }
+                }
+                2 => {
+                    let _ = canvas.begin_layer(&effects);
+                    let top = *model.last().unwrap();
+                    model.push(Level {
+                        layer: true,
+                        clips: 0,
+                        previous_target: target,
+                        ..top
+                    });
+                    // A captured layer redirects drawing to its store; a
+                    // pass-through one draws on.
+                    if let Some(store) = canvas.layers.last().and_then(|layer| layer.image) {
+                        target = RenderTarget::Image(store);
+                    }
+                }
+                3 => {
+                    canvas.end_layer();
+                    if let Some(boundary) = model.iter().rposition(|level| level.layer) {
+                        target = model[boundary].previous_target;
+                        model.truncate(boundary);
+                    }
+                }
+                4 => {
+                    // A box is taken as a shape - stacked, or dropped when it
+                    // contains the one in force - and a notched rect as a
+                    // mask, or on the stencil when the masks have no budget.
+                    let (x, y) = (rng.random_range(0.0..40.0), rng.random_range(0.0..40.0));
+                    let clip = if rng.random_bool(0.5) {
+                        let mut clip = Path::new();
+                        clip.rect(x, y, 60.0, 60.0);
+                        clip
+                    } else {
+                        notched_rect(x, y, 60.0, 60.0)
+                    };
+                    let before = canvas.clip_stack.len();
+                    canvas.clip_path(&clip, FillRule::NonZero);
+                    model.last_mut().unwrap().clips += canvas.clip_stack.len() - before;
+                }
+                5 => canvas.fill_path(&rect, &Paint::color(Color::black())),
+                6 => canvas.flush_to_output(()),
+                7 => {
+                    target = if rng.random_range(0..2) == 0 {
+                        RenderTarget::Screen
+                    } else {
+                        RenderTarget::Image(image)
+                    };
+                    canvas.set_render_target(target);
+                }
+                _ => {
+                    let (dx, dy) = (rng.random_range(-8.0..8.0), rng.random_range(-8.0..8.0));
+                    canvas.translate(dx, dy);
+                    if !model.iter().any(|level| level.layer) {
+                        model.last_mut().unwrap().transform.translate(dx, dy);
+                    }
+                }
+            }
+
+            let at = format!("seed {seed} step {step}");
+            assert_eq!(canvas.state_stack.len(), model.len(), "{at}: state stack");
+            assert_eq!(
+                canvas.layers.len(),
+                model.iter().filter(|level| level.layer).count(),
+                "{at}: open layers"
+            );
+            for layer in &canvas.layers {
+                assert!(layer.state_depth <= canvas.state_stack.len(), "{at}: boundary");
+            }
+            let clips: usize = model.iter().map(|level| level.clips).sum();
+            assert_eq!(canvas.clip_stack.len(), clips, "{at}: clip stack");
+            assert_eq!(canvas.state().clip_depth, clips, "{at}: top level's clip depth");
+            for (plane_target, plane) in &canvas.clip_planes {
+                let entries = canvas
+                    .clip_stack
+                    .iter()
+                    .filter(|entry| entry.target == *plane_target && matches!(entry.kind, ClipKind::Stencil { .. }))
+                    .count();
+                assert_eq!(plane.count, entries, "{at}: plane count for {plane_target:?}");
+            }
+            for entry in &canvas.clip_stack {
+                assert!(
+                    matches!(entry.kind, ClipKind::Shape { .. } | ClipKind::Mask { .. })
+                        || canvas.clip_planes.contains_key(&entry.target),
+                    "{at}: plane for {:?}",
+                    entry.target
+                );
+            }
+            assert_eq!(canvas.current_render_target, target, "{at}: render target");
+            if !model.iter().any(|level| level.layer) {
+                assert_eq!(
+                    canvas.state().transform,
+                    model.last().unwrap().transform,
+                    "{at}: transform"
+                );
+            }
+        }
+        canvas.flush_to_output(());
+    }
 }

@@ -1,6 +1,99 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [0.28.0] - 2026-10-26
+
+### Breaking changes
+
+- `ImageFilter::GaussianBlur` takes a standard deviation per axis (`sigma_x`,
+  `sigma_y`) instead of `sigma`. `ImageFilter::gaussian_blur(sigma)` builds the
+  isotropic blur.
+- `CompositeOperation` and `BlendFactor` are now `#[non_exhaustive]`.
+- `renderer::CommandType` has new `StartBlur` and `FinishBlur` variants and
+  `renderer::ShaderType` a new `FillBlur` variant, which a `Renderer`
+  implemented outside the crate must handle.
+- On wasm32 in the browser, the OpenGL renderer's `NativeTexture` is now a
+  `web_sys::WebGlTexture` instead of a glow texture key.
+- Gradient stops with a non-finite offset or color are now ignored, as SVG
+  specifies.
+
+### Added
+
+- Layers: `Canvas::begin_layer()` and `end_layer()` draw a group offscreen and
+  composite it with `LayerEffects`: group opacity, an image filter chain, a
+  shadow, a mask (`with_mask()`) and a blend mode (`with_blend()`). Offscreen
+  images are pooled and capped by `Canvas::set_transient_image_budget()`
+  (256 MiB by default).
+- `Canvas::clip_path()` and `clip_paths()` clip to arbitrary paths with a fill
+  rule and an antialiased edge, scoped by `save()`/`restore()`. Their CPU masks
+  are capped by `Canvas::set_clip_mask_budget()`.
+- `Canvas::filter_image_chain()` applies a list of image filters, folding
+  consecutive color matrices into one pass.
+- New image filters: `Morphology`, `Offset`, `Crop`, `Blend`, `Turbulence`,
+  `LinearRgbToSrgb` and `SrgbToLinearRgb`, plus `ImageFilter::identity()` and
+  `luminance_to_alpha()`.
+- `Canvas::blur_rect()` and `blur_path()` blur the current render target in
+  place, for backdrop blur.
+- `Canvas::with_render_target()` runs a side pass on another target and
+  returns to the current one.
+- Gradients: two-point radial gradients (`Paint::two_point_radial_gradient()`),
+  gradient transforms (`Paint::with_gradient_transform()`), interpolation in
+  other color spaces (`Paint::with_interpolation_space()` and `ColorSpace`) and
+  premultiplied interpolation (`Paint::with_premultiplied_interpolation()`).
+- `WGPURenderer::set_submission_slicing()` splits a frame into several
+  submissions to lower peak driver memory on Metal with many layers.
+  `Canvas::renderer()` and `renderer_mut()` give access to the renderer.
+- Support for the `wasm32-unknown-emscripten` target.
+
+### Changed
+
+- Rendering matches browsers more closely: thin fills are no longer too dark
+  (`Canvas::set_thin_fill_masks(false)` restores the old behavior), sub-pixel
+  strokes are no longer too faint, clockwise contours are no longer a pixel too
+  wide, and curves are flattened more accurately.
+- Gaussian blurs above 8 device pixels of sigma run at a downsampled size,
+  which is much faster for large blurs. The maximum sigma rises from 128 to
+  512, and blurs now fade to transparent at the image edge.
+- The WGPU backend honors `ImageFlags::GENERATE_MIPMAPS`.
+- `Canvas::add_font_dir()` and `TextContext::add_font_dir()` also return the
+  ids of fonts loaded from subdirectories.
+- `save()` stops growing the state stack past 16,384 levels.
+
+### Performance
+
+- WGPU: fewer render passes, bind groups and pipeline rebuilds; uniforms and
+  upload staging are reused across frames.
+- Fills use less CPU and vertex memory, and degenerate curves are no longer
+  over-subdivided (up to 5x faster encoding on some SVG content).
+- Faster glyph rasterization with the `swash` feature.
+
+### Fixed
+
+- Text: stale glyph advances, widths and line breaks after small changes of
+  font size, letter spacing or `max_width`; missing glyphs kept after adding a
+  font that covers them; misplaced glyphs at negative x with `swash`.
+- Color emoji (PNG glyphs): now drawn when stroked, above about 507 pixels and
+  outside the glyph atlas; no longer a pixel too large or re-uploaded for each
+  subpixel offset; a panic with `swash` and `textlayout` is fixed.
+- `fill_glyph_run()` and `stroke_glyph_run()` now cast one shadow per run.
+- Gradients: transparent stops fading through the wrong colors, the ramp after
+  a last stop below 1.0, two-point radial gradients losing a stop's hue, and
+  multi-stop gradients sampled half a texel off their colors.
+- Paths: zero-length edges from repeated points, a `Path` extended after being
+  drawn still drawing as the old path, a `Path` drawn again after the device
+  pixel ratio changed keeping its old flattening, and collinear fills drawing a
+  line (#341).
+- Clipping and compositing: stray paint with `copy`, `source-in` and similar
+  operations under a path clip, thin even-odd clip holes, and WGPU filling a
+  bounding box after an even-odd fill.
+- Blur: wide blurs coming out too narrow, and zero, negative or non-finite
+  sigma blanking the image.
+- Layer shadows now include content from outside the scissor.
+- WGPU: a frame no longer draws with uploads of a later frame flushed before it
+  was submitted.
+
 ## [0.27.0] - 2026-08-31
 
 - Added text decoration for `fill_text()` and `stroke_text()`: underline,
@@ -496,3 +589,4 @@ All notable changes to this project will be documented in this file.
 [0.25.1]: https://github.com/femtovg/femtovg/releases/tag/v0.25.1
 [0.26.0]: https://github.com/femtovg/femtovg/releases/tag/v0.26.0
 [0.27.0]: https://github.com/femtovg/femtovg/releases/tag/v0.27.0
+[0.28.0]: https://github.com/femtovg/femtovg/releases/tag/v0.28.0

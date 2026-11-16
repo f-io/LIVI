@@ -63,7 +63,7 @@ impl Sink {
     }
 }
 
-fn stamp(now: &jiff::Zoned) -> String {
+fn stamp(now: &jiff::ZonedDateTime) -> String {
     format!(
         "{:02}:{:02}:{:02}.{:03}",
         now.hour(),
@@ -184,7 +184,7 @@ fn copy_lines(
         let text = String::from_utf8_lossy(&buf);
         let text = text.trim_end_matches('\n');
         let line = if stamp_it {
-            format!("[{}] {text}", stamp(&jiff::Zoned::now()))
+            format!("[{}] {text}", stamp(&jiff::ZonedDateTime::now()))
         } else {
             text.to_string()
         };
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn the_time_has_milliseconds() {
-        let at: jiff::Zoned = "2026-10-05T07:08:09.012+02:00[+02:00]".parse().unwrap();
+        let at: jiff::ZonedDateTime = "2026-10-05T07:08:09.012+02:00[+02:00]".parse().unwrap();
         assert_eq!(stamp(&at), "07:08:09.012");
     }
 }

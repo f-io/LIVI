@@ -535,6 +535,33 @@ impl Bounds {
     pub(crate) fn contains(&self, x: f32, y: f32) -> bool {
         (self.minx..=self.maxx).contains(&x) && (self.miny..=self.maxy).contains(&y)
     }
+
+    /// The smallest bounds holding `points`; empty, min above max, for none.
+    pub(crate) fn from_points(points: impl IntoIterator<Item = (f32, f32)>) -> Self {
+        points.into_iter().fold(
+            Self {
+                minx: f32::INFINITY,
+                miny: f32::INFINITY,
+                maxx: f32::NEG_INFINITY,
+                maxy: f32::NEG_INFINITY,
+            },
+            |bounds, (x, y)| Self {
+                minx: bounds.minx.min(x),
+                miny: bounds.miny.min(y),
+                maxx: bounds.maxx.max(x),
+                maxy: bounds.maxy.max(y),
+            },
+        )
+    }
+
+    pub(crate) fn intersect(self, other: Self) -> Self {
+        Self {
+            minx: self.minx.max(other.minx),
+            miny: self.miny.max(other.miny),
+            maxx: self.maxx.min(other.maxx),
+            maxy: self.maxy.min(other.maxy),
+        }
+    }
 }
 
 #[cfg(test)]

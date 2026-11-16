@@ -38,13 +38,17 @@ Run with `cargo run --example text`
 * [x] Anti-aliasing
 * [x] Bézier paths filling and stroking
 * [x] Solid color and image pattern fills and strokes
-* [x] Gradients - box, linear and radial
+* [x] Gradients - box, linear, radial (including two-point / focal), and conic, with multi-stop colors and gradient transforms
 * [x] Stroke width and miterlimit
 * [x] Stroke caps: butt, round and square
 * [x] Stroke joins: miter, round and bevel
+* [x] Stroke dashing with dash offset
 * [x] Fill rules - EvenOdd/NonZero
-* [x] Rectangle scissoring
+* [x] Rectangle scissoring (with rounded corners) and arbitrary-path clipping (Canvas 2D clip / SVG clip-path, nonzero and evenodd)
 * [x] Composition modes (SourceOver, SourceIn, SourceOut, Atop, etc..)
+* [x] Image filters - gaussian blur, color matrices (the CSS filter functions), Perlin turbulence (SVG `feTurbulence`) and the sRGB transfer curve, chained in a single call
+* [x] Layers - group capture with declared opacity and layer filters (Canvas 2D beginLayer/endLayer, SVG group effects)
+* [x] Layer masks - luminance and alpha (SVG mask / mask-type)
 * [x] Global alpha
 * [x] Text filling and stroking
 * [x] Text shaping
@@ -56,8 +60,6 @@ Run with `cargo run --example text`
 * [x] Color fonts
 
 ## Not supported
-* [ ] Stroke dashing
-* [ ] Path scissoring
 * [ ] Custom shaders
 * [ ] 3D transforms
 

@@ -9,7 +9,8 @@ use crate::geometry::{Position, Transform2D, Vector};
 use rustybuzz::ttf_parser;
 
 mod cache;
-pub use cache::{Convexity, PathCache};
+pub(crate) use cache::OutlineWidth;
+pub use cache::PathCache;
 
 // Length proportional to radius of a cubic bezier handle for 90deg arcs.
 const KAPPA90: f32 = 0.552_284_8; // 0.552_284_749_3;
@@ -90,6 +91,9 @@ impl Verb {
     }
 }
 
+/// The transform's cache key and the bits of the tolerances a [`PathCache`] was flattened with.
+type CacheKey = (u64, u32, u32);
+
 /// A collection of verbs (`move_to()`, `line_to()`, `bezier_to()`, etc.)
 /// describing one or more contours.
 ///
@@ -112,7 +116,7 @@ pub struct Path {
     last_pos: Position,
     dist_tol: f32,
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub(crate) cache: RefCell<Option<(u64, PathCache)>>,
+    pub(crate) cache: RefCell<Option<(CacheKey, PathCache)>>,
 }
 
 impl Path {
@@ -134,6 +138,19 @@ impl Path {
         self.verbs.is_empty()
     }
 
+    /// How many verbs the path has.
+    pub(crate) fn verb_count(&self) -> usize {
+        self.verbs.len()
+    }
+
+    /// The path's verbs and coordinates, bit for bit, onto `words`: what
+    /// tells it from another path without flattening either.
+    pub(crate) fn words(&self, words: &mut Vec<u32>) {
+        words.extend([self.verbs.len() as u32, self.coords.len() as u32]);
+        words.extend(self.verbs.iter().map(|verb| *verb as u32));
+        words.extend(self.coords.iter().flat_map(|at| [at.x.to_bits(), at.y.to_bits()]));
+    }
+
     /// Sets the distance tolerance used for path operations.
     pub fn set_distance_tolerance(&mut self, value: f32) {
         self.dist_tol = value;
@@ -153,11 +170,13 @@ impl Path {
         // retrieved from cache. I'm not sure if transform.cache_key() is actually good enough for this
         // and if it will produce the correct cache keys under different float edge cases.
 
-        let key = transform.cache_key();
+        // Canvas::set_size() sets the tolerances from the device pixel ratio, so a path drawn again after the ratio
+        // changes is flattened again, even under the same transform.
+        let key = (transform.cache_key(), tess_tol.to_bits(), dist_tol.to_bits());
 
         // this shouldn't need a bool once non lexic lifetimes are stable
-        let needs_rebuild = if let Some((transform_cache_key, _cache)) = &*self.cache.borrow() {
-            key != *transform_cache_key
+        let needs_rebuild = if let Some((cache_key, _cache)) = &*self.cache.borrow() {
+            key != *cache_key
         } else {
             true
         };
@@ -242,6 +261,13 @@ impl Path {
                     push_flattened_point(&mut current.points, current_pos, dist_tol);
                 }
                 Verb::BezierTo(c1x, c1y, c2x, c2y, x, y) => {
+                    // A cubic whose four points coincide is the point it starts from, as
+                    // `PathCache::new` takes it: its chord is zero, so it would fail the
+                    // flatness test to the depth limit.
+                    let start = (current_pos.x, current_pos.y);
+                    if [(x, y), (c1x, c1y), (c2x, c2y)] == [start; 3] {
+                        continue;
+                    }
                     let c1 = Position { x: c1x, y: c1y };
                     let c2 = Position { x: c2x, y: c2y };
                     let end = Position { x, y };
@@ -873,6 +899,7 @@ impl Path {
 
         self.verbs.extend_from_slice(verbs);
         self.coords.extend_from_slice(coords);
+        *self.cache.get_mut() = None;
     }
 }
 
@@ -1001,6 +1028,9 @@ fn flatten_bezier(
     tess_tol: f32,
     dist_tol: f32,
 ) {
+    #[cfg(test)]
+    tests::BEZIER_PIECES.with(|pieces| pieces.set(pieces.get() + 1));
+
     if level > 10 {
         push_flattened_point(points, p3, dist_tol);
         return;
@@ -1120,7 +1150,46 @@ impl ttf_parser::OutlineBuilder for Path {
 
 #[cfg(test)]
 mod tests {
-    use super::{svg_arc_angle, Path, Verb, PI};
+    use super::{svg_arc_angle, Path, Transform2D, Verb, PI};
+    use crate::{DIST_TOL, TESS_TOL};
+    use std::cell::Cell;
+
+    thread_local! {
+        /// The pieces `flatten_bezier` has examined on this thread.
+        pub(super) static BEZIER_PIECES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// A cubic whose four points coincide adds nothing to a dashed outline
+    /// either, and is not subdivided to the depth limit on the way: a tab's
+    /// square corners cost half the pieces of the same rect rounded all round.
+    #[test]
+    fn dashing_a_cubic_that_is_a_point_flattens_nothing() {
+        let pieces_dashing = |path: &Path| {
+            BEZIER_PIECES.with(|pieces| pieces.set(0));
+            path.dashed(&[4.0, 2.0], 0.0);
+            BEZIER_PIECES.with(Cell::get)
+        };
+        let mut tab = Path::new();
+        tab.rounded_rect_varying(0.0, 0.0, 60.0, 24.0, 6.0, 6.0, 0.0, 0.0);
+        let mut rounded = Path::new();
+        rounded.rounded_rect(0.0, 0.0, 60.0, 24.0, 6.0);
+        assert_eq!(2 * pieces_dashing(&tab), pieces_dashing(&rounded));
+    }
+
+    /// `Path::cache()` flattens the path again when `tess_tol` or `dist_tol`
+    /// changes under the same transform.
+    #[test]
+    fn a_path_is_flattened_again_when_the_tolerances_change() {
+        let mut path = Path::new();
+        path.circle(50.0, 50.0, 25.0);
+        let points = |tess_tol, dist_tol| {
+            path.cache(&Transform2D::identity(), tess_tol, dist_tol)
+                .positions()
+                .count()
+        };
+        // The canvas's tolerances at device pixel ratio 1 and 2.
+        assert_ne!(points(TESS_TOL, DIST_TOL), points(TESS_TOL / 2.0, DIST_TOL / 2.0));
+    }
 
     fn line_path(length: f32) -> Path {
         let mut path = Path::new();

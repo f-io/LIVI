@@ -42,6 +42,13 @@ pub enum ErrorKind {
     UnsupportedImageFormat,
     /// The requested operation is not supported (for example screenshot by wgpu renderer).
     UnsupportedOperation,
+    /// Acquiring another transient image (a layer backing store, filter scratch,
+    /// shadow or mask coverage) would exceed [`crate::Canvas::set_transient_image_budget`].
+    TransientImageBudgetExceeded,
+    /// A filter chain would require more GPU passes than one operation may record.
+    FilterPassLimitExceeded,
+    /// A filter would exceed the texture-sampling work admitted before the next flush.
+    FilterWorkBudgetExceeded,
 }
 
 impl Display for ErrorKind {

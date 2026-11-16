@@ -181,15 +181,9 @@ pub fn send_panels(state: &mut LiviState) {
         .iter()
         .enumerate()
         .filter_map(|(i, s)| {
-            let (mm_w, mm_h) = crate::host::panel_mm(state, i)?;
-            if s.width > 0 && s.height > 0 {
-                Some(format!(
-                    "panel {} {} {} {} {}\n",
-                    s.role, mm_w, mm_h, s.width, s.height
-                ))
-            } else {
-                None
-            }
+            let ((mm_w, mm_h), (px_w, px_h)) = crate::host::panel(state, i)?;
+            (px_w > 0 && px_h > 0)
+                .then(|| format!("panel {} {mm_w} {mm_h} {px_w} {px_h}\n", s.role))
         })
         .collect();
     for p in panels {

@@ -51,8 +51,11 @@ impl Atlas {
     ///
     /// Returns the position (x, y) of the added rectangle, or `None` if the rectangle cannot be added.
     pub fn add_rect(&mut self, rect_width: usize, rect_height: usize) -> Option<(usize, usize)> {
-        let mut besth = self.height;
-        let mut bestw = self.width;
+        // The best place so far: none yet. Starting from the atlas's own
+        // height and width, as fontstash does, refused a rect that reaches
+        // the bottom from a span as wide as the atlas, though it fits there.
+        let mut besth = usize::MAX;
+        let mut bestw = usize::MAX;
         let mut besti = None;
         let mut bestx = 0;
         let mut besty = 0;
@@ -162,5 +165,29 @@ impl Atlas {
         }
 
         Some(y)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Atlas;
+
+    #[test]
+    fn a_rect_as_tall_as_the_atlas_fits_it() {
+        let mut atlas = Atlas::new(64, 32);
+        assert_eq!(atlas.add_rect(10, 32), Some((0, 0)));
+        assert_eq!(atlas.add_rect(54, 32), Some((10, 0)));
+        assert_eq!(atlas.add_rect(1, 1), None);
+    }
+
+    #[test]
+    fn an_expanded_atlas_keeps_its_rects_and_packs_beside_and_below_them() {
+        let mut atlas = Atlas::new(32, 32);
+        assert_eq!(atlas.add_rect(32, 20), Some((0, 0)));
+        atlas.expand(64, 32);
+        assert_eq!(atlas.add_rect(32, 32), Some((32, 0)));
+        assert_eq!(atlas.add_rect(32, 12), Some((0, 20)));
+        atlas.expand(64, 64);
+        assert_eq!(atlas.add_rect(64, 32), Some((0, 32)));
     }
 }

@@ -362,6 +362,9 @@ type GlyphCacheKey = (u16, u64);
 pub struct Font {
     data: Box<dyn AsRef<[u8]>>,
     face_index: u32,
+    // swash's table-directory offset and cache key; `None` if swash can't parse the face.
+    #[cfg(feature = "swash")]
+    swash_identity: Option<(u32, swash::CacheKey)>,
     units_per_em: u16,
     metrics: FontMetrics,
     glyphs: RefCell<FnvHashMap<GlyphCacheKey, Glyph>>,
@@ -458,6 +461,9 @@ impl Font {
         };
 
         Ok(Self {
+            #[cfg(feature = "swash")]
+            swash_identity: swash::FontRef::from_index(data.as_ref(), face_index as usize)
+                .map(|font_ref| (font_ref.offset, font_ref.key)),
             data: Box::new(data),
             face_index,
             units_per_em,
@@ -567,6 +573,7 @@ impl Font {
         };
 
         Ok(Self {
+            swash_identity: Some((font_ref.offset, font_ref.key)),
             data: Box::new(data),
             face_index,
             units_per_em,
@@ -607,7 +614,14 @@ impl Font {
 
     #[cfg(feature = "swash")]
     pub(crate) fn swash_font_ref(&self) -> Option<swash::FontRef<'_>> {
-        swash::FontRef::from_index(self.data.as_ref().as_ref(), self.face_index as usize)
+        // swash caches per-font scaler data and hinting instances by key, and every
+        // `FontRef` constructor mints a new key, so reuse the one minted at load.
+        let (offset, key) = self.swash_identity?;
+        Some(swash::FontRef {
+            data: self.data.as_ref().as_ref(),
+            offset,
+            key,
+        })
     }
 
     #[cfg(all(feature = "swash", not(feature = "textlayout")))]
@@ -853,6 +867,21 @@ impl Font {
             let font_ref = self.swash_font_ref()?;
 
             let mut scale_context = self.swash_scale_context().borrow_mut();
+
+            // Decode the bitmap at the size of its strike, for its metrics. The scaler below
+            // would resize it to units_per_em pixels.
+            let bitmap = font_ref
+                .color_strikes()
+                .find_by_largest_ppem(codepoint)
+                .and_then(|strike| {
+                    let image = scale_context
+                        .builder(font_ref)
+                        .build()
+                        .scale_color_bitmap(codepoint, swash::scale::StrikeWith::LargestSize)
+                        .filter(|image| image.content == swash::scale::image::Content::Color)?;
+                    Some((strike.ppem(), image.placement))
+                });
+
             let scaler_builder = scale_context
                 .builder(font_ref)
                 .size(self.units_per_em as f32)
@@ -860,7 +889,18 @@ impl Font {
                 .normalized_coords(normalized_coords);
             let mut scaler = scaler_builder.build();
 
-            let maybe_glyph = if let Some(outline) = scaler.scale_outline(codepoint) {
+            let maybe_glyph = if let Some((ppem, placement)) = bitmap {
+                let scale = self.units_per_em as f32 / ppem as f32;
+                Some(Glyph {
+                    path: None,
+                    metrics: GlyphMetrics {
+                        width: placement.width as f32 * scale,
+                        height: placement.height as f32 * scale,
+                        bearing_x: placement.left as f32 * scale,
+                        bearing_y: placement.top as f32 * scale,
+                    },
+                })
+            } else if let Some(outline) = scaler.scale_outline(codepoint) {
                 use swash::zeno::{Command, PathData};
                 let bounds = outline.bounds();
                 let mut path = Path::new();
@@ -892,6 +932,12 @@ impl Font {
         }
 
         Ref::filter_map(self.glyphs.borrow(), |glyphs| glyphs.get(&cache_key)).ok()
+    }
+
+    /// Returns true if the glyph has no path, so that the atlas draws it as an image (e.g., a PNG color emoji).
+    pub(crate) fn is_bitmap_glyph(&self, face: &FontFaceRef<'_>, codepoint: u16, normalized_coords: &[i16]) -> bool {
+        self.glyph(face, codepoint, normalized_coords)
+            .is_some_and(|glyph| glyph.path.is_none())
     }
 
     #[cfg(feature = "textlayout")]
@@ -943,97 +989,10 @@ impl Font {
 #[cfg(all(test, any(feature = "textlayout", feature = "swash")))]
 mod tests {
     use super::Font;
+    use crate::text::test_fonts::minimal_font_without_optional_tables;
 
     fn parse_font(data: Vec<u8>) -> Font {
         Font::new_with_data(data, 0, &super::super::TextContextImpl::default()).expect("font should parse")
-    }
-
-    /// Builds a minimal TrueType font containing only the tables required for
-    /// parsing (`head`, `hhea` and `maxp`), so every optional metric has to
-    /// take its documented fallback. Units per em is 1024 and the
-    /// ascender/descender are 800/-200 font units.
-    fn minimal_font_without_optional_tables() -> Vec<u8> {
-        fn push_u16(data: &mut Vec<u8>, value: u16) {
-            data.extend_from_slice(&value.to_be_bytes());
-        }
-        fn push_i16(data: &mut Vec<u8>, value: i16) {
-            data.extend_from_slice(&value.to_be_bytes());
-        }
-        fn push_u32(data: &mut Vec<u8>, value: u32) {
-            data.extend_from_slice(&value.to_be_bytes());
-        }
-
-        let mut head = Vec::new();
-        push_u16(&mut head, 1); // majorVersion
-        push_u16(&mut head, 0); // minorVersion
-        push_u32(&mut head, 0); // fontRevision
-        push_u32(&mut head, 0); // checkSumAdjustment
-        push_u32(&mut head, 0x5F0F_3CF5); // magicNumber
-        push_u16(&mut head, 0); // flags
-        push_u16(&mut head, 1024); // unitsPerEm
-        push_u32(&mut head, 0); // created (upper half)
-        push_u32(&mut head, 0); // created (lower half)
-        push_u32(&mut head, 0); // modified (upper half)
-        push_u32(&mut head, 0); // modified (lower half)
-        push_i16(&mut head, 0); // xMin
-        push_i16(&mut head, -200); // yMin
-        push_i16(&mut head, 500); // xMax
-        push_i16(&mut head, 800); // yMax
-        push_u16(&mut head, 0); // macStyle
-        push_u16(&mut head, 8); // lowestRecPPEM
-        push_i16(&mut head, 2); // fontDirectionHint
-        push_i16(&mut head, 0); // indexToLocFormat
-        push_i16(&mut head, 0); // glyphDataFormat
-
-        let mut hhea = Vec::new();
-        push_u16(&mut hhea, 1); // majorVersion
-        push_u16(&mut hhea, 0); // minorVersion
-        push_i16(&mut hhea, 800); // ascender
-        push_i16(&mut hhea, -200); // descender
-        push_i16(&mut hhea, 0); // lineGap
-        push_u16(&mut hhea, 500); // advanceWidthMax
-        push_i16(&mut hhea, 0); // minLeftSideBearing
-        push_i16(&mut hhea, 0); // minRightSideBearing
-        push_i16(&mut hhea, 500); // xMaxExtent
-        push_i16(&mut hhea, 1); // caretSlopeRise
-        push_i16(&mut hhea, 0); // caretSlopeRun
-        push_i16(&mut hhea, 0); // caretOffset
-        for _ in 0..4 {
-            push_i16(&mut hhea, 0); // reserved
-        }
-        push_i16(&mut hhea, 0); // metricDataFormat
-        push_u16(&mut hhea, 0); // numberOfHMetrics
-
-        let mut maxp = Vec::new();
-        push_u32(&mut maxp, 0x0000_5000); // version 0.5
-        push_u16(&mut maxp, 1); // numGlyphs
-
-        // Table records must be sorted by tag.
-        let tables: [(&[u8; 4], &Vec<u8>); 3] = [(b"head", &head), (b"hhea", &hhea), (b"maxp", &maxp)];
-
-        let mut font = Vec::new();
-        push_u32(&mut font, 0x0001_0000); // sfntVersion
-        push_u16(&mut font, tables.len() as u16); // numTables
-        push_u16(&mut font, 32); // searchRange
-        push_u16(&mut font, 1); // entrySelector
-        push_u16(&mut font, 16); // rangeShift
-
-        let header_len = 12 + 16 * tables.len();
-        let mut records = Vec::new();
-        let mut body: Vec<u8> = Vec::new();
-        for (tag, table) in tables {
-            records.extend_from_slice(&tag[..]);
-            push_u32(&mut records, 0); // checksum, not verified by the parsers
-            push_u32(&mut records, (header_len + body.len()) as u32);
-            push_u32(&mut records, table.len() as u32);
-            body.extend_from_slice(table);
-            while !body.len().is_multiple_of(4) {
-                body.push(0); // tables start on 4-byte boundaries
-            }
-        }
-        font.extend_from_slice(&records);
-        font.extend_from_slice(&body);
-        font
     }
 
     #[test]
@@ -1095,5 +1054,21 @@ mod tests {
 
         // The hhea line gap is commonly zero, but never negative for this font.
         assert!(metrics.line_gap() >= 0.0);
+    }
+
+    /// swash's `ScaleContext` caches scaler data and hinting instances per
+    /// `CacheKey`, so every `FontRef` for one face must carry the same key, and
+    /// two faces must never share one.
+    #[cfg(feature = "swash")]
+    #[test]
+    fn each_face_keeps_one_swash_cache_key() {
+        let data = minimal_font_without_optional_tables();
+        let context = super::super::TextContextImpl::default();
+        let font = Font::new_with_data(data.clone(), 0, &context).expect("font should parse");
+        let other = Font::new_with_data(data, 0, &context).expect("font should parse");
+
+        let key = font.swash_font_ref().unwrap().key;
+        assert_eq!(key, font.swash_font_ref().unwrap().key);
+        assert_ne!(key, other.swash_font_ref().unwrap().key);
     }
 }

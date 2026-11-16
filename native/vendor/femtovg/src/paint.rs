@@ -1,10 +1,14 @@
 // TODO: prefix paint creation functions with make_ or new_
 // so that they are easier to find when autocompleting
 
+use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use crate::{geometry::Position, Align, Baseline, Color, FillRule, FontId, ImageId, LineCap, LineJoin};
+use crate::{
+    geometry::{Position, Transform2D},
+    Align, Baseline, Color, ColorSpace, FillRule, FontId, ImageId, LineCap, LineJoin,
+};
 
 const MAX_FONT_VARIATIONS: usize = 4;
 
@@ -114,36 +118,66 @@ impl FontVariations {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GradientStop(pub f32, pub Color);
 
-// We use MultiStopGradient as a key since we cache them. We either need
-// to define Hash (for HashMap) or Ord for (BTreeMap).
+// `total_cmp` orders -0.0 before 0.0; they draw the same, so must share a ramp.
+fn key_cmp(a: f32, b: f32) -> Ordering {
+    (a + 0.0).total_cmp(&(b + 0.0))
+}
+
+fn color_total_cmp(a: &Color, b: &Color) -> Ordering {
+    key_cmp(a.r, b.r)
+        .then_with(|| key_cmp(a.g, b.g))
+        .then_with(|| key_cmp(a.b, b.b))
+        .then_with(|| key_cmp(a.a, b.a))
+}
+
+fn is_finite_color(color: &Color) -> bool {
+    [color.r, color.g, color.b, color.a].iter().all(|c| c.is_finite())
+}
+
+// MultiStopGradient is the key of GradientStore's BTreeMap, so the ordering
+// must be total: with `<` a NaN compared `Equal` to anything and aliased
+// another gradient's cached ramp. `PartialEq` follows `Ord` to keep `Eq` sound.
+impl PartialEq for GradientStop {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
 impl Eq for GradientStop {}
 impl Ord for GradientStop {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if (other.0, other.1) < (self.0, self.1) {
-            std::cmp::Ordering::Less
-        } else if (self.0, self.1) < (other.0, other.1) {
-            std::cmp::Ordering::Greater
-        } else {
-            std::cmp::Ordering::Equal
-        }
+    fn cmp(&self, other: &Self) -> Ordering {
+        key_cmp(self.0, other.0).then_with(|| color_total_cmp(&self.1, &other.1))
     }
 }
 
 impl PartialOrd for GradientStop {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// How a gradient interpolates between its stops.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Interpolation {
+    /// The color space the stop colors are interpolated in.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) space: ColorSpace,
+    /// Whether the stop colors are interpolated premultiplied by their alpha.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) premultiplied: bool,
+}
+
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MultiStopGradient {
     shared_stops: Rc<[GradientStop]>,
     tint: f32,
+    #[cfg_attr(feature = "serde", serde(default))]
+    interpolation: Interpolation,
 }
 
 impl MultiStopGradient {
@@ -158,6 +192,10 @@ impl MultiStopGradient {
         stop
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.shared_stops.len()
+    }
+
     pub(crate) fn pairs(&self) -> impl Iterator<Item = [GradientStop; 2]> + '_ {
         self.shared_stops.as_ref().windows(2).map(move |pair| {
             let mut stops = [pair[0], pair[1]];
@@ -166,25 +204,40 @@ impl MultiStopGradient {
             stops
         })
     }
+
+    pub(crate) fn space(&self) -> ColorSpace {
+        self.interpolation.space
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_interpolation_space(&mut self, space: ColorSpace) {
+        self.interpolation.space = space;
+    }
+
+    pub(crate) fn premultiplied(&self) -> bool {
+        self.interpolation.premultiplied
+    }
 }
 
+impl PartialEq for MultiStopGradient {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
 impl Eq for MultiStopGradient {}
 
 impl PartialOrd for MultiStopGradient {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for MultiStopGradient {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if (&other.shared_stops, other.tint) < (&self.shared_stops, self.tint) {
-            std::cmp::Ordering::Less
-        } else if (&self.shared_stops, self.tint) < (&other.shared_stops, other.tint) {
-            std::cmp::Ordering::Greater
-        } else {
-            std::cmp::Ordering::Equal
-        }
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.shared_stops
+            .cmp(&other.shared_stops)
+            .then_with(|| key_cmp(self.tint, other.tint))
+            .then_with(|| self.interpolation.cmp(&other.interpolation))
     }
 }
 
@@ -192,13 +245,39 @@ impl Ord for MultiStopGradient {
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum GradientColors {
-    TwoStop { start_color: Color, end_color: Color },
-    MultiStop { stops: MultiStopGradient },
+    TwoStop {
+        start_color: Color,
+        end_color: Color,
+        /// Its space is always sRGB: other spaces turn it into a multi-stop gradient.
+        #[cfg_attr(feature = "serde", serde(default))]
+        interpolation: Interpolation,
+    },
+    MultiStop {
+        stops: MultiStopGradient,
+    },
 }
 impl GradientColors {
+    /// A two-stop gradient with the default interpolation.
+    pub(crate) fn two_stop(start_color: Color, end_color: Color) -> Self {
+        Self::TwoStop {
+            start_color,
+            end_color,
+            interpolation: Interpolation::default(),
+        }
+    }
+
+    fn interpolation_mut(&mut self) -> &mut Interpolation {
+        match self {
+            Self::TwoStop { interpolation, .. } => interpolation,
+            Self::MultiStop { stops } => &mut stops.interpolation,
+        }
+    }
+
     fn mul_alpha(&mut self, a: f32) {
         match self {
-            Self::TwoStop { start_color, end_color } => {
+            Self::TwoStop {
+                start_color, end_color, ..
+            } => {
                 start_color.a *= a;
                 end_color.a *= a;
             }
@@ -207,24 +286,22 @@ impl GradientColors {
             }
         }
     }
-    fn from_stops<Stops>(stops: Stops) -> Self
+    pub(crate) fn from_stops<Stops>(stops: Stops) -> Self
     where
         Stops: IntoIterator<Item = (f32, Color)>,
     {
-        let mut stops = stops.into_iter();
+        // Canvas 2D `addColorStop` throws on a non-finite offset; drop such
+        // stops as `set_line_dash` drops a non-finite dash.
+        let mut stops = stops
+            .into_iter()
+            .filter(|(offset, color)| offset.is_finite() && is_finite_color(color));
         let Some(first_stop) = stops.next() else {
             // No stops, we use black.
-            return Self::TwoStop {
-                start_color: Color::black(),
-                end_color: Color::black(),
-            };
+            return Self::two_stop(Color::black(), Color::black());
         };
         let Some(second_stop) = stops.next() else {
             // One stop devolves to a solid color fill (but using the gradient shader variation).
-            return Self::TwoStop {
-                start_color: first_stop.1,
-                end_color: first_stop.1,
-            };
+            return Self::two_stop(first_stop.1, first_stop.1);
         };
 
         let maybe_third_stop = stops.next();
@@ -232,10 +309,7 @@ impl GradientColors {
         if maybe_third_stop.is_none() && first_stop.0 <= 0.0 && second_stop.0 >= 1.0 {
             // Two stops takes the classic gradient path, so long as the stop positions are at
             // the extents (if the stop positions are inset then we'll fill to them).
-            return Self::TwoStop {
-                start_color: first_stop.1,
-                end_color: second_stop.1,
-            };
+            return Self::two_stop(first_stop.1, second_stop.1);
         }
 
         // Actual multistop gradient. We copy out the stops and then use a stop with a
@@ -251,7 +325,73 @@ impl GradientColors {
             stops: MultiStopGradient {
                 shared_stops: out_stops,
                 tint: 1.0,
+                interpolation: Interpolation::default(),
             },
+        }
+    }
+
+    /// Sets the color space the stop colors are interpolated in.
+    pub(crate) fn set_interpolation_space(&mut self, space: ColorSpace) {
+        self.interpolation_mut().space = space;
+        match self {
+            // The two-stop shader path only interpolates in sRGB; other spaces go through the LUT.
+            Self::TwoStop {
+                start_color,
+                end_color,
+                interpolation,
+            } if space != ColorSpace::Srgb => {
+                *self = Self::MultiStop {
+                    stops: MultiStopGradient {
+                        shared_stops: [GradientStop(0.0, *start_color), GradientStop(1.0, *end_color)].into(),
+                        tint: 1.0,
+                        interpolation: *interpolation,
+                    },
+                };
+            }
+            // Only promotion makes a two-stop `MultiStop` spanning the extents
+            // (`from_stops` gives those `TwoStop`), so this undoes it.
+            Self::MultiStop { stops }
+                if space == ColorSpace::Srgb
+                    && stops.len() == 2
+                    && stops.shared_stops[0].0 <= 0.0
+                    && stops.shared_stops[1].0 >= 1.0 =>
+            {
+                // `get` folds the tint into alpha, as `mul_alpha` does for `TwoStop`.
+                *self = Self::TwoStop {
+                    start_color: stops.get(0).1,
+                    end_color: stops.get(1).1,
+                    interpolation: stops.interpolation,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    /// Sets whether the stop colors are interpolated premultiplied by their alpha.
+    pub(crate) fn set_premultiplied_interpolation(&mut self, premultiplied: bool) {
+        self.interpolation_mut().premultiplied = premultiplied;
+    }
+}
+
+/// A colour-space conversion an image paint applies to each texel it
+/// samples: the sRGB transfer curve on the unpremultiplied colour, alpha
+/// untouched, rounded to 8 bits - what
+/// [`ImageFilter::LinearRgbToSrgb`](crate::ImageFilter::LinearRgbToSrgb) and
+/// its inverse store as a pass. A layer whose chain is one conversion
+/// composites through it instead (see `LayerEffects::composite_transfer`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Transfer {
+    ToSrgb,
+    ToLinearRgb,
+}
+
+impl Transfer {
+    /// The value the shaders read for it: 1 to sRGB, 2 to linearRGB (0, no
+    /// transfer, is the uniform's default).
+    pub(crate) fn uniform(self) -> f32 {
+        match self {
+            Self::ToSrgb => 1.0,
+            Self::ToLinearRgb => 2.0,
         }
     }
 }
@@ -268,11 +408,18 @@ pub enum PaintFlavor {
         height: f32,
         angle: f32,
         tint: Color,
+        transfer: Option<Transfer>,
     },
     LinearGradient {
         start: Position,
         end: Position,
         colors: GradientColors,
+        /// Maps the gradient's own coordinate system into user space, the
+        /// role SVG's `gradientTransform` plays. Applied before the canvas
+        /// transform, so a gradient can be sheared or given different scales
+        /// on its two axes without the shape following it.
+        #[cfg_attr(feature = "serde", serde(default))]
+        transform: Transform2D,
     },
     BoxGradient {
         pos: Position,
@@ -281,14 +428,28 @@ pub enum PaintFlavor {
         radius: f32,
         feather: f32,
         colors: GradientColors,
+        /// Maps the gradient's own coordinate system into user space, the
+        /// role SVG's `gradientTransform` plays. Applied before the canvas
+        /// transform, so a gradient can be sheared or given different scales
+        /// on its two axes without the shape following it.
+        #[cfg_attr(feature = "serde", serde(default))]
+        transform: Transform2D,
     },
     RadialGradient {
         center: Position,
         /// (x, y) radii of the inner boundary. Equal components describe a circle.
+        #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_radius_pair"))]
         in_radius: (f32, f32),
         /// (x, y) radii of the outer boundary. Equal components describe a circle.
+        #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_radius_pair"))]
         out_radius: (f32, f32),
         colors: GradientColors,
+        /// Maps the gradient's own coordinate system into user space, the
+        /// role SVG's `gradientTransform` plays. Applied before the canvas
+        /// transform, so a gradient can be sheared or given different scales
+        /// on its two axes without the shape following it.
+        #[cfg_attr(feature = "serde", serde(default))]
+        transform: Transform2D,
     },
     ConicGradient {
         center: Position,
@@ -299,7 +460,44 @@ pub enum PaintFlavor {
         #[cfg_attr(feature = "serde", serde(default))]
         start_angle: f32,
         colors: GradientColors,
+        /// Maps the gradient's own coordinate system into user space, the
+        /// role SVG's `gradientTransform` plays. Applied before the canvas
+        /// transform, so a gradient can be sheared or given different scales
+        /// on its two axes without the shape following it.
+        #[cfg_attr(feature = "serde", serde(default))]
+        transform: Transform2D,
     },
+    /// Two-point (independently centered) radial gradient, i.e. the general
+    /// Canvas `createRadialGradient(x0, y0, r0, x1, y1, r1)` form where the start
+    /// and end circles need not share a center. Concentric radial gradients use
+    /// the cheaper [`RadialGradient`](Self::RadialGradient) box-gradient path.
+    TwoPointRadialGradient {
+        start_center: Position,
+        start_radius: f32,
+        end_center: Position,
+        end_radius: f32,
+        colors: GradientColors,
+        /// Maps the gradient's own coordinate system into user space, the
+        /// role SVG's `gradientTransform` plays. Applied before the canvas
+        /// transform, so a gradient can be sheared or given different scales
+        /// on its two axes without the shape following it.
+        #[cfg_attr(feature = "serde", serde(default))]
+        transform: Transform2D,
+    },
+}
+
+// Shared by `gradient_colors` and `gradient_colors_mut`; match ergonomics picks `&` or `&mut`.
+macro_rules! gradient_colors_arms {
+    ($self:expr) => {
+        match $self {
+            PaintFlavor::LinearGradient { colors, .. } => Some(colors),
+            PaintFlavor::BoxGradient { colors, .. } => Some(colors),
+            PaintFlavor::RadialGradient { colors, .. } => Some(colors),
+            PaintFlavor::ConicGradient { colors, .. } => Some(colors),
+            PaintFlavor::TwoPointRadialGradient { colors, .. } => Some(colors),
+            _ => None,
+        }
+    };
 }
 
 // Convenience method to fetch the GradientColors out of a PaintFlavor
@@ -324,17 +522,18 @@ impl PaintFlavor {
             Self::ConicGradient { colors, .. } => {
                 colors.mul_alpha(a);
             }
+            Self::TwoPointRadialGradient { colors, .. } => {
+                colors.mul_alpha(a);
+            }
         }
     }
 
     pub(crate) fn gradient_colors(&self) -> Option<&GradientColors> {
-        match self {
-            Self::LinearGradient { colors, .. } => Some(colors),
-            Self::BoxGradient { colors, .. } => Some(colors),
-            Self::RadialGradient { colors, .. } => Some(colors),
-            Self::ConicGradient { colors, .. } => Some(colors),
-            _ => None,
-        }
+        gradient_colors_arms!(self)
+    }
+
+    pub(crate) fn gradient_colors_mut(&mut self) -> Option<&mut GradientColors> {
+        gradient_colors_arms!(self)
     }
 
     /// Returns true if this paint is an untransformed image paint without anti-aliasing at the edges in case of a fill
@@ -343,7 +542,7 @@ impl PaintFlavor {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum GlyphTexture {
     #[default]
     None,
@@ -371,6 +570,20 @@ pub struct StrokeSettings {
     pub(crate) line_join: LineJoin,
     pub(crate) line_dash: Vec<f32>,
     pub(crate) line_dash_offset: f32,
+}
+
+impl StrokeSettings {
+    /// How far a stroke `line_width` wide reaches from its path: half the
+    /// width, further at a miter's tip or a square cap's corner.
+    pub(crate) fn reach(&self, line_width: f32) -> f32 {
+        let join = match self.line_join {
+            LineJoin::Miter => self.miter_limit.max(1.0),
+            LineJoin::Round | LineJoin::Bevel => 1.0,
+        };
+        let square = self.line_cap_start == LineCap::Square || self.line_cap_end == LineCap::Square;
+        let cap = if square { std::f32::consts::SQRT_2 } else { 1.0 };
+        line_width * 0.5 * join.max(cap)
+    }
 }
 
 impl Default for StrokeSettings {
@@ -553,6 +766,7 @@ impl Paint {
             height,
             angle,
             tint: Color::rgbaf(1.0, 1.0, 1.0, alpha),
+            transfer: None,
         })
     }
 
@@ -566,7 +780,16 @@ impl Paint {
             height,
             angle,
             tint,
+            transfer: None,
         })
+    }
+
+    /// This image paint converting each texel by `transfer` as it samples it.
+    pub(crate) fn with_transfer(mut self, transfer: Option<Transfer>) -> Self {
+        if let PaintFlavor::Image { transfer: t, .. } = &mut self.flavor {
+            *t = transfer;
+        }
+        self
     }
 
     /// Creates and returns a linear gradient paint.
@@ -595,10 +818,12 @@ impl Paint {
         Self::with_flavor(PaintFlavor::LinearGradient {
             start: Position { x: start_x, y: start_y },
             end: Position { x: end_x, y: end_y },
-            colors: GradientColors::TwoStop { start_color, end_color },
+            colors: GradientColors::two_stop(start_color, end_color),
+            transform: Transform2D::identity(),
         })
     }
     /// Creates and returns a linear gradient paint with two or more stops.
+    /// Stops with a non-finite offset or color component are ignored.
     ///
     /// The gradient is transformed by the current transform when it is passed to `fill_path()` or `stroke_path()`.
     ///
@@ -631,6 +856,7 @@ impl Paint {
             start: Position { x: start_x, y: start_y },
             end: Position { x: end_x, y: end_y },
             colors: GradientColors::from_stops(stops),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -680,10 +906,8 @@ impl Paint {
             height,
             radius,
             feather,
-            colors: GradientColors::TwoStop {
-                start_color: inner_color,
-                end_color: outer_color,
-            },
+            colors: GradientColors::two_stop(inner_color, outer_color),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -724,10 +948,8 @@ impl Paint {
             center: Position { x: cx, y: cy },
             in_radius: (in_radius, in_radius),
             out_radius: (out_radius, out_radius),
-            colors: GradientColors::TwoStop {
-                start_color: inner_color,
-                end_color: outer_color,
-            },
+            colors: GradientColors::two_stop(inner_color, outer_color),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -775,10 +997,8 @@ impl Paint {
             center: Position { x: cx, y: cy },
             in_radius: (in_rx, in_ry),
             out_radius: (out_rx, out_ry),
-            colors: GradientColors::TwoStop {
-                start_color: inner_color,
-                end_color: outer_color,
-            },
+            colors: GradientColors::two_stop(inner_color, outer_color),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -786,6 +1006,7 @@ impl Paint {
     ///
     /// Parameters (`cx`,`cy`) specify the center, `in_radius` and `out_radius` specify the inner and outer radius of the gradient,
     /// colors specifies a list of color stops with offsets. The first offset should be 0.0 and the last offset should be 1.0.
+    /// Stops with a non-finite offset or color component are ignored.
     ///
     /// The gradient is transformed by the current transform when it is passed to `fill_paint()` or `stroke_paint()`.
     ///
@@ -823,6 +1044,7 @@ impl Paint {
             in_radius: (in_radius, in_radius),
             out_radius: (out_radius, out_radius),
             colors: GradientColors::from_stops(stops),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -832,6 +1054,7 @@ impl Paint {
     /// the inner and outer ellipse radii along the x and y axes, colors specifies a list of color
     /// stops with offsets. The first offset should be 0.0 and the last offset should be 1.0.
     /// Passing equal x/y radii is equivalent to [`Paint::radial_gradient_stops`].
+    /// Stops with a non-finite offset or color component are ignored.
     ///
     /// The gradient is transformed by the current transform when it is passed to `fill_paint()` or `stroke_paint()`.
     ///
@@ -873,6 +1096,68 @@ impl Paint {
             in_radius: (in_rx, in_ry),
             out_radius: (out_rx, out_ry),
             colors: GradientColors::from_stops(stops),
+            transform: Transform2D::identity(),
+        })
+    }
+
+    /// Creates and returns a two-color two-point radial gradient.
+    ///
+    /// This is the general Canvas 2D `createRadialGradient(x0, y0, r0, x1, y1, r1)`
+    /// form: colour `0.0` fills the start circle (`x0`, `y0`, `r0`) and colour
+    /// `1.0` fills the end circle (`x1`, `y1`, `r1`), which may be independently
+    /// centered. Where the two circles are concentric prefer
+    /// [`radial_gradient`](Self::radial_gradient), which uses a cheaper shader.
+    ///
+    /// The gradient is transformed by the current transform when it is passed to
+    /// `fill_paint()` or `stroke_paint()`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn two_point_radial_gradient(
+        start_x: f32,
+        start_y: f32,
+        start_radius: f32,
+        end_x: f32,
+        end_y: f32,
+        end_radius: f32,
+        inner_color: Color,
+        outer_color: Color,
+    ) -> Self {
+        Self::with_flavor(PaintFlavor::TwoPointRadialGradient {
+            start_center: Position { x: start_x, y: start_y },
+            start_radius,
+            end_center: Position { x: end_x, y: end_y },
+            end_radius,
+            colors: GradientColors::two_stop(inner_color, outer_color),
+            transform: Transform2D::identity(),
+        })
+    }
+
+    /// Creates and returns a multi-stop two-point radial gradient.
+    ///
+    /// Like [`two_point_radial_gradient`](Self::two_point_radial_gradient), but
+    /// takes a list of colour stops with offsets. The first offset should be
+    /// `0.0` and the last `1.0`. This is the general Canvas 2D
+    /// `createRadialGradient(x0, y0, r0, x1, y1, r1)` form with `addColorStop`.
+    /// Stops with a non-finite offset or color component are ignored.
+    ///
+    /// The gradient is transformed by the current transform when it is passed to
+    /// `fill_paint()` or `stroke_paint()`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn two_point_radial_gradient_stops(
+        start_x: f32,
+        start_y: f32,
+        start_radius: f32,
+        end_x: f32,
+        end_y: f32,
+        end_radius: f32,
+        stops: impl IntoIterator<Item = (f32, Color)>,
+    ) -> Self {
+        Self::with_flavor(PaintFlavor::TwoPointRadialGradient {
+            start_center: Position { x: start_x, y: start_y },
+            start_radius,
+            end_center: Position { x: end_x, y: end_y },
+            end_radius,
+            colors: GradientColors::from_stops(stops),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -898,7 +1183,8 @@ impl Paint {
         Self::with_flavor(PaintFlavor::ConicGradient {
             center: Position { x: cx, y: cy },
             start_angle: Self::finite_start_angle_or_zero(start_angle),
-            colors: GradientColors::TwoStop { start_color, end_color },
+            colors: GradientColors::two_stop(start_color, end_color),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -907,6 +1193,7 @@ impl Paint {
     /// Parameters (`cx`,`cy`) specify the center. The gradient begins at the
     /// positive x axis (the 3 o'clock direction) and proceeds clockwise, matching
     /// the Canvas 2D `createConicGradient(0, cx, cy)` semantics.
+    /// Stops with a non-finite offset or color component are ignored.
     pub fn conic_gradient_stops(cx: f32, cy: f32, stops: impl IntoIterator<Item = (f32, Color)>) -> Self {
         Self::conic_gradient_stops_with_angle(cx, cy, 0.0, stops)
     }
@@ -919,7 +1206,7 @@ impl Paint {
     ///
     /// Following the Canvas convention that non-finite values must not poison
     /// rendering state, a non-finite `start_angle` (NaN or an infinity) is
-    /// ignored and treated as `0.0`.
+    /// ignored and treated as `0.0`. Stops with a non-finite offset or color component are ignored.
     pub fn conic_gradient_stops_with_angle(
         cx: f32,
         cy: f32,
@@ -930,6 +1217,7 @@ impl Paint {
             center: Position { x: cx, y: cy },
             start_angle: Self::finite_start_angle_or_zero(start_angle),
             colors: GradientColors::from_stops(stops),
+            transform: Transform2D::identity(),
         })
     }
 
@@ -1456,6 +1744,74 @@ impl Paint {
         self.fill_rule
     }
 
+    /// Sets a transform mapping the gradient's own coordinate system into user
+    /// space, the role SVG's `gradientTransform` plays.
+    ///
+    /// It applies to the gradient only, ahead of the canvas transform, so the
+    /// shape being filled does not move with it. This is what expresses a
+    /// gradient whose two axes are scaled differently — an elliptical radial
+    /// gradient, say, which the circle and radius parameters cannot describe on
+    /// their own. Paints that are not gradients ignore it.
+    pub fn set_gradient_transform(&mut self, transform: Transform2D) {
+        match &mut self.flavor {
+            PaintFlavor::LinearGradient { transform: t, .. }
+            | PaintFlavor::BoxGradient { transform: t, .. }
+            | PaintFlavor::RadialGradient { transform: t, .. }
+            | PaintFlavor::ConicGradient { transform: t, .. }
+            | PaintFlavor::TwoPointRadialGradient { transform: t, .. } => *t = transform,
+            PaintFlavor::Color(_) | PaintFlavor::Image { .. } => {}
+        }
+    }
+
+    /// Builder form of [`Paint::set_gradient_transform`].
+    #[must_use]
+    pub fn with_gradient_transform(mut self, transform: Transform2D) -> Self {
+        self.set_gradient_transform(transform);
+        self
+    }
+
+    /// Sets the color space gradient stops are interpolated in.
+    /// Ignored on non-gradient paints.
+    pub fn set_interpolation_space(&mut self, space: ColorSpace) {
+        if let Some(colors) = self.flavor.gradient_colors_mut() {
+            colors.set_interpolation_space(space);
+        }
+    }
+
+    /// Returns the paint with the color space set to the specified value.
+    ///
+    /// See [`set_interpolation_space`](Self::set_interpolation_space) for details.
+    #[inline]
+    #[must_use]
+    pub fn with_interpolation_space(mut self, space: ColorSpace) -> Self {
+        self.set_interpolation_space(space);
+        self
+    }
+
+    /// Sets whether gradient stops are interpolated premultiplied by their alpha.
+    /// Ignored on non-gradient paints.
+    ///
+    /// By default, stops are interpolated straight (unpremultiplied), as Canvas 2D and SVG
+    /// gradients are, so a stop's color shows even where it fades out:
+    /// `transparent` (transparent black) to white passes through gray.
+    /// CSS gradients interpolate premultiplied, so a transparent stop adds no color:
+    /// `transparent` to white stays white and only fades in.
+    pub fn set_premultiplied_interpolation(&mut self, premultiplied: bool) {
+        if let Some(colors) = self.flavor.gradient_colors_mut() {
+            colors.set_premultiplied_interpolation(premultiplied);
+        }
+    }
+
+    /// Returns the paint with premultiplied interpolation set to the specified value.
+    ///
+    /// See [`set_premultiplied_interpolation`](Self::set_premultiplied_interpolation) for details.
+    #[inline]
+    #[must_use]
+    pub fn with_premultiplied_interpolation(mut self, premultiplied: bool) -> Self {
+        self.set_premultiplied_interpolation(premultiplied);
+        self
+    }
+
     /// Sets the fill rule for filling paths.
     #[inline]
     pub fn set_fill_rule(&mut self, rule: FillRule) {
@@ -1472,10 +1828,242 @@ impl Paint {
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::Ordering;
+
+    use super::{GradientColors, GradientStop, Interpolation, MultiStopGradient, Paint, PaintFlavor};
     #[cfg(feature = "serde")]
-    use super::{GradientColors, Position};
-    use super::{Paint, PaintFlavor};
-    use crate::Color;
+    use super::{Position, Transform2D};
+    use crate::{Color, ColorSpace};
+
+    #[test]
+    fn with_interpolation_space_turns_two_stop_gradient_into_multi_stop() {
+        let (start, end) = (Color::rgb(255, 0, 0), Color::rgb(0, 255, 0));
+        let paint = Paint::linear_gradient(0.0, 0.0, 1.0, 1.0, start, end).with_interpolation_space(ColorSpace::Oklab);
+
+        let PaintFlavor::LinearGradient { colors, .. } = paint.flavor else {
+            panic!("expected LinearGradient");
+        };
+        let GradientColors::MultiStop { stops } = colors else {
+            panic!("expected MultiStop");
+        };
+        assert_eq!(stops.space(), ColorSpace::Oklab);
+        assert_eq!(stops.len(), 2);
+        assert_eq!((stops.get(0).0, stops.get(0).1), (0.0, start));
+        assert_eq!((stops.get(1).0, stops.get(1).1), (1.0, end));
+    }
+
+    #[test]
+    fn with_interpolation_space_srgb_keeps_two_stop_gradient() {
+        let paint = Paint::linear_gradient(0.0, 0.0, 1.0, 1.0, Color::rgb(255, 0, 0), Color::rgb(0, 255, 0))
+            .with_interpolation_space(ColorSpace::Srgb);
+
+        let PaintFlavor::LinearGradient { colors, .. } = paint.flavor else {
+            panic!("expected LinearGradient");
+        };
+        assert!(matches!(colors, GradientColors::TwoStop { .. }));
+    }
+
+    #[test]
+    fn with_interpolation_space_srgb_restores_promoted_two_stop_gradient() {
+        let (start, end) = (Color::rgbf(1.0, 0.0, 0.0), Color::rgbf(0.0, 1.0, 0.0));
+        let mut paint = Paint::linear_gradient(0.0, 0.0, 1.0, 1.0, start, end)
+            .with_interpolation_space(ColorSpace::Oklab)
+            .with_premultiplied_interpolation(true);
+        paint.flavor.mul_alpha(0.5);
+        paint.set_interpolation_space(ColorSpace::Srgb);
+
+        let PaintFlavor::LinearGradient { colors, .. } = paint.flavor else {
+            panic!("expected LinearGradient");
+        };
+        assert_eq!(
+            colors,
+            GradientColors::TwoStop {
+                start_color: Color::rgbaf(1.0, 0.0, 0.0, 0.5),
+                end_color: Color::rgbaf(0.0, 1.0, 0.0, 0.5),
+                interpolation: Interpolation {
+                    space: ColorSpace::Srgb,
+                    premultiplied: true,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn with_interpolation_space_sets_multi_stop_gradient_interpolation_space() {
+        let paint = Paint::linear_gradient_stops(
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            [
+                (0.0, Color::rgb(255, 0, 0)),
+                (0.5, Color::rgb(0, 255, 0)),
+                (1.0, Color::rgb(0, 0, 255)),
+            ],
+        )
+        .with_interpolation_space(ColorSpace::Oklab);
+
+        let PaintFlavor::LinearGradient { colors, .. } = paint.flavor else {
+            panic!("expected LinearGradient");
+        };
+        let GradientColors::MultiStop { stops } = colors else {
+            panic!("expected MultiStop");
+        };
+        assert_eq!(stops.space(), ColorSpace::Oklab);
+    }
+
+    #[test]
+    fn with_premultiplied_interpolation_keeps_a_fading_two_stop_gradient_on_the_two_stop_path() {
+        let (start, end) = (Color::rgba(0, 0, 0, 0), Color::white());
+        let paint = Paint::linear_gradient(0.0, 0.0, 1.0, 1.0, start, end).with_premultiplied_interpolation(true);
+
+        let PaintFlavor::LinearGradient { colors, .. } = paint.flavor else {
+            panic!("expected LinearGradient");
+        };
+        assert_eq!(
+            colors,
+            GradientColors::TwoStop {
+                start_color: start,
+                end_color: end,
+                interpolation: Interpolation {
+                    space: ColorSpace::Srgb,
+                    premultiplied: true,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn with_premultiplied_interpolation_survives_a_later_interpolation_space() {
+        let paint = Paint::linear_gradient(0.0, 0.0, 1.0, 1.0, Color::rgba(0, 0, 0, 0), Color::white())
+            .with_premultiplied_interpolation(true)
+            .with_interpolation_space(ColorSpace::Oklab);
+
+        let PaintFlavor::LinearGradient { colors, .. } = paint.flavor else {
+            panic!("expected LinearGradient");
+        };
+        let GradientColors::MultiStop { stops } = colors else {
+            panic!("expected MultiStop");
+        };
+        assert!(stops.premultiplied());
+        assert_eq!(stops.space(), ColorSpace::Oklab);
+    }
+
+    #[test]
+    fn with_interpolation_space_ignores_non_gradient_paints() {
+        let original = Color::rgb(1, 2, 3);
+        let paint = Paint::color(original).with_interpolation_space(ColorSpace::Oklab);
+        let PaintFlavor::Color(color) = paint.flavor else {
+            panic!("expected Color");
+        };
+        assert_eq!(color, original);
+    }
+
+    fn gradient_colors(paint: Paint) -> GradientColors {
+        match paint.flavor {
+            PaintFlavor::LinearGradient { colors, .. }
+            | PaintFlavor::BoxGradient { colors, .. }
+            | PaintFlavor::RadialGradient { colors, .. }
+            | PaintFlavor::ConicGradient { colors, .. }
+            | PaintFlavor::TwoPointRadialGradient { colors, .. } => colors,
+            other => panic!("expected a gradient, got {other:?}"),
+        }
+    }
+
+    fn every_stops_constructor(stops: &[(f32, Color)]) -> Vec<GradientColors> {
+        let s = || stops.iter().copied();
+        [
+            Paint::linear_gradient_stops(0.0, 0.0, 1.0, 1.0, s()),
+            Paint::radial_gradient_stops(0.0, 0.0, 1.0, 2.0, s()),
+            Paint::elliptical_gradient_stops(0.0, 0.0, 1.0, 2.0, 3.0, 4.0, s()),
+            Paint::two_point_radial_gradient_stops(0.0, 0.0, 1.0, 1.0, 1.0, 2.0, s()),
+            Paint::conic_gradient_stops(0.0, 0.0, s()),
+            Paint::conic_gradient_stops_with_angle(0.0, 0.0, 1.0, s()),
+        ]
+        .into_iter()
+        .map(gradient_colors)
+        .collect()
+    }
+
+    #[test]
+    fn gradient_stops_drop_non_finite_offsets_and_colors() {
+        let (red, blue, white) = (Color::rgb(255, 0, 0), Color::rgb(0, 0, 255), Color::white());
+        let nan_color = Color::rgbaf(f32::NAN, 0.0, 0.0, 1.0);
+        let inf_color = Color::rgbaf(0.0, 0.0, 0.0, f32::INFINITY);
+        let stops = [
+            (0.0, red),
+            (f32::NAN, white),
+            (f32::INFINITY, white),
+            (f32::NEG_INFINITY, white),
+            (0.3, nan_color),
+            (0.4, inf_color),
+            (0.5, blue),
+            (1.0, white),
+        ];
+
+        for colors in every_stops_constructor(&stops) {
+            let GradientColors::MultiStop { stops } = colors else {
+                panic!("expected MultiStop");
+            };
+            let kept: Vec<_> = (0..stops.len()).map(|i| (stops.get(i).0, stops.get(i).1)).collect();
+            assert_eq!(kept, [(0.0, red), (0.5, blue), (1.0, white)]);
+        }
+    }
+
+    /// Dropping the NaN stop can leave an extent-spanning pair for the two-stop shader.
+    #[test]
+    fn gradient_with_only_a_nan_middle_stop_becomes_two_stop() {
+        let (red, blue) = (Color::rgb(255, 0, 0), Color::rgb(0, 0, 255));
+        for colors in every_stops_constructor(&[(0.0, red), (f32::NAN, Color::white()), (1.0, blue)]) {
+            assert_eq!(colors, GradientColors::two_stop(red, blue));
+        }
+    }
+
+    /// `GradientStore` keys on `Ord`; a NaN that slips past the constructors
+    /// (e.g. through deserialization) must not alias another gradient's ramp.
+    #[test]
+    fn multi_stop_gradient_ordering_is_total_for_nan() {
+        let gradient = |offset: f32, tint: f32| MultiStopGradient {
+            shared_stops: [
+                GradientStop(0.0, Color::black()),
+                GradientStop(offset, Color::white()),
+                GradientStop(1.0, Color::black()),
+            ]
+            .into(),
+            tint,
+            interpolation: Interpolation::default(),
+        };
+
+        let half = gradient(0.5, 1.0);
+        let nan = gradient(f32::NAN, 1.0);
+        assert_ne!(half.cmp(&nan), Ordering::Equal);
+        assert_eq!(half.cmp(&nan), nan.cmp(&half).reverse());
+        assert_eq!(nan.cmp(&nan.clone()), Ordering::Equal);
+        assert_eq!(nan, nan.clone());
+        assert_ne!(gradient(0.5, f32::NAN).cmp(&half), Ordering::Equal);
+
+        let channel_nan = GradientStop(0.5, Color::rgbaf(f32::NAN, 1.0, 1.0, 1.0));
+        assert_ne!(channel_nan.cmp(&GradientStop(0.5, Color::white())), Ordering::Equal);
+    }
+
+    /// -0.0 and 0.0 draw the same ramp, so `GradientStore` must not make two textures.
+    #[test]
+    fn multi_stop_gradient_ordering_equates_signed_zeros() {
+        let gradient = |offset: f32, channel: f32, tint: f32| MultiStopGradient {
+            shared_stops: [
+                GradientStop(offset, Color::rgbaf(channel, 0.0, 0.0, 1.0)),
+                GradientStop(0.5, Color::white()),
+                GradientStop(1.0, Color::black()),
+            ]
+            .into(),
+            tint,
+            interpolation: Interpolation::default(),
+        };
+
+        assert_eq!(gradient(-0.0, 0.0, 1.0), gradient(0.0, 0.0, 1.0));
+        assert_eq!(gradient(0.0, -0.0, 1.0), gradient(0.0, 0.0, 1.0));
+        assert_eq!(gradient(0.0, 0.0, -0.0), gradient(0.0, 0.0, 0.0));
+    }
 
     #[test]
     fn line_dash_empty_pattern_clears() {
@@ -1520,10 +2108,8 @@ mod tests {
         let flavor = PaintFlavor::ConicGradient {
             center: Position { x: 1.0, y: 2.0 },
             start_angle: 1.5,
-            colors: GradientColors::TwoStop {
-                start_color: Color::black(),
-                end_color: Color::white(),
-            },
+            colors: GradientColors::two_stop(Color::black(), Color::white()),
+            transform: Transform2D::identity(),
         };
 
         // Learn the current serde representation, then strip `start_angle`
@@ -1556,10 +2142,8 @@ mod tests {
         let flavor = PaintFlavor::ConicGradient {
             center: Position { x: 3.0, y: 4.0 },
             start_angle: 2.75,
-            colors: GradientColors::TwoStop {
-                start_color: Color::black(),
-                end_color: Color::white(),
-            },
+            colors: GradientColors::two_stop(Color::black(), Color::white()),
+            transform: Transform2D::identity(),
         };
 
         let json = serde_json::to_string(&flavor).expect("serialize ConicGradient");
@@ -1596,9 +2180,87 @@ mod tests {
     }
 }
 
+/// Accepts either the current `(x, y)` radius pair or the scalar a radial
+/// gradient serialized before the radii became per-axis, expanding the scalar
+/// to a circle, so older serialized paints keep deserializing.
+#[cfg(feature = "serde")]
+fn deserialize_radius_pair<'de, D>(deserializer: D) -> Result<(f32, f32), D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum ScalarOrPair {
+        Scalar(f32),
+        Pair(f32, f32),
+    }
+    Ok(match <ScalarOrPair as serde::Deserialize>::deserialize(deserializer)? {
+        ScalarOrPair::Scalar(r) => (r, r),
+        ScalarOrPair::Pair(x, y) => (x, y),
+    })
+}
+
 #[cfg(all(test, feature = "serde"))]
 mod serde_tests {
     use super::*;
+
+    /// A gradient flavor serialized before `transform` existed omits that
+    /// field. With `#[serde(default)]` it must fall back to the identity
+    /// transform instead of failing to deserialize, so older serialized
+    /// paints keep their exact prior rendering.
+    #[test]
+    fn gradient_flavor_deserializes_without_transform() {
+        let json = r#"{
+            "RadialGradient": {
+                "center": { "x": 10.0, "y": 20.0 },
+                "in_radius": [0.0, 0.0],
+                "out_radius": [30.0, 30.0],
+                "colors": {
+                    "TwoStop": {
+                        "start_color": { "r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0 },
+                        "end_color": { "r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0 }
+                    }
+                }
+            }
+        }"#;
+        let restored: PaintFlavor = serde_json::from_str(json).expect("pre-transform paint deserializes");
+        let PaintFlavor::RadialGradient { transform, .. } = restored else {
+            panic!("wrong flavor");
+        };
+        assert_eq!(
+            transform,
+            crate::Transform2D::identity(),
+            "missing transform falls back to identity"
+        );
+    }
+
+    /// A radial gradient serialized before the radii became per-axis pairs
+    /// holds scalars; they must deserialize as circles rather than erroring.
+    #[test]
+    fn radial_gradient_deserializes_scalar_radii() {
+        let json = r#"{
+            "RadialGradient": {
+                "center": { "x": 0.0, "y": 0.0 },
+                "in_radius": 5.0,
+                "out_radius": 30.0,
+                "colors": {
+                    "TwoStop": {
+                        "start_color": { "r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0 },
+                        "end_color": { "r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0 }
+                    }
+                }
+            }
+        }"#;
+        let restored: PaintFlavor = serde_json::from_str(json).expect("scalar-radius paint deserializes");
+        let PaintFlavor::RadialGradient {
+            in_radius, out_radius, ..
+        } = restored
+        else {
+            panic!("wrong flavor");
+        };
+        assert_eq!(in_radius, (5.0, 5.0));
+        assert_eq!(out_radius, (30.0, 30.0));
+    }
 
     /// A paint serialized before `text_decoration` existed omits that field. With
     /// `#[serde(default)]` the field must fall back to `TextDecoration::default()`

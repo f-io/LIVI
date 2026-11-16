@@ -1,16 +1,14 @@
-use super::Params;
+use crate::clip::{ClipCoverage, MaskCoverage};
+use crate::paint::Transfer;
+use crate::renderer::Params;
 
-const UNIFORMARRAY_SIZE: usize = 14;
+const UNIFORMARRAY_SIZE: usize = 16;
 
 pub struct UniformArray([f32; UNIFORMARRAY_SIZE * 4]);
 
 impl Default for UniformArray {
     fn default() -> Self {
-        Self([
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        ])
+        Self([0.0; UNIFORMARRAY_SIZE * 4])
     }
 }
 
@@ -95,6 +93,44 @@ impl UniformArray {
         // frag[13].x in the fragment shader; frag[12].w holds the scissor radius.
         self.0[52] = angle;
     }
+
+    /// The clip shape, read by the shader variant of a draw under one: the
+    /// rest of the row the conic angle starts, and the two rows after it.
+    pub fn set_clip(&mut self, clip: Option<&ClipCoverage>) {
+        if let Some(clip) = clip {
+            self.0[54..64].copy_from_slice(&clip.uniform_rows());
+        }
+    }
+
+    /// The coverage mask, read by the shader variant of a draw under one:
+    /// where its corner lies, the pixels it spans and what one of them is
+    /// of its image, in the halves of the scissor matrix's columns that no
+    /// shader reads, and beside the conic angle whether it takes a pixel
+    /// whole or not at all.
+    pub fn set_clip_mask(&mut self, mask: Option<&MaskCoverage>) {
+        if let Some(mask) = mask {
+            self.0[2..4].copy_from_slice(&mask.origin);
+            self.0[6..8].copy_from_slice(&mask.size);
+            self.0[10..12].copy_from_slice(&mask.texel);
+            self.0[53] = f32::from(u8::from(mask.hard));
+        }
+    }
+
+    /// An image paint's transfer, in the paint matrix's first column's w
+    /// (frag[3].w), which no image paint reads. Written only for a paint that
+    /// has one: a filter pass keeps its own values in that column.
+    pub fn set_image_transfer(&mut self, transfer: Option<Transfer>) {
+        if let Some(transfer) = transfer {
+            self.0[15] = transfer.uniform();
+        }
+    }
+
+    /// See [`GRADIENT_PREMULTIPLIED_INDEX`](crate::renderer::params::GRADIENT_PREMULTIPLIED_INDEX).
+    pub fn set_gradient_premultiplied(&mut self, premultiplied: bool) {
+        if premultiplied {
+            self.0[crate::renderer::params::GRADIENT_PREMULTIPLIED_INDEX] = 1.0;
+        }
+    }
 }
 
 impl From<&Params> for UniformArray {
@@ -120,6 +156,10 @@ impl From<&Params> for UniformArray {
         arr.set_image_blur_filter_sigma(params.image_blur_filter_sigma);
         arr.set_image_blur_filter_coeff(params.image_blur_filter_coeff);
         arr.set_conic_start_angle(params.conic_start_angle);
+        arr.set_clip(params.clip.as_ref());
+        arr.set_clip_mask(params.clip_mask.as_ref());
+        arr.set_image_transfer(params.image_transfer);
+        arr.set_gradient_premultiplied(params.gradient_premultiplied);
 
         arr
     }
