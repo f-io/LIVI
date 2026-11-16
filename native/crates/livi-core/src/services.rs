@@ -692,11 +692,18 @@ fn name_of(screen: Screen) -> &'static str {
 async fn follow_display_mode(mut applied: watch::Receiver<Config>, ctrl: CompositorControl) {
     let mut last = None;
     loop {
-        let now = applied.borrow_and_update().display_mode.clone();
+        let now = {
+            let cfg = applied.borrow_and_update();
+            (cfg.display_mode.clone(), cfg.display_rotation)
+        };
         if last.as_ref() != Some(&now) {
-            ctrl.mode("main", &now.main);
-            ctrl.mode("cluster", &now.cluster);
-            ctrl.mode("aux", &now.aux);
+            let (mode, rotation) = &now;
+            ctrl.mode("main", &mode.main);
+            ctrl.mode("cluster", &mode.cluster);
+            ctrl.mode("aux", &mode.aux);
+            ctrl.rotation("main", rotation.main);
+            ctrl.rotation("cluster", rotation.cluster);
+            ctrl.rotation("aux", rotation.aux);
             last = Some(now);
         }
         if applied.changed().await.is_err() {

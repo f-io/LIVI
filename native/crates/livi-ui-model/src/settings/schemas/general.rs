@@ -40,6 +40,15 @@ fn auto_connector_option() -> Choice {
     )
 }
 
+fn rotations() -> Vec<Choice> {
+    vec![
+        number_choice("0°", 0.0),
+        number_choice("90°", 90.0),
+        number_choice("180°", 180.0),
+        number_choice("270°", 270.0),
+    ]
+}
+
 fn touch_page(screen: Screen) -> Node {
     Node::route(
         "touch",
@@ -55,10 +64,22 @@ fn touch_page(screen: Screen) -> Node {
 }
 
 fn display_rows(screen: Screen) -> Vec<Node> {
-    let (connector_path, mode_path) = match screen {
-        Screen::Main => ("displayConnector.main", "displayMode.main"),
-        Screen::Cluster => ("displayConnector.cluster", "displayMode.cluster"),
-        Screen::Aux => ("displayConnector.aux", "displayMode.aux"),
+    let (connector_path, mode_path, rotation_path) = match screen {
+        Screen::Main => (
+            "displayConnector.main",
+            "displayMode.main",
+            "displayRotation.main",
+        ),
+        Screen::Cluster => (
+            "displayConnector.cluster",
+            "displayMode.cluster",
+            "displayRotation.cluster",
+        ),
+        Screen::Aux => (
+            "displayConnector.aux",
+            "displayMode.aux",
+            "displayRotation.aux",
+        ),
     };
     vec![
         Node::select(
@@ -81,6 +102,15 @@ fn display_rows(screen: Screen) -> Vec<Node> {
         .options_from(OptionSource::DisplayModes(screen))
         .read_only(Condition::DisplaysNotSettable)
         .page(Label::new("settings.displayMode", "Display Mode")),
+        Node::select(
+            Label::new("settings.cameraRotation", "Rotation"),
+            rotation_path,
+            rotations(),
+        )
+        .icon("displayRotation")
+        .display_value()
+        .read_only(Condition::DisplaysNotSettable)
+        .page(Label::new("settings.cameraRotation", "Rotation")),
     ]
 }
 
@@ -487,12 +517,7 @@ fn tab_settings() -> Node {
                         Node::select(
                             Label::new("settings.cameraRotation", "Rotation"),
                             "cameraRotation",
-                            vec![
-                                number_choice("0°", 0.0),
-                                number_choice("90°", 90.0),
-                                number_choice("180°", 180.0),
-                                number_choice("270°", 270.0),
-                            ],
+                            rotations(),
                         )
                         .icon("cameraRotation")
                         .display_value()

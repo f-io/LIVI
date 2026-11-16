@@ -53,6 +53,10 @@ pub enum Command {
         role: String,
         mode: Option<String>,
     },
+    Rotation {
+        role: String,
+        degrees: u16,
+    },
     Backdrop([u8; 3]),
     Gamma([f64; 5]),
     TouchCals(usize),
@@ -107,6 +111,7 @@ impl fmt::Display for Command {
                 let mode = mode.as_deref().filter(|m| !m.is_empty()).unwrap_or("-");
                 write!(f, "mode {role} {mode}")
             }
+            Self::Rotation { role, degrees } => write!(f, "rotation {role} {degrees}"),
             Self::Backdrop(rgb) => {
                 f.write_str("backdrop")?;
                 joined(f, rgb)
@@ -208,6 +213,10 @@ impl Command {
                     mode: (mode != "-").then(|| mode.to_string()),
                 }
             }
+            "rotation" => Self::Rotation {
+                role: word(&mut words)?,
+                degrees: words.next()?.parse().ok()?,
+            },
             "backdrop" => Self::Backdrop(numbers(words.by_ref())?),
             "gamma" => Self::Gamma(numbers(words.by_ref())?),
             "touchcals" => Self::TouchCals(words.next()?.parse().ok()?),
@@ -295,6 +304,10 @@ mod tests {
         round_trip(Command::Mode {
             role: "cluster".into(),
             mode: None,
+        });
+        round_trip(Command::Rotation {
+            role: "main".into(),
+            degrees: 90,
         });
         round_trip(Command::Backdrop([212, 212, 212]));
         round_trip(Command::Gamma([1.0, 1.2, 1.0, 0.9, 1.0]));

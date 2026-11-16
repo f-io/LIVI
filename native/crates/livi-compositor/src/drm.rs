@@ -65,6 +65,7 @@ pub struct DrmState {
     outputs: Vec<Output>,
     wanted: BTreeSet<usize>,
     mode_settings: HashMap<usize, Option<String>>,
+    rotation_settings: HashMap<usize, u16>,
     touch_outputs: HashMap<String, String>,
     touch_devices: Vec<smithay::reexports::input::Device>,
     touch_cal: HashMap<String, TouchCal>,
@@ -218,6 +219,7 @@ fn start(
         outputs: Vec::new(),
         wanted: BTreeSet::from([0]),
         mode_settings: HashMap::new(),
+        rotation_settings: HashMap::new(),
         touch_outputs: HashMap::new(),
         touch_devices: Vec::new(),
         touch_cal: HashMap::new(),
@@ -421,6 +423,49 @@ pub fn set_mode(state: &mut LiviState, screen_idx: usize, setting: Option<String
     }
 }
 
+fn rotation_setting(state: &LiviState, screen_idx: usize) -> u16 {
+    state
+        .drm
+        .as_ref()
+        .and_then(|d| d.rotation_settings.get(&screen_idx).copied())
+        .or_else(|| role_env(state, screen_idx, "ROTATION")?.parse().ok())
+        .unwrap_or(0)
+}
+
+fn turned(panel: Transform, degrees: u16) -> Transform {
+    let quarters = match panel {
+        Transform::_90 => 1,
+        Transform::_180 => 2,
+        Transform::_270 => 3,
+        _ => 0,
+    };
+    match (quarters + degrees / 90) % 4 {
+        1 => Transform::_90,
+        2 => Transform::_180,
+        3 => Transform::_270,
+        _ => Transform::Normal,
+    }
+}
+
+pub fn set_rotation(state: &mut LiviState, screen_idx: usize, degrees: u16) {
+    let Some(drm) = state.drm.as_mut() else {
+        return;
+    };
+    drm.rotation_settings.insert(screen_idx, degrees);
+    let stale = drm.outputs.iter().position(|o| {
+        o.screen_idx == screen_idx
+            && drm
+                .connectors
+                .iter()
+                .find(|c| c.name == o.connector)
+                .is_some_and(|c| turned(c.transform, degrees) != o.transform)
+    });
+    if let Some(pos) = stale {
+        drm.outputs.remove(pos);
+        arrange(state);
+    }
+}
+
 fn assign(wanted: &[(usize, Option<String>)], connected: &[String]) -> Vec<(usize, String)> {
     let is_free = |taken: &[(usize, String)], name: &str| !taken.iter().any(|(_, t)| t == name);
     let mut taken: Vec<(usize, String)> = Vec::new();
@@ -559,6 +604,7 @@ fn light(
     name: &str,
     mode_setting: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let rotation = rotation_setting(state, screen_idx);
     let drm = state.drm.as_mut().ok_or("no display device")?;
     let connector = drm
         .connectors
@@ -572,7 +618,7 @@ fn light(
         .iter()
         .find(|c| !busy.contains(c))
         .ok_or("no free crtc")?;
-    let (handle, transform) = (connector.handle, connector.transform);
+    let (handle, transform) = (connector.handle, turned(connector.transform, rotation));
     let surface = drm.device.create_surface(crtc, mode, &[handle])?;
     let allocator = GbmAllocator::new(
         drm.gbm.clone(),

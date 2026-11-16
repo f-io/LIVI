@@ -307,6 +307,13 @@ fn handle_line(state: &mut LiviState, line: &str) {
             log::info!("ctrl < {line}");
             crate::drm::set_mode(state, idx, mode);
         }
+        Command::Rotation { role, degrees } => {
+            let Some(idx) = state.screen_idx_by_role(&role) else {
+                return;
+            };
+            log::info!("ctrl < {line}");
+            crate::drm::set_rotation(state, idx, degrees);
+        }
         Command::Backdrop([r, g, b]) => {
             let dbg = std::env::var("LIVI_DEBUG_BG").is_ok();
             for s in &mut state.screens {

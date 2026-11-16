@@ -141,6 +141,7 @@ pub struct Config {
 
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
+    pub display_rotation: PerScreen<u16>,
 
     pub screen_width_mm: PerScreen<u32>,
     pub screen_height_mm: PerScreen<u32>,
@@ -642,6 +643,7 @@ pub fn defaults() -> Config {
         cluster_map_night_mode: true,
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
+        display_rotation: PerScreen::default(),
         screen_width_mm: PerScreen::default(),
         screen_height_mm: PerScreen::default(),
         view_area: PerScreen::default(),

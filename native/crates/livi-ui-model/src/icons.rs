@@ -22,6 +22,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("auxScreen", "TvOutlined"),
     ("displayMode", "AspectRatioOutlined"),
     ("displayConnector", "SettingsInputHdmiOutlined"),
+    ("displayRotation", "RotateRightOutlined"),
     ("touch", "TouchAppOutlined"),
     ("width", "SettingsEthernetOutlined"),
     ("height", "HeightOutlined"),

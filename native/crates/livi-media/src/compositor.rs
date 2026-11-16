@@ -44,15 +44,29 @@ pub fn env(cfg: &Config, ctrl: &Path) -> Vec<(String, String)> {
         ));
     }
     let screens = [
-        ("MAIN", &cfg.display_mode.main, &cfg.display_connector.main),
+        (
+            "MAIN",
+            &cfg.display_mode.main,
+            &cfg.display_connector.main,
+            cfg.display_rotation.main,
+        ),
         (
             "CLUSTER",
             &cfg.display_mode.cluster,
             &cfg.display_connector.cluster,
+            cfg.display_rotation.cluster,
         ),
-        ("AUX", &cfg.display_mode.aux, &cfg.display_connector.aux),
+        (
+            "AUX",
+            &cfg.display_mode.aux,
+            &cfg.display_connector.aux,
+            cfg.display_rotation.aux,
+        ),
     ];
-    for (role, mode, connector) in screens {
+    for (role, mode, connector, rotation) in screens {
+        if rotation != 0 {
+            env.push((format!("LIVI_{role}_ROTATION"), rotation.to_string()));
+        }
         if !mode.is_empty() {
             let key = if role == "MAIN" {
                 "LIVI_DISPLAY_MODE".to_string()
@@ -348,6 +362,16 @@ impl CompositorControl {
             ctrl_line(Command::Mode {
                 role: role.to_string(),
                 mode: (!mode.is_empty()).then(|| mode.to_string()),
+            }),
+        ));
+    }
+
+    pub fn rotation(&self, role: &str, degrees: u16) {
+        let _ = self.tx.send(Cmd::State(
+            format!("rotation:{role}"),
+            ctrl_line(Command::Rotation {
+                role: role.to_string(),
+                degrees,
             }),
         ));
     }
