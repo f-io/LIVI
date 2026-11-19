@@ -121,8 +121,25 @@ impl ResolvesClientCert for HuCert {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
+fn suites(mut provider: CryptoProvider) -> CryptoProvider {
+    provider.cipher_suites.retain(|s| {
+        matches!(
+            s.suite(),
+            rustls::CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+                | rustls::CipherSuite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        )
+    });
+    provider
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+fn suites(provider: CryptoProvider) -> CryptoProvider {
+    provider
+}
+
 fn client_config() -> Result<Arc<ClientConfig>, Error> {
-    let provider = Arc::new(aws_lc_rs::default_provider());
+    let provider = Arc::new(suites(aws_lc_rs::default_provider()));
     let algorithms = provider.signature_verification_algorithms;
     let identity = hu_identity(&provider)?;
     let config = ClientConfig::builder_with_provider(provider)
