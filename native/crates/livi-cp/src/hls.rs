@@ -4,14 +4,14 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use openssl::ssl::{SslConnector, SslMethod};
+use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, RootCertStore};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio_openssl::SslStream;
+use tokio_rustls::TlsConnector;
 
 use crate::video_proxy::ProxyOffer;
 

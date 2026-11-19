@@ -3,8 +3,6 @@
 // Additional terms: see NOTICE
 
 use super::*;
-use openssl::x509::X509;
-use openssl::x509::store::X509StoreBuilderRef;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Target<'a> {
@@ -70,38 +68,41 @@ impl<'a> Target<'a> {
 pub(crate) trait Conn: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conn for T {}
 
-pub(super) fn system_trust() -> io::Result<SslConnector> {
-    static TRUST: OnceLock<SslConnector> = OnceLock::new();
+pub(super) fn system_trust() -> io::Result<Arc<ClientConfig>> {
+    static TRUST: OnceLock<Arc<ClientConfig>> = OnceLock::new();
     if let Some(trust) = TRUST.get() {
         return Ok(trust.clone());
     }
-    let mut trust = SslConnector::builder(SslMethod::tls_client()).map_err(io::Error::other)?;
-    if cfg!(target_os = "macos") {
-        trust
-            .set_ca_file("/etc/ssl/cert.pem")
-            .map_err(io::Error::other)?;
+    let mut roots = RootCertStore::empty();
+    roots.add_parsable_certificates(system_roots());
+    if roots.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "no ca store"));
     }
-    if cfg!(target_os = "android") {
-        android_roots(trust.cert_store_mut())?;
-    }
-    let trust = trust.build();
+    let trust = Arc::new(
+        ClientConfig::builder_with_provider(
+            Arc::new(rustls::crypto::aws_lc_rs::default_provider()),
+        )
+        .with_safe_default_protocol_versions()
+        .map_err(io::Error::other)?
+        .with_root_certificates(roots)
+        .with_no_client_auth(),
+    );
     Ok(TRUST.get_or_init(|| trust).clone())
 }
 
-fn android_roots(store: &mut X509StoreBuilderRef) -> io::Result<()> {
-    let roots = livi_net::ca::android_roots();
-    if roots.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "no android ca store",
-        ));
-    }
-    for pem in roots {
-        if let Ok(cert) = X509::from_pem(&pem) {
-            let _ = store.add_cert(cert);
-        }
-    }
-    Ok(())
+#[cfg(target_os = "android")]
+fn system_roots() -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    use rustls::pki_types::CertificateDer;
+    use rustls::pki_types::pem::PemObject;
+    livi_net::ca::android_roots()
+        .iter()
+        .filter_map(|pem| CertificateDer::from_pem_slice(pem).ok())
+        .collect()
+}
+
+#[cfg(not(target_os = "android"))]
+fn system_roots() -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    rustls_native_certs::load_native_certs().certs
 }
 
 #[derive(Default)]
@@ -122,7 +123,7 @@ impl Client {
     }
 
     #[cfg(test)]
-    pub(crate) fn trusting(mut self, trust: SslConnector) -> Self {
+    pub(crate) fn trusting(mut self, trust: Arc<ClientConfig>) -> Self {
         self.dialer.trust = Some(trust);
         self
     }
@@ -187,7 +188,7 @@ impl Client {
 #[derive(Clone, Default)]
 pub(crate) struct Dialer {
     phone: Option<Arc<ProxyOffer>>,
-    trust: Option<SslConnector>,
+    trust: Option<Arc<ClientConfig>>,
 }
 
 impl Dialer {
@@ -209,13 +210,9 @@ impl Dialer {
             Some(trust) => trust.clone(),
             None => system_trust()?,
         };
-        let ssl = trust.configure().and_then(|c| c.into_ssl(target.name()));
-        let mut tls =
-            SslStream::new(ssl.map_err(io::Error::other)?, plain).map_err(io::Error::other)?;
-        Pin::new(&mut tls)
-            .connect()
-            .await
-            .map_err(io::Error::other)?;
+        let name = ServerName::try_from(target.name().to_string())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        let tls = TlsConnector::from(trust).connect(name, plain).await?;
         Ok(Box::new(tls))
     }
 }

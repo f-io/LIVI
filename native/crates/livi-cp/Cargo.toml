@@ -11,23 +11,30 @@ base64.workspace = true
 # The version the openssl crate implements, its trait is where Ssl::as_ptr comes from.
 foreign-types = "0.3.2"
 livi-core-proto.workspace = true
-livi-net.workspace = true
 livi-session-io.workspace = true
 num-bigint = "0.5.1"
 openssl = "0.10.82"
 openssl-sys = "0.9.118"
 p256 = "0.14.0"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
 tokio-openssl = "0.6.5"
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 uuid = { workspace = true, features = ["v4"] }
 x509-cert = { version = "0.2.5", default-features = false, features = ["pem"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))'.dependencies]
 openssl = { version = "0.10.82", features = ["vendored"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+livi-net.workspace = true
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rustls-native-certs = "0.8"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "test-util"] }
