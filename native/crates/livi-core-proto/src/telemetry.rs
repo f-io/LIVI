@@ -57,6 +57,8 @@
 //! | batteryV                            | ✓    | ·            | ·               | ·             |
 //! | ambientLux                          | ✓    | ·            | ·               | ·             |
 //! | dimmerPct                           | ✓    | ·            | ·               | ·             |
+//! | displayBrightness, displayGamma     | ✓    | ·            | ·               | ·             |
+//! | displayContrast, displayColorR/G/B  | ✓    | ·            | ·               | ·             |
 //! | odometerKm                          | ✓    | ✓            | ·               | ✓             |
 //! | odometerTripKm                      | ✓    | ✓            | ·               | ·             |
 //! | drivingStatus                       | ✓    | ✓            | ·               | ·             |
@@ -157,6 +159,12 @@ pub struct TelemetrySnapshot {
     pub ambient_lux: Option<f64>,
     /// The dimmer of the panel lights, 0 to 100.
     pub dimmer_pct: Option<f64>,
+    pub display_brightness: Option<f64>,
+    pub display_gamma: Option<f64>,
+    pub display_contrast: Option<f64>,
+    pub display_color_r: Option<f64>,
+    pub display_color_g: Option<f64>,
+    pub display_color_b: Option<f64>,
     /// Day or night for Android Auto and CarPlay, LIVI's own look follows `darkMode`. It sets the
     /// four below at once, those of them in the same push apply after it. LIVI's appearance
     /// setting at Day or Night sets it too. Any of the five turns that setting to Auto.
