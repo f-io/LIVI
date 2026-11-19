@@ -17,7 +17,7 @@ done
 fetch_kernel
 fetch_firmware
 
-log "apply kernel patches (bus clocks on the ULL, USB gadget without BSV wait, no charger detection, MX25L128 without SFDP, mwifiex AP receive rate)"
+log "apply kernel patches (bus clocks on the ULL, USB gadget without BSV wait, no charger detection, MX25L128 quad from SFDP, mwifiex AP receive rate)"
 apply_patches "$HERE/kernel-patches" "$KDIR"
 
 log "install the board DTS with the $RADIO part"

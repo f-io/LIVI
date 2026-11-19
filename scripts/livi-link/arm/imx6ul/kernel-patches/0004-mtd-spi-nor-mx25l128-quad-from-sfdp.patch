@@ -1,0 +1,34 @@
+--- a/drivers/mtd/spi-nor/macronix.c
++++ b/drivers/mtd/spi-nor/macronix.c
+@@ -96,6 +96,15 @@
+ 	.late_init = mx25l3255e_late_init_fixups,
+ };
+ 
++static void mx25l12835f_default_init_fixups(struct spi_nor *nor)
++{
++	nor->params->hwcaps.mask &= ~SNOR_HWCAPS_READ_1_1_4;
++}
++
++static const struct spi_nor_fixups mx25l12835f_fixups = {
++	.default_init = mx25l12835f_default_init_fixups,
++};
++
+ static const struct flash_info macronix_nor_parts[] = {
+ 	{
+ 		.id = SNOR_ID(0xc2, 0x20, 0x10),
+@@ -130,11 +139,13 @@
+ 		.size = SZ_8M,
+ 		.no_sfdp_flags = SECT_4K,
+ 	}, {
+-		/* MX25L12805D */
++		/* MX25L12805D (no SFDP), MX25L12835F */
+ 		.id = SNOR_ID(0xc2, 0x20, 0x18),
++		.name = "mx25l12805d",
+ 		.size = SZ_16M,
+ 		.flags = SPI_NOR_HAS_LOCK | SPI_NOR_4BIT_BP,
+-		.no_sfdp_flags = SECT_4K,
++		.no_sfdp_flags = SECT_4K | SPI_NOR_QUAD_READ,
++		.fixups = &mx25l12835f_fixups,
+ 	}, {
+ 		/* MX25L25635E, MX25L25645G */
+ 		.id = SNOR_ID(0xc2, 0x20, 0x19),
