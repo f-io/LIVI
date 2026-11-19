@@ -519,8 +519,13 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
             ),
             None => String::new(),
         };
+        let suite = self
+            .tls
+            .as_ref()
+            .and_then(|t| t.cipher_suite())
+            .map_or_else(|| "-".to_string(), |s| format!("{s:?}"));
         println!(
-            "[aa-session] {}: tls up, protocol {major}.{minor}{ping}",
+            "[aa-session] {}: tls up ({suite}), protocol {major}.{minor}{ping}",
             self.peer.label
         );
         let mut ready =

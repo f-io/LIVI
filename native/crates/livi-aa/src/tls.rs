@@ -149,6 +149,10 @@ impl TlsEngine {
         })
     }
 
+    pub fn cipher_suite(&self) -> Option<rustls::CipherSuite> {
+        self.conn.negotiated_cipher_suite().map(|s| s.suite())
+    }
+
     pub fn is_handshaking(&self) -> bool {
         self.conn.is_handshaking()
     }
