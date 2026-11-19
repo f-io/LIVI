@@ -396,12 +396,12 @@ fn find_root(dir: Option<&Path>) -> Option<Issuer> {
 }
 
 fn root_issuer(root: &Certificate) -> Option<Issuer> {
-    let tbs = &root.tbs_certificate;
-    let (_, key_id) = tbs.get::<SubjectKeyIdentifier>().ok()??;
+    let tbs = root.tbs_certificate();
+    let (_, key_id) = tbs.get_extension::<SubjectKeyIdentifier>().ok()??;
     Some(Issuer {
         key_id: key_id.0.as_bytes().try_into().ok()?,
         point: tbs
-            .subject_public_key_info
+            .subject_public_key_info()
             .subject_public_key
             .raw_bytes()
             .try_into()

@@ -752,9 +752,9 @@ checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "bytes"
-version = "1.12.1"
+version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
 dependencies = [
  "serde",
 ]
@@ -1463,7 +1463,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid 0.9.6",
- "der_derive",
+ "der_derive 0.7.3",
  "flagset",
  "pem-rfc7468 0.7.0",
  "zeroize",
@@ -1476,6 +1476,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a996a108feb8b427a6e12fcf6af4aa83409b79d72c15337d7741368131ee004"
 dependencies = [
  "const-oid 0.10.3",
+ "der_derive 0.8.0",
+ "flagset",
  "pem-rfc7468 1.0.0",
  "zeroize",
 ]
@@ -1485,6 +1487,17 @@ name = "der_derive"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8034092389675178f570469e6c3b0465d3d30b4505c294a6550db47f3c17ad18"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "der_derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59600e2c2d636fde9b65e99cc6445ac770c63d3628195ff39932b8d6d7409903"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3055,7 +3068,7 @@ dependencies = [
  "libseat",
  "libudev-sys",
  "memmap2",
- "nix 0.31.3",
+ "nix 0.31.4",
  "pkg-config",
  "raw-window-handle",
  "xkbcommon 0.9.0",
@@ -3362,15 +3375,15 @@ dependencies = [
 
 [[package]]
 name = "iap2-csm"
-version = "10.5.0"
+version = "10.6.0"
 
 [[package]]
 name = "iap2-link"
-version = "10.5.0"
+version = "10.6.0"
 
 [[package]]
 name = "iap2-mfi"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "base64 0.23.1",
  "libc 1.0.0-alpha.5",
@@ -3381,7 +3394,7 @@ dependencies = [
 
 [[package]]
 name = "iap2-usbmux"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-base",
@@ -3395,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "iap2-wired"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "iap2-usbmux",
  "idevice",
@@ -3620,7 +3633,7 @@ dependencies = [
  "uuid",
  "web-time",
  "x25519-dalek",
- "x509-cert",
+ "x509-cert 0.2.5",
 ]
 
 [[package]]
@@ -3697,7 +3710,7 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 
 [[package]]
 name = "imx6ul-uboot"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "aes 0.9.4",
  "flate2",
@@ -3819,9 +3832,9 @@ dependencies = [
 
 [[package]]
 name = "jiff"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cc767b5763de45e810109520123bb2829a653f3a7ed9be40b2bc4f81158f595"
+checksum = "ed5d126d72eb017f10b302e73bdeca446bea405ee449af4d9e7866d6b082d83e"
 dependencies = [
  "jiff-core",
  "jiff-static",
@@ -3834,18 +3847,18 @@ dependencies = [
 
 [[package]]
 name = "jiff-core"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "894f7ac42105f584100691b3bf6e6b92dd12fcfa225f6c397f95c8a94b47b68f"
+checksum = "b6b46a105a9874634dd96231021526bf24ca04955a5998c59a9c7666e634b7b8"
 dependencies = [
  "log",
 ]
 
 [[package]]
 name = "jiff-static"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "955491488dc99b572ea6d67b172dcd98787d00744b1fb44a5689b4e6413695a6"
+checksum = "c0127e9bde3c6130d6169e7d8d68676e4be69c4bf7573c308b6f960a5089c428"
 dependencies = [
  "jiff-core",
  "proc-macro2",
@@ -4154,7 +4167,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "livi-aa"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-aa-proto",
  "livi-cfg",
@@ -4173,7 +4186,7 @@ dependencies = [
 
 [[package]]
 name = "livi-aa-proto"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -4182,7 +4195,7 @@ dependencies = [
 
 [[package]]
 name = "livi-aa-stack"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-aa-proto",
  "livi-base",
@@ -4197,7 +4210,7 @@ dependencies = [
 
 [[package]]
 name = "livi-aaudio"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "gstreamer",
  "gstreamer-audio",
@@ -4207,7 +4220,7 @@ dependencies = [
 
 [[package]]
 name = "livi-android"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "iap2-usbmux",
  "jni 0.22.4",
@@ -4228,7 +4241,7 @@ dependencies = [
 
 [[package]]
 name = "livi-audio"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "gstreamer",
  "gstreamer-app",
@@ -4243,11 +4256,11 @@ dependencies = [
 
 [[package]]
 name = "livi-base"
-version = "10.5.0"
+version = "10.6.0"
 
 [[package]]
 name = "livi-bt-host"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-base",
  "livi-net",
@@ -4256,11 +4269,11 @@ dependencies = [
 
 [[package]]
 name = "livi-cfg"
-version = "10.5.0"
+version = "10.6.0"
 
 [[package]]
 name = "livi-compositor"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "ab_glyph",
  "calloop-wayland-source 0.4.1",
@@ -4277,7 +4290,7 @@ dependencies = [
 
 [[package]]
 name = "livi-core"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4314,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "livi-core-client"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-core-proto",
@@ -4323,7 +4336,7 @@ dependencies = [
 
 [[package]]
 name = "livi-core-proto"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "base64 0.23.1",
  "livi-base",
@@ -4334,7 +4347,7 @@ dependencies = [
 
 [[package]]
 name = "livi-cp"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "base64 0.23.1",
  "foreign-types 0.3.2",
@@ -4357,12 +4370,12 @@ dependencies = [
  "tokio-openssl",
  "tokio-rustls",
  "uuid",
- "x509-cert",
+ "x509-cert 0.3.0",
 ]
 
 [[package]]
 name = "livi-crypto"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "aes 0.9.4",
  "aws-lc-rs",
@@ -4371,21 +4384,21 @@ dependencies = [
 
 [[package]]
 name = "livi-dab"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "rustfft",
 ]
 
 [[package]]
 name = "livi-fm"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-dab",
 ]
 
 [[package]]
 name = "livi-helper"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "iap2-link",
  "iap2-mfi",
@@ -4407,7 +4420,7 @@ dependencies = [
 
 [[package]]
 name = "livi-helper-stack"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "base64 0.23.1",
  "iap2-csm",
@@ -4428,7 +4441,7 @@ dependencies = [
 
 [[package]]
 name = "livi-helperd"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-core-proto",
@@ -4442,21 +4455,21 @@ dependencies = [
 
 [[package]]
 name = "livi-hfp"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
 ]
 
 [[package]]
 name = "livi-i18n"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "livi-ios"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "dispatch2",
  "gstreamer",
@@ -4481,7 +4494,7 @@ dependencies = [
 
 [[package]]
 name = "livi-link-ap"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-base",
  "livi-link-hci",
@@ -4490,7 +4503,7 @@ dependencies = [
 
 [[package]]
 name = "livi-link-hci"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-net",
@@ -4498,7 +4511,7 @@ dependencies = [
 
 [[package]]
 name = "livi-link-host"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "iap2-usbmux",
  "libc 1.0.0-alpha.5",
@@ -4515,7 +4528,7 @@ dependencies = [
 
 [[package]]
 name = "livi-link-provision"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "backhand",
  "imx6ul-uboot",
@@ -4530,7 +4543,7 @@ dependencies = [
 
 [[package]]
 name = "livi-link-provision-cli"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-link-host",
  "livi-link-provision",
@@ -4541,7 +4554,7 @@ dependencies = [
 
 [[package]]
 name = "livi-mdns"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "socket2",
@@ -4549,7 +4562,7 @@ dependencies = [
 
 [[package]]
 name = "livi-media"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-base",
  "livi-core-proto",
@@ -4559,14 +4572,14 @@ dependencies = [
 
 [[package]]
 name = "livi-net"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
 ]
 
 [[package]]
 name = "livi-output"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "glib",
  "glib-unix",
@@ -4583,14 +4596,14 @@ dependencies = [
 
 [[package]]
 name = "livi-output-proto"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-base",
 ]
 
 [[package]]
 name = "livi-rtlsdr"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
@@ -4598,7 +4611,7 @@ dependencies = [
 
 [[package]]
 name = "livi-screen-stream"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "glib",
  "glib-unix",
@@ -4609,7 +4622,7 @@ dependencies = [
 
 [[package]]
 name = "livi-session-io"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "futures-util",
  "livi-base",
@@ -4624,7 +4637,7 @@ dependencies = [
 
 [[package]]
 name = "livi-ui"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "base64 0.23.1",
  "i-slint-backend-android-activity",
@@ -4645,7 +4658,7 @@ dependencies = [
 
 [[package]]
 name = "livi-ui-model"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-base",
  "livi-core-proto",
@@ -4655,14 +4668,14 @@ dependencies = [
 
 [[package]]
 name = "livi-video"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "livi-output-proto",
 ]
 
 [[package]]
 name = "livi-video-player"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "gstreamer",
  "gstreamer-app",
@@ -4675,7 +4688,7 @@ dependencies = [
 
 [[package]]
 name = "livi-video-view"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "cc",
  "livi-cfg",
@@ -4686,7 +4699,7 @@ dependencies = [
 
 [[package]]
 name = "livi-web"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-base",
@@ -4697,7 +4710,7 @@ dependencies = [
 
 [[package]]
 name = "livi-wifi"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "thiserror 2.0.21",
@@ -4705,7 +4718,7 @@ dependencies = [
 
 [[package]]
 name = "livid"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "iap2-mfi",
  "imx6ul-uboot",
@@ -4954,7 +4967,7 @@ dependencies = [
 
 [[package]]
 name = "mkbootimg-v821b"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "flate2",
 ]
@@ -5098,9 +5111,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.31.3"
+version = "0.31.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+checksum = "2bc81ce8148d3b4f3274da811f11cdd824ae661ee4ef732cdb229825cf5be7f7"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
@@ -6564,9 +6577,9 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
 name = "rand_pcg"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+checksum = "eb95882a1e14462c69aea9984bb261293ccfe6022ef8de0eda18bd5afb0052df"
 dependencies = [
  "rand_core 0.10.1",
 ]
@@ -6678,9 +6691,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+checksum = "9807af0e638c12e753aa1b4e601791bf2a8f71274023c8bbeec12fc149950857"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -6690,9 +6703,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.18"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
+checksum = "41d60ef07df457506a0a1a2073112eb4aae5733dbd2813c3da77d1b0fd441158"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -6701,9 +6714,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.11"
+version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
 
 [[package]]
 name = "renderdoc-sys"
@@ -7525,9 +7538,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.16.5"
+version = "1.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
+checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 dependencies = [
  "serde",
 ]
@@ -8701,9 +8714,9 @@ checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 
 [[package]]
 name = "uuid"
-version = "1.29.2"
+version = "1.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
+checksum = "3c14b15dffa2f4bd712103e857140aa04a4f2ff6e955c77d7eb8e53ee02a3b64"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -9767,6 +9780,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "x509-cert"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "105ef4642d9cb137ef83d623d0e4bf08b8adf69e9918ca904a174adb6d3d038b"
+dependencies = [
+ "const-oid 0.10.3",
+ "der 0.8.3",
+ "spki 0.8.1",
+]
+
+[[package]]
 name = "xattr"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9840,7 +9864,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "10.5.0"
+version = "10.6.0"
 dependencies = [
  "serde_json",
 ]
@@ -10063,9 +10087,9 @@ dependencies = [
 
 [[package]]
 name = "zeroize"
-version = "1.9.1"
+version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
+checksum = "85ccff8a4805aba1eaa4cd4afcd49f7557dd2cf5fd79ffc37f8959466effc5aa"
 dependencies = [
  "zeroize_derive",
 ]
