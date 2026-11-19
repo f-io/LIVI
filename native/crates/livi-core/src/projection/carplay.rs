@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
@@ -433,6 +434,7 @@ pub fn stack_config(
                 source.to_string()
             },
             hevc,
+            video_playback: true,
             main: DisplayConfig {
                 width_pixels: main_w.into(),
                 height_pixels: main_h.into(),
@@ -588,6 +590,7 @@ pub struct ConfigSource {
     panels: watch::Receiver<HashMap<String, Panel>>,
     screen: Option<Panel>,
     codecs: Mutex<Codecs>,
+    url_video: AtomicBool,
     addresses: Mutex<Addresses>,
     told: Mutex<HashMap<String, String>>,
     accessory: String,
@@ -684,6 +687,7 @@ impl ConfigSource {
             panels,
             screen,
             codecs: Mutex::new(Codecs::default()),
+            url_video: AtomicBool::new(true),
             addresses: Mutex::new(addresses),
             told: Mutex::new(HashMap::new()),
             accessory,
@@ -745,17 +749,16 @@ impl ConfigSource {
             known.clone()
         };
         let codecs = *self.codecs.lock().unwrap_or_else(|e| e.into_inner());
-        let next = with_images(
-            stack_config(
-                &cfg,
-                &self.panels.borrow(),
-                self.screen,
-                codecs.hevc,
-                &addresses,
-                &cluster,
-            ),
-            &self.images,
+        let mut next = stack_config(
+            &cfg,
+            &self.panels.borrow(),
+            self.screen,
+            codecs.hevc,
+            &addresses,
+            &cluster,
         );
+        next.info.video_playback = self.url_video.load(Ordering::Relaxed);
+        let next = with_images(next, &self.images);
         self.tx.send_if_modified(|cur| {
             let changed = *cur != next;
             *cur = next;
@@ -782,6 +785,14 @@ impl ConfigSource {
             codecs.hevc, codecs.vp9, codecs.av1
         );
         *self.codecs.lock().unwrap_or_else(|e| e.into_inner()) = codecs;
+    }
+
+    pub fn set_url_video(&self, plays: bool) {
+        println!(
+            "[core] video from a url {}",
+            if plays { "plays" } else { "does not play" }
+        );
+        self.url_video.store(plays, Ordering::Relaxed);
     }
 
     pub fn follow(self: &Arc<Self>) {

@@ -47,6 +47,7 @@ fn info_config() -> InfoConfig {
         bt_mac: "11:22:33:44:55:66".into(),
         source_version: "950.7.1".into(),
         hevc: true,
+        video_playback: true,
         main: DisplayConfig {
             width_pixels: 1280,
             height_pixels: 720,
