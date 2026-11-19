@@ -300,17 +300,26 @@ impl Telemetry {
         }
     }
 
-    async fn volume_from(&mut self, raw: f64) {
-        if !raw.is_finite() {
-            return;
-        }
-        let level = raw.clamp(0.0, 1.0);
-        if self
+    fn new_volume(&self, raw: f64) -> Option<f64> {
+        let level = raw.is_finite().then(|| raw.clamp(0.0, 1.0))?;
+        let same = self
             .volume
-            .is_some_and(|last| (level - last).abs() < VOLUME_STEP)
-        {
+            .is_some_and(|last| (level - last).abs() < VOLUME_STEP);
+        (!same).then_some(level)
+    }
+
+    async fn hu_volume(&mut self, raw: f64) {
+        let Some(level) = self.new_volume(raw) else {
             return;
-        }
+        };
+        self.volume = Some(level);
+        self.push(&json!({ "volume": level })).await;
+    }
+
+    async fn volume_from(&mut self, raw: f64) {
+        let Some(level) = self.new_volume(raw) else {
+            return;
+        };
         self.volume = Some(level);
         println!(
             "[volume] head unit set to {} % from telemetry",
@@ -446,12 +455,13 @@ pub async fn run(core: Arc<Core>, mut inside: mpsc::UnboundedReceiver<Value>, sa
                 if changed.is_err() {
                     return;
                 }
-                let (mode, dark) = {
+                let (mode, dark, volume) = {
                     let cfg = &state.borrow_and_update().config;
-                    (cfg.appearance_mode, cfg.dark_mode)
+                    (cfg.appearance_mode, cfg.dark_mode, cfg.hu_volume)
                 };
                 t.appearance(mode).await;
                 t.dark_mode(dark).await;
+                t.hu_volume(volume).await;
             }
         }
     }
@@ -635,6 +645,11 @@ mod tests {
         t.push(&json!({ "volume": 2.0 })).await;
         assert_eq!(core.hub.config().hu_volume, 1.0);
         assert_eq!(core.hub.watch().borrow().telemetry["volume"], 2.0);
+
+        core.set_config(&json!({ "huVolume": 0.3 })).await.unwrap();
+        t.hu_volume(core.hub.config().hu_volume).await;
+        assert_eq!(core.hub.watch().borrow().telemetry["volume"], 0.3);
+        assert_eq!(core.hub.config().hu_volume, 0.3);
 
         t.appearance(AppearanceMode::Night).await;
         t.appearance(AppearanceMode::Day).await;
