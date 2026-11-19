@@ -402,6 +402,7 @@ impl CarPlay {
                 };
                 println!("[core] output codecs {codecs}");
                 probing.set_codecs(android_auto::codecs(&codecs));
+                probing.set_url_video(codecs.url);
                 let _ = tokio::task::spawn_blocking(move || probing.refresh()).await;
             });
         }

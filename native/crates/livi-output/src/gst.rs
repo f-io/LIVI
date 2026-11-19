@@ -169,8 +169,10 @@ impl Outside for Gst {
 
 pub fn probe() -> Probe {
     livi_video_player::ensure_init();
-    Probe::of(|codec| {
+    let mut probe = Probe::of(|codec| {
         let (hw, sw) = livi_video_player::probe(codec);
         Decoders { hw, sw }
-    })
+    });
+    probe.url = livi_video_player::plays_urls();
+    probe
 }

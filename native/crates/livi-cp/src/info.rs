@@ -73,6 +73,7 @@ pub struct InfoConfig {
     pub bt_mac: String,
     pub source_version: String,
     pub hevc: bool,
+    pub video_playback: bool,
     pub main: DisplayConfig,
     pub cluster: Option<DisplayConfig>,
     pub entertainment_sample_rate: u32,
@@ -475,6 +476,7 @@ pub(crate) mod tests {
             bt_mac: "11:22:33:44:55:66".into(),
             source_version: "950.7.1".into(),
             hevc: true,
+            video_playback: true,
             main: DisplayConfig {
                 width_pixels: 1280,
                 height_pixels: 720,

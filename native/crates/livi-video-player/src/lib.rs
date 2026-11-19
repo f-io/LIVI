@@ -520,6 +520,11 @@ fn usable(name: &str) -> bool {
         || dec.property::<Option<String>>("device-path").as_deref() == Some(node.as_str())
 }
 
+pub fn plays_urls() -> bool {
+    ensure_init();
+    gst::ElementFactory::find("playbin3").is_some()
+}
+
 pub fn probe(codec: VideoCodec) -> (bool, bool) {
     ensure_init();
     let exists = |name: &str| gst::ElementFactory::find(name).is_some();

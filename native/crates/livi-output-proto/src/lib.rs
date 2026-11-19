@@ -165,15 +165,21 @@ pub struct Decoders {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Probe([Decoders; 4]);
+pub struct Probe {
+    decoders: [Decoders; 4],
+    pub url: bool,
+}
 
 impl Probe {
     pub fn of(found: impl Fn(VideoCodec) -> Decoders) -> Self {
-        Self(VideoCodec::ALL.map(found))
+        Self {
+            decoders: VideoCodec::ALL.map(found),
+            url: false,
+        }
     }
 
     pub fn get(&self, codec: VideoCodec) -> Decoders {
-        self.0[codec as usize]
+        self.decoders[codec as usize]
     }
 }
 
@@ -190,6 +196,9 @@ impl std::fmt::Display for Probe {
             let gap = if i > 0 { " " } else { "" };
             write!(f, "{gap}{codec}={kinds}")?;
         }
+        if self.url {
+            f.write_str(" url")?;
+        }
         Ok(())
     }
 }
@@ -200,9 +209,13 @@ impl std::str::FromStr for Probe {
     fn from_str(line: &str) -> Result<Self, String> {
         let mut probe = Probe::default();
         for word in line.split_whitespace() {
+            if word == "url" {
+                probe.url = true;
+                continue;
+            }
             let (name, kinds) = word.split_once('=').ok_or(format!("no '=' in {word:?}"))?;
             let codec = VideoCodec::from_name(name).ok_or(format!("unknown codec {name:?}"))?;
-            let d = &mut probe.0[codec as usize];
+            let d = &mut probe.decoders[codec as usize];
             for kind in kinds.split('+') {
                 match kind {
                     "hw" => d.hw = true,
@@ -504,6 +517,9 @@ mod tests {
         let line = probe.to_string();
         assert_eq!(line, "h264=hw+sw h265=sw vp9=sw av1=-");
         assert_eq!(line.parse::<Probe>(), Ok(probe));
+        let urls = Probe { url: true, ..probe };
+        assert_eq!(urls.to_string(), "h264=hw+sw h265=sw vp9=sw av1=- url");
+        assert_eq!(urls.to_string().parse::<Probe>(), Ok(urls));
         assert!("h266=hw".parse::<Probe>().is_err());
         assert_eq!("".parse::<Probe>(), Ok(Probe::default()));
     }

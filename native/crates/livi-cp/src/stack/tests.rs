@@ -247,6 +247,10 @@ impl Rig {
     }
 
     async fn with_capture(capture: bool) -> Self {
+        Self::build(capture, true).await
+    }
+
+    async fn build(capture: bool, video_playback: bool) -> Self {
         let dir = TempDir::new();
         let identity = load_or_create(&dir.0.join("identity.json"));
         let pairings = Pairings::new(dir.0.join("pairings.json"));
@@ -256,6 +260,7 @@ impl Rig {
         let helper_lines = crate::helper_sock::tests::serve(&helper_path, |_| None);
         let mut info = crate::info::tests::sample();
         info.hevc = false;
+        info.video_playback = video_playback;
         let (_tx, config) = watch::channel(StackConfig {
             info,
             audio_device: "out".into(),
@@ -869,6 +874,21 @@ async fn leaving_park_hides_the_picture_and_the_sound_plays_on() {
         allowed(&rig.phone.plist("GET", "/info", &qualifier).await),
         Some(true)
     );
+}
+
+#[tokio::test]
+async fn without_a_url_player_the_video_stays_with_the_phone() {
+    let mut rig = Rig::build(false, false).await;
+    let secret = rig.secret;
+    rig.phone.verify(&secret, b"phone-1").await;
+    let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
+    let session = dict([("timingPort", Value::Int(9)), ("features", offered)]);
+    let resp = rig.phone.plist("SETUP", "/s", &session).await;
+    let enabled = resp
+        .get("enabledFeatures")
+        .and_then(Value::as_array)
+        .unwrap();
+    assert!(!enabled.contains(&Value::String(video_playback::FEATURE.into())));
 }
 
 #[tokio::test]
