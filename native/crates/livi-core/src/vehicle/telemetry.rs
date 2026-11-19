@@ -42,6 +42,7 @@ const NESTED: [&str; 6] = [
     "telltales",
 ];
 const VOLUME_STEP: f64 = 0.005;
+const CALIBRATION: (f64, f64) = (0.5, 1.5);
 
 pub fn merge(snap: &mut Snapshot, patch: &Value) -> Option<Snapshot> {
     let patch = patch.as_object().filter(|p| !p.is_empty())?;
@@ -222,6 +223,7 @@ impl Telemetry {
         if let Some(names) = changed.get("evConnectorTypes").and_then(Value::as_array) {
             self.connectors_from(names).await;
         }
+        self.display_from(&changed).await;
         for (key, now) in [
             ("evMaxAcPowerKw", self.core.hub.config().ev_max_ac_power_kw),
             ("evMaxDcPowerKw", self.core.hub.config().ev_max_dc_power_kw),
@@ -340,6 +342,32 @@ impl Telemetry {
             return;
         }
         self.save(json!({ "evConnectorTypes": connectors })).await;
+    }
+
+    async fn display_from(&self, changed: &Snapshot) {
+        let cfg = self.core.hub.config();
+        let mut patch = Map::new();
+        for (key, now, (lo, hi)) in [
+            ("displayBrightness", cfg.display_brightness, (0.0, 1.0)),
+            ("displayGamma", cfg.display_gamma, CALIBRATION),
+            ("displayContrast", cfg.display_contrast, CALIBRATION),
+            ("displayColorR", cfg.display_color_r, CALIBRATION),
+            ("displayColorG", cfg.display_color_g, CALIBRATION),
+            ("displayColorB", cfg.display_color_b, CALIBRATION),
+        ] {
+            if let Some(v) = changed
+                .get(key)
+                .and_then(Value::as_f64)
+                .filter(|v| v.is_finite())
+                .map(|v| v.clamp(lo, hi))
+                && v != now
+            {
+                patch.insert(key.into(), v.into());
+            }
+        }
+        if !patch.is_empty() {
+            self.save(Value::Object(patch)).await;
+        }
     }
 
     async fn save(&self, patch: Value) {
@@ -683,6 +711,36 @@ mod tests {
         assert!(
             unsent.is_empty(),
             "the contract names {unsent:?}, LIVI never sends them"
+        );
+    }
+
+    #[tokio::test]
+    async fn display_calibration_from_outside_goes_into_the_config_within_its_range() {
+        let dir = TempDir::new();
+        let core = core(&dir, defaults());
+        let (_, io, _) = socket(core.hub.watch());
+        let mut t = Telemetry::new(core.clone(), io, &Saved::default());
+
+        t.push(&json!({
+            "displayBrightness": 0.4,
+            "displayGamma": 1.2,
+            "displayContrast": 3.0,
+            "displayColorR": 0.9,
+            "displayColorG": "x",
+            "displayColorB": 0.1,
+        }))
+        .await;
+        let cfg = core.hub.config();
+        assert_eq!(
+            (
+                cfg.display_brightness,
+                cfg.display_gamma,
+                cfg.display_contrast,
+                cfg.display_color_r,
+                cfg.display_color_g,
+                cfg.display_color_b
+            ),
+            (0.4, 1.2, 1.5, 0.9, 1.0, 0.5)
         );
     }
 
