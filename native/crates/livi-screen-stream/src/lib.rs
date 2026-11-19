@@ -42,27 +42,31 @@ impl ScreenStream {
 
     pub fn push(&mut self, chunk: &[u8]) -> Result<(), Implausible> {
         self.acc.extend_from_slice(chunk);
-        loop {
-            if self.acc.len() < HEADER_LEN {
-                return Ok(());
+        let mut at = 0;
+        let result = loop {
+            let left = self.acc.len() - at;
+            if left < HEADER_LEN {
+                break Ok(());
             }
-            let body_size =
-                u32::from_le_bytes([self.acc[0], self.acc[1], self.acc[2], self.acc[3]]) as usize;
+            let m = &self.acc[at..];
+            let body_size = u32::from_le_bytes([m[0], m[1], m[2], m[3]]) as usize;
             if body_size > MAX_BODY {
-                return Err(Implausible(body_size));
+                break Err(Implausible(body_size));
             }
-            if self.acc.len() < HEADER_LEN + body_size {
-                return Ok(());
+            if left < HEADER_LEN + body_size {
+                break Ok(());
             }
-            self.handle(body_size);
-            self.acc.drain(..HEADER_LEN + body_size);
-        }
+            self.handle(at, body_size);
+            at += HEADER_LEN + body_size;
+        };
+        self.acc.drain(..at);
+        result
     }
 
-    fn handle(&mut self, body_size: usize) {
-        let opcode = self.acc[4];
-        let (header, rest) = self.acc.split_at(HEADER_LEN);
-        let body = &rest[..body_size];
+    fn handle(&mut self, at: usize, body_size: usize) {
+        let opcode = self.acc[at + 4];
+        let (header, rest) = self.acc[at..].split_at_mut(HEADER_LEN);
+        let body = &mut rest[..body_size];
 
         if opcode == OP_VIDEO_CONFIG {
             let (codec, offset) = detect_codec(body);
@@ -73,15 +77,13 @@ impl ScreenStream {
             return;
         }
 
-        let opened;
         let frame: &[u8] = if body.len() >= TAG_LEN {
-            let Some(plain) = self.key.open(&nonce64(self.counter), body, header) else {
+            let Some(plain) = self.key.open_in_place(&nonce64(self.counter), body, header) else {
                 eprintln!("[cp_screen] frame auth failed at counter {}", self.counter);
                 return;
             };
             self.counter += 1;
-            opened = plain;
-            &opened
+            plain
         } else {
             body
         };
