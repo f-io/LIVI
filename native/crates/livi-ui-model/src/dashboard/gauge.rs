@@ -335,6 +335,7 @@ pub fn groups(d: &Drawing, redline_index: Option<f64>) -> Groups {
 const SHADOW_GROW: f64 = 6.0;
 const SHADOW_WIDTH: f64 = 42.0;
 const SHADOW_BLUR: f64 = 13.0;
+const SHADOW_STEP: f64 = 2.0;
 
 pub struct Shadow {
     pub size: usize,
@@ -372,12 +373,13 @@ pub fn shadow(d: &Drawing, mirror: bool) -> Shadow {
         .map(|b| (b.x - d.center_x).abs() + b.width / 2.0)
         .fold(0.0, f64::max);
     let half = r + SHADOW_WIDTH / 2.0 + 3.0 * SHADOW_BLUR;
-    let size = (2.0 * half).ceil() as usize;
+    let size = (2.0 * half / SHADOW_STEP).ceil() as usize;
+    let px = 2.0 * half / size as f64;
     let mut alpha = Vec::with_capacity(size * size);
     for row in 0..size {
         for col in 0..size {
-            let x = col as f64 + 0.5 - half;
-            let y = row as f64 + 0.5 - half;
+            let x = (col as f64 + 0.5) * px - half;
+            let y = (row as f64 + 0.5) * px - half;
             let outward = if mirror { x } else { -x };
             let a = if outward >= 0.0 {
                 blurred_stroke((x.hypot(y) - r).abs())
@@ -401,9 +403,10 @@ mod tests {
         let d = draw(&Spec::default(), &sc, 470.0, 600.0);
         let s = shadow(&d, false);
         let r = d.radius + 6.0;
+        let px = 2.0 * s.half / s.size as f64;
         let at = |x: f64, y: f64| {
-            let col = (s.half + x) as usize;
-            let row = (s.half + y) as usize;
+            let col = ((s.half + x) / px) as usize;
+            let row = ((s.half + y) / px) as usize;
             s.alpha[row * s.size + col]
         };
         assert!(at(-r, 0.0) > 200);
