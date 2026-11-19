@@ -72,9 +72,19 @@ pub fn panel_native_px() -> Option<(u32, u32)> {
         None if connected.len() == 1 => &connected[0],
         None => return None,
     };
-    let px = edid_native_px(&fs::read(format!("/sys/class/drm/{pick}/edid")).ok()?)?;
-    println!("[core] EDID of {pick}: {}x{} px", px.0, px.1);
+    let px = fs::read(format!("/sys/class/drm/{pick}/edid"))
+        .ok()
+        .and_then(|edid| edid_native_px(&edid))
+        .or_else(|| mode_px(&fs::read_to_string(format!("/sys/class/drm/{pick}/modes")).ok()?))?;
+    println!("[core] {pick}: {}x{} px", px.0, px.1);
     Some(px)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn mode_px(modes: &str) -> Option<(u32, u32)> {
+    let (w, h) = modes.lines().next()?.split_once('x')?;
+    let h = h.trim_end_matches(|c: char| !c.is_ascii_digit());
+    Some((w.parse().ok()?, h.parse().ok()?))
 }
 
 #[cfg(not(any(target_os = "linux", in_process)))]
@@ -237,6 +247,13 @@ mod tests {
         let mut no_timing = edid(1920, 1080, 344, 194);
         no_timing[0x36] = 0;
         assert_eq!(edid_native_px(&no_timing), None);
+    }
+
+    #[test]
+    fn a_panel_without_edid_reads_its_first_mode() {
+        assert_eq!(mode_px("452x1280\n"), Some((452, 1280)));
+        assert_eq!(mode_px("1920x1080i\n1280x720\n"), Some((1920, 1080)));
+        assert_eq!(mode_px(""), None);
     }
 
     #[test]
