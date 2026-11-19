@@ -49,6 +49,17 @@ impl ChaCha {
         self.open_detached(nonce, body, tag, aad)
     }
 
+    pub fn open_in_place<'a>(
+        &self,
+        nonce: &[u8; 12],
+        sealed: &'a mut [u8],
+        aad: &[u8],
+    ) -> Option<&'a mut [u8]> {
+        self.0
+            .open_in_place(Nonce::assume_unique_for_key(*nonce), Aad::from(aad), sealed)
+            .ok()
+    }
+
     pub fn open_detached(
         &self,
         nonce: &[u8; 12],
