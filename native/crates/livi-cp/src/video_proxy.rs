@@ -207,7 +207,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use openssl::ssl::SslConnector;
+    use rustls::ClientConfig;
     use tokio::io::{AsyncRead, AsyncWrite};
     use tokio::net::TcpListener;
 
@@ -254,7 +254,7 @@ mod tests {
     const PHONE_SERVER: &str = "127.0.0.1:58539";
     const CDN: &str = "localhost:443";
 
-    async fn phone() -> (SocketAddrV6, SslConnector) {
+    async fn phone() -> (SocketAddrV6, Arc<ClientConfig>) {
         let (cdn, trust) = test_tls::ca();
         let cdn = Arc::new(cdn);
         let listener = TcpListener::bind("[::1]:0").await.unwrap();

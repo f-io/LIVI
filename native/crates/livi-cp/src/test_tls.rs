@@ -2,15 +2,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use std::sync::Arc;
+
 use openssl::asn1::Asn1Time;
 use openssl::bn::BigNum;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
 use openssl::nid::Nid;
 use openssl::pkey::{PKey, Private};
-use openssl::ssl::{SslAcceptor, SslConnector, SslMethod};
+use openssl::ssl::{SslAcceptor, SslMethod};
 use openssl::x509::extension::{BasicConstraints, SubjectAlternativeName};
 use openssl::x509::{X509, X509NameBuilder};
+use rustls::crypto::aws_lc_rs;
+use rustls::pki_types::CertificateDer;
+use rustls::{ClientConfig, RootCertStore};
 
 fn key() -> PKey<Private> {
     let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
@@ -53,7 +58,7 @@ fn cert(name: &str, key: &PKey<Private>, issuer: Option<(&X509, &PKey<Private>)>
     b.build()
 }
 
-pub fn ca() -> (SslAcceptor, SslConnector) {
+pub fn ca() -> (SslAcceptor, Arc<ClientConfig>) {
     let ca_key = key();
     let ca = cert("LIVI test CA", &ca_key, None);
     let leaf_key = key();
@@ -61,7 +66,14 @@ pub fn ca() -> (SslAcceptor, SslConnector) {
     let mut server = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls_server()).unwrap();
     server.set_private_key(&leaf_key).unwrap();
     server.set_certificate(&leaf).unwrap();
-    let mut client = SslConnector::builder(SslMethod::tls_client()).unwrap();
-    client.cert_store_mut().add_cert(ca).unwrap();
-    (server.build(), client.build())
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(CertificateDer::from(ca.to_der().unwrap()))
+        .unwrap();
+    let client = ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    (server.build(), Arc::new(client))
 }

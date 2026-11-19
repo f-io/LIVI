@@ -3,10 +3,12 @@
 // Additional terms: see NOTICE
 
 use super::*;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use tokio::net::TcpListener;
 use tokio::time::Instant;
+use tokio_openssl::SslStream;
 
 #[test]
 fn the_playlist_lists_whole_segments() {
