@@ -36,20 +36,20 @@ fn serve_plane(mut conn: UnixStream) {
             Ok(n) => n,
         };
         framer.push(&chunk[..read]);
-        while let Some(m) = framer.next_message() {
+        while let Some(m) = framer.next_ref() {
             let Ok(m) = m else { break 'conn };
             match m.op {
                 ui_planes::CREATE => {
                     if let Some((id, player)) = drawn.take() {
                         screens::remove(id, &player);
                     }
-                    drawn = parse_plane_body(&m.rest)
+                    drawn = parse_plane_body(m.rest)
                         .and_then(|(codec, data)| screens::create(m.id, codec, data))
                         .map(|player| (m.id, player));
                 }
                 ui_planes::FRAME => {
                     if let Some((_, player)) = &drawn {
-                        player.push(&m.rest);
+                        player.push(m.rest);
                     }
                 }
                 ui_planes::FLUSH => {
@@ -63,7 +63,7 @@ fn serve_plane(mut conn: UnixStream) {
                     }
                     let back = conn.try_clone().ok().map(|c| Arc::new(Mutex::new(c)));
                     let say = to_host(back.clone(), m.id);
-                    playing = parse_url_body(&m.rest)
+                    playing = parse_url_body(m.rest)
                         .and_then(|(url, device)| screens::play(m.id, &url, &device, say))
                         .map(|player| (m.id, player));
                     if let Some(back) = back {
@@ -71,12 +71,12 @@ fn serve_plane(mut conn: UnixStream) {
                     }
                 }
                 ui_planes::PLAY_RATE => {
-                    if let (Some((_, player)), Some(rate)) = (&playing, f64_of(&m.rest)) {
+                    if let (Some((_, player)), Some(rate)) = (&playing, f64_of(m.rest)) {
                         player.set_rate(rate);
                     }
                 }
                 ui_planes::PLAY_SEEK => {
-                    if let (Some((_, player)), Some(to)) = (&playing, f64_of(&m.rest)) {
+                    if let (Some((_, player)), Some(to)) = (&playing, f64_of(m.rest)) {
                         player.seek(to);
                     }
                 }
@@ -90,7 +90,7 @@ fn serve_plane(mut conn: UnixStream) {
                         screens::remove(id, &camera);
                     }
                     let back = conn.try_clone().ok().map(|c| Arc::new(Mutex::new(c)));
-                    filming = parse_camera_body(&m.rest)
+                    filming = parse_camera_body(m.rest)
                         .and_then(|order| screens::camera(m.id, order, to_host(back, m.id)))
                         .map(|camera| (m.id, camera));
                 }

@@ -20,7 +20,12 @@ impl fmt::Display for TooLarge {
 impl std::error::Error for TooLarge {}
 
 pub fn open(body_capacity: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(LEN_BYTES + body_capacity);
+    reopen(Vec::new(), body_capacity)
+}
+
+pub fn reopen(mut out: Vec<u8>, body_capacity: usize) -> Vec<u8> {
+    out.clear();
+    out.reserve(LEN_BYTES + body_capacity);
     out.extend_from_slice(&[0; LEN_BYTES]);
     out
 }
@@ -34,6 +39,7 @@ pub fn seal(mut out: Vec<u8>) -> Vec<u8> {
 #[derive(Default)]
 pub struct Frames {
     buf: Vec<u8>,
+    done: usize,
     broken: Option<TooLarge>,
 }
 
@@ -44,24 +50,40 @@ impl Frames {
 
     pub fn push(&mut self, chunk: &[u8]) {
         if self.broken.is_none() {
+            self.buf.drain(..self.done);
+            self.done = 0;
             self.buf.extend_from_slice(chunk);
         }
     }
 
     pub fn next_with<R>(&mut self, read: impl FnOnce(&[u8]) -> R) -> Option<Result<R, TooLarge>> {
+        Some(self.next_ref()?.map(read))
+    }
+
+    pub fn next_ref(&mut self) -> Option<Result<&[u8], TooLarge>> {
+        Some(self.next_range()?.map(|r| &self.buf[r]))
+    }
+
+    pub fn next_range(&mut self) -> Option<Result<std::ops::Range<usize>, TooLarge>> {
         if let Some(e) = self.broken {
             return Some(Err(e));
         }
-        let head: [u8; LEN_BYTES] = *self.buf.first_chunk()?;
+        let head: [u8; LEN_BYTES] = *self.buf[self.done..].first_chunk()?;
         let len = u32::from_le_bytes(head) as usize;
         if len > MAX_FRAME {
             self.buf = Vec::new();
+            self.done = 0;
             self.broken = Some(TooLarge(len));
             return self.broken.map(Err);
         }
-        let out = read(self.buf.get(LEN_BYTES..LEN_BYTES + len)?);
-        self.buf.drain(..LEN_BYTES + len);
-        Some(Ok(out))
+        let start = self.done + LEN_BYTES;
+        self.buf.get(start..start + len)?;
+        self.done = start + len;
+        Some(Ok(start..start + len))
+    }
+
+    pub fn body(&self, range: std::ops::Range<usize>) -> &[u8] {
+        &self.buf[range]
     }
 
     pub fn next_frame(&mut self) -> Option<Result<Vec<u8>, TooLarge>> {
