@@ -2,21 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use openssl::bn::BigNumContext;
-use openssl::cipher::Cipher as Aead;
-use openssl::cipher_ctx::CipherCtx;
-use openssl::derive::Deriver;
-use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
-use openssl::error::ErrorStack;
-use openssl::nid::Nid;
-use openssl::pkey::{PKey, Private};
-use openssl::sign::Signer;
-use openssl::symm::Cipher;
+use livi_crypto::{CCM_TAG_LEN, P256, aes128_ccm_open, aes128_ccm_seal, sha256};
 
-use livi_crypto::sha256;
+pub use livi_crypto::aes128_cmac as cmac;
 
 pub const POINT: usize = 33;
-pub const TAG: usize = 16;
+pub const TAG: usize = CCM_TAG_LEN;
 const EXPANDED: usize = 200;
 const EXTRACTION: &[u8] = b"MFi 4.0 SIGMA-I Authentication Randomness Extraction";
 const EXPANSION: &[u8] = b"MFi 4.0 SIGMA-I Authentication Key Expansion";
@@ -24,58 +15,27 @@ pub const SIGMA: u8 = 0x01;
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeyError {
-    #[error("{0}")]
-    Openssl(#[from] ErrorStack),
-    #[error("a point that is no 33 bytes")]
-    PointSize,
-}
-
-pub fn group() -> EcGroup {
-    EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).expect("P-256 is built in")
+    #[error("the phone's key is no point on P-256")]
+    NotOnCurve,
 }
 
 pub struct Ephemeral {
-    key: EcKey<Private>,
+    key: P256,
     pub public: [u8; POINT],
 }
 
 impl Ephemeral {
-    pub fn generate() -> Result<Self, KeyError> {
-        let group = group();
-        let key = EcKey::generate(&group)?;
-        let mut ctx = BigNumContext::new()?;
-        let public =
-            key.public_key()
-                .to_bytes(&group, PointConversionForm::COMPRESSED, &mut ctx)?;
-        Ok(Self {
+    pub fn generate() -> Self {
+        let key = P256::generate();
+        Self {
+            public: key.public,
             key,
-            public: public.try_into().map_err(|_| KeyError::PointSize)?,
-        })
+        }
     }
 
     pub fn shared(&self, peer: &[u8; POINT]) -> Result<Vec<u8>, KeyError> {
-        let group = group();
-        let mut ctx = BigNumContext::new()?;
-        let point = EcPoint::from_bytes(&group, peer, &mut ctx)?;
-        let peer = EcKey::from_public_key(&group, &point)?;
-        peer.check_key()?;
-        let ours = PKey::from_ec_key(self.key.clone())?;
-        let theirs = PKey::from_ec_key(peer)?;
-        let mut deriver = Deriver::new(&ours)?;
-        deriver.set_peer(&theirs)?;
-        Ok(deriver.derive_to_vec()?)
+        Ok(self.key.shared(peer).ok_or(KeyError::NotOnCurve)?.to_vec())
     }
-}
-
-pub fn cmac(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
-    let pkey = PKey::cmac(&Cipher::aes_128_cbc(), key).expect("a 16 byte AES key");
-    let mut signer = Signer::new_without_digest(&pkey).expect("CMAC signer");
-    signer.update(data).expect("CMAC update");
-    signer
-        .sign_to_vec()
-        .expect("CMAC")
-        .try_into()
-        .expect("one AES block")
 }
 
 pub struct Channel {
@@ -103,58 +63,16 @@ impl Channel {
     }
 
     pub fn seal(&mut self, aad: &[u8], plain: &[u8]) -> Vec<u8> {
-        let out = ccm(&self.key, &self.nonce, aad, plain, None)
-            .expect("CCM with a 16 byte key and a 12 byte nonce");
+        let out = aes128_ccm_seal(&self.key, &self.nonce, aad, plain);
         self.step();
         out
     }
 
     pub fn open(&mut self, aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
-        let (data, tag) = sealed.split_at_checked(sealed.len().checked_sub(TAG)?)?;
-        let plain = ccm(&self.key, &self.nonce, aad, data, Some(tag)).ok()?;
+        let plain = aes128_ccm_open(&self.key, &self.nonce, aad, sealed)?;
         self.step();
         Some(plain)
     }
-}
-
-fn ccm(
-    key: &[u8; 16],
-    nonce: &[u8; 12],
-    aad: &[u8],
-    data: &[u8],
-    tag: Option<&[u8]>,
-) -> Result<Vec<u8>, ErrorStack> {
-    let cipher = Aead::aes_128_ccm();
-    let mut ctx = CipherCtx::new()?;
-    match tag {
-        None => ctx.encrypt_init(Some(cipher), None, None)?,
-        Some(_) => ctx.decrypt_init(Some(cipher), None, None)?,
-    }
-    ctx.set_iv_length(nonce.len())?;
-    match tag {
-        None => ctx.set_tag_length(TAG)?,
-        Some(tag) => ctx.set_tag(tag)?,
-    }
-    match tag {
-        None => ctx.encrypt_init(None, Some(key), Some(nonce))?,
-        Some(_) => ctx.decrypt_init(None, Some(key), Some(nonce))?,
-    }
-    ctx.set_data_len(data.len())?;
-    if !aad.is_empty() {
-        ctx.cipher_update(aad, None)?;
-    }
-    let mut out = vec![0; data.len() + cipher.block_size()];
-    let mut n = ctx.cipher_update(data, Some(&mut out))?;
-    if tag.is_none() {
-        n += ctx.cipher_final(&mut out[n..])?;
-        out.truncate(n);
-        let mut tag = [0; TAG];
-        ctx.tag(&mut tag)?;
-        out.extend_from_slice(&tag);
-    } else {
-        out.truncate(n);
-    }
-    Ok(out)
 }
 
 pub struct Keys {
@@ -219,10 +137,77 @@ mod tests {
         );
     }
 
+    fn openssl_ccm_seal(key: &[u8; 16], nonce: &[u8; 12], aad: &[u8], plain: &[u8]) -> Vec<u8> {
+        use openssl::cipher::Cipher;
+        use openssl::cipher_ctx::CipherCtx;
+        let mut ctx = CipherCtx::new().unwrap();
+        ctx.encrypt_init(Some(Cipher::aes_128_ccm()), None, None)
+            .unwrap();
+        ctx.set_iv_length(nonce.len()).unwrap();
+        ctx.set_tag_length(TAG).unwrap();
+        ctx.encrypt_init(None, Some(key), Some(nonce)).unwrap();
+        ctx.set_data_len(plain.len()).unwrap();
+        if !aad.is_empty() {
+            ctx.cipher_update(aad, None).unwrap();
+        }
+        let mut out = vec![0; plain.len() + 16];
+        let mut n = ctx.cipher_update(plain, Some(&mut out)).unwrap();
+        n += ctx.cipher_final(&mut out[n..]).unwrap();
+        out.truncate(n);
+        let mut tag = [0; TAG];
+        ctx.tag(&mut tag).unwrap();
+        out.extend_from_slice(&tag);
+        out
+    }
+
+    #[test]
+    fn ccm_seals_as_openssl_does() {
+        for len in [0, 1, 16, 33, 64, 650] {
+            let plain: Vec<u8> = (0..len).map(|i| i as u8).collect();
+            for aad in [&b""[..], &[0xa5; 7][..], &[1; 40][..]] {
+                let (key, nonce) = ([len as u8; 16], [aad.len() as u8; 12]);
+                let mut ch = Channel { key, nonce };
+                assert_eq!(
+                    ch.seal(aad, &plain),
+                    openssl_ccm_seal(&key, &nonce, aad, &plain)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ecdh_agrees_with_openssl() {
+        use openssl::bn::BigNumContext;
+        use openssl::derive::Deriver;
+        use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
+        use openssl::nid::Nid;
+        use openssl::pkey::PKey;
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
+        let theirs = EcKey::generate(&group).unwrap();
+        let mut ctx = BigNumContext::new().unwrap();
+        let their_point: [u8; POINT] = theirs
+            .public_key()
+            .to_bytes(&group, PointConversionForm::COMPRESSED, &mut ctx)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let ours = Ephemeral::generate();
+        let our_point = EcPoint::from_bytes(&group, &ours.public, &mut ctx).unwrap();
+        let our_key =
+            PKey::from_ec_key(EcKey::from_public_key(&group, &our_point).unwrap()).unwrap();
+        let their_key = PKey::from_ec_key(theirs).unwrap();
+        let mut deriver = Deriver::new(&their_key).unwrap();
+        deriver.set_peer(&our_key).unwrap();
+        assert_eq!(
+            ours.shared(&their_point).unwrap(),
+            deriver.derive_to_vec().unwrap()
+        );
+    }
+
     #[test]
     fn both_ends_agree_and_a_channel_counts_its_nonce() {
-        let a = Ephemeral::generate().unwrap();
-        let b = Ephemeral::generate().unwrap();
+        let a = Ephemeral::generate();
+        let b = Ephemeral::generate();
         let shared = a.shared(&b.public).unwrap();
         assert_eq!(shared, b.shared(&a.public).unwrap());
         assert_eq!(shared.len(), 32);

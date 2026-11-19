@@ -274,7 +274,7 @@ impl Session {
                 break n;
             }
         };
-        let ephemeral = Ephemeral::generate().map_err(|e| e.to_string())?;
+        let ephemeral = Ephemeral::generate();
         let answer = Message::new(CLEAR, id::SETUP)
             .with(0, [self.version])
             .with(1, [WE_RESPOND])
@@ -373,9 +373,7 @@ impl Session {
         let ours = self.ephemeral.as_ref().expect("set up before").public;
         let phone_mac = keys::cmac(&keys.phone_mac, &self.phone_hash);
         let theirs = keys::signed_data(&ours, &self.phone_point, &phone_mac);
-        if !cert::signed_by(&leaf, &theirs, &self.phone_signature)
-            .map_err(|e| Fault::Malformed(e.to_string()))?
-        {
+        if !cert::signed_by(&leaf, &theirs, &self.phone_signature) {
             return Err(Fault::Malformed(
                 "the phone's signature does not verify".into(),
             ));

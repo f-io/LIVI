@@ -4,15 +4,14 @@
 
 use std::path::Path;
 
-use openssl::bn::{BigNum, BigNumContext};
-use openssl::ec::{EcKey, EcPoint, PointConversionForm};
-use openssl::ecdsa::EcdsaSig;
-use openssl::error::ErrorStack;
-use openssl::pkey::{PKey, Public};
-use openssl::x509::X509;
+use p256::PublicKey;
+use p256::elliptic_curve::sec1::ToSec1Point;
+use x509_cert::Certificate;
+use x509_cert::der::{DecodePem, Encode};
+use x509_cert::ext::pkix::SubjectKeyIdentifier;
 
-use super::keys::{POINT, group};
-use livi_crypto::{sha1, sha256};
+use super::keys::POINT;
+use livi_crypto::{p256_verify_der, p256_verify_fixed, sha1, sha256};
 
 const ROOT_SHA256: [u8; 32] = [
     0x77, 0x57, 0xb6, 0x1f, 0x5b, 0xe7, 0xfc, 0x25, 0x9c, 0xad, 0x89, 0xa5, 0x9c, 0x11, 0x74, 0xb9,
@@ -58,8 +57,8 @@ const LEAF_UNIT: &str = "Apple Accessory Host Attestations";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CertError {
-    #[error("{0}")]
-    Openssl(#[from] ErrorStack),
+    #[error("a key that is no point on P-256")]
+    NotOnCurve,
     #[error("the certificate is cut short")]
     CutShort,
     #[error("a name that is no text")]
@@ -70,8 +69,6 @@ pub enum CertError {
     UnknownKind(u8),
     #[error("{0} bytes past the certificate")]
     Trailing(usize),
-    #[error("a point that is no 65 bytes")]
-    PointSize,
     #[error("a validity time {0:?}")]
     BadTime(String),
     #[error("a leaf not held by an Apple device")]
@@ -85,6 +82,8 @@ pub enum CertError {
 #[derive(Debug, Clone)]
 pub struct Unpacked {
     pub der: Vec<u8>,
+    pub tbs: Vec<u8>,
+    pub signature: Vec<u8>,
     pub leaf: bool,
     pub point: [u8; FULL_POINT],
     pub authority: [u8; KEY_ID_LEN],
@@ -218,9 +217,14 @@ pub fn unpack(compressed: &[u8]) -> Result<Unpacked, CertError> {
         ]
         .concat(),
     );
-    let der = der(0x30, &[tbs, algorithm, bit_string(signature)].concat());
+    let der = der(
+        0x30,
+        &[&tbs[..], &algorithm, &bit_string(signature)].concat(),
+    );
     Ok(Unpacked {
         der,
+        tbs,
+        signature: signature.to_vec(),
         leaf,
         point,
         authority,
@@ -230,13 +234,12 @@ pub fn unpack(compressed: &[u8]) -> Result<Unpacked, CertError> {
 }
 
 fn full_point(compressed: &[u8; POINT]) -> Result<[u8; FULL_POINT], CertError> {
-    let group = group();
-    let mut ctx = BigNumContext::new()?;
-    let point = EcPoint::from_bytes(&group, compressed, &mut ctx)?;
-    point
-        .to_bytes(&group, PointConversionForm::UNCOMPRESSED, &mut ctx)?
+    let key = PublicKey::from_sec1_bytes(compressed).map_err(|_| CertError::NotOnCurve)?;
+    key.as_affine()
+        .to_sec1_point(false)
+        .as_bytes()
         .try_into()
-        .map_err(|_| CertError::PointSize)
+        .map_err(|_| CertError::NotOnCurve)
 }
 
 fn der(tag: u8, content: &[u8]) -> Vec<u8> {
@@ -306,7 +309,7 @@ fn upper_hex(bytes: &[u8]) -> String {
 
 struct Issuer {
     key_id: [u8; KEY_ID_LEN],
-    key: PKey<Public>,
+    point: [u8; FULL_POINT],
 }
 
 pub struct Trust {
@@ -348,8 +351,7 @@ impl Trust {
             .iter()
             .find(|i| i.key_id == cert.authority)
             .ok_or(CertError::UnknownIssuer(cert.authority))?;
-        let x509 = X509::from_der(&cert.der)?;
-        if !x509.verify(&issuer.key)? {
+        if !p256_verify_der(&issuer.point, &cert.tbs, &cert.signature) {
             return Err(CertError::NotSigned);
         }
         Ok(())
@@ -359,7 +361,7 @@ impl Trust {
         self.check(cert)?;
         self.issuers.push(Issuer {
             key_id: cert.key_id,
-            key: public_key(&cert.point)?,
+            point: cert.point,
         });
         Ok(())
     }
@@ -368,7 +370,7 @@ impl Trust {
 fn find_root(dir: Option<&Path>) -> Option<Issuer> {
     let the_root = |blocks: Vec<&[u8]>| {
         blocks.into_iter().find_map(|block| {
-            let cert = X509::from_pem(block).ok()?;
+            let cert = Certificate::from_pem(block).ok()?;
             (sha256(&[&cert.to_der().ok()?]) == ROOT_SHA256).then_some(cert)
         })
     };
@@ -390,11 +392,20 @@ fn find_root(dir: Option<&Path>) -> Option<Issuer> {
     {
         root = the_root(pem_blocks(&binary));
     }
-    let root = root?;
-    let key_id = root.subject_key_id()?.as_slice().try_into().ok()?;
+    root_issuer(&root?)
+}
+
+fn root_issuer(root: &Certificate) -> Option<Issuer> {
+    let tbs = &root.tbs_certificate;
+    let (_, key_id) = tbs.get::<SubjectKeyIdentifier>().ok()??;
     Some(Issuer {
-        key_id,
-        key: root.public_key().ok()?,
+        key_id: key_id.0.as_bytes().try_into().ok()?,
+        point: tbs
+            .subject_public_key_info
+            .subject_public_key
+            .raw_bytes()
+            .try_into()
+            .ok()?,
     })
 }
 
@@ -414,21 +425,123 @@ fn pem_blocks(bytes: &[u8]) -> Vec<&[u8]> {
     out
 }
 
-fn public_key(point: &[u8; FULL_POINT]) -> Result<PKey<Public>, CertError> {
-    Ok(PKey::from_ec_key(ec_key(point)?)?)
+pub fn signed_by(cert: &Unpacked, data: &[u8], signature: &[u8; 64]) -> bool {
+    p256_verify_fixed(&cert.point, data, signature)
 }
 
-fn ec_key(point: &[u8; FULL_POINT]) -> Result<EcKey<Public>, CertError> {
-    let group = group();
-    let mut ctx = BigNumContext::new()?;
-    let point = EcPoint::from_bytes(&group, point, &mut ctx)?;
-    Ok(EcKey::from_public_key(&group, &point)?)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub fn signed_by(cert: &Unpacked, data: &[u8], signature: &[u8; 64]) -> Result<bool, CertError> {
-    let r = BigNum::from_slice(&signature[..32])?;
-    let s = BigNum::from_slice(&signature[32..])?;
-    let sig = EcdsaSig::from_private_components(r, s)?;
-    let key = ec_key(&cert.point)?;
-    Ok(sig.verify(&sha256(&[data]), &key)?)
+    use openssl::asn1::Asn1Time;
+    use openssl::bn::BigNumContext;
+    use openssl::ec::{EcGroup, EcKey, PointConversionForm};
+    use openssl::ecdsa::EcdsaSig;
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+    use openssl::pkey::{PKey, Private};
+    use openssl::x509::extension::{BasicConstraints, SubjectKeyIdentifier};
+    use openssl::x509::{X509, X509NameBuilder};
+
+    fn group() -> EcGroup {
+        EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap()
+    }
+
+    fn points(key: &EcKey<Private>) -> ([u8; POINT], [u8; FULL_POINT]) {
+        let mut ctx = BigNumContext::new().unwrap();
+        let mut form = |f| key.public_key().to_bytes(&group(), f, &mut ctx).unwrap();
+        (
+            form(PointConversionForm::COMPRESSED).try_into().unwrap(),
+            form(PointConversionForm::UNCOMPRESSED).try_into().unwrap(),
+        )
+    }
+
+    #[test]
+    fn a_compressed_point_unfolds_as_openssl_unfolds_it() {
+        for _ in 0..32 {
+            let (compressed, full) = points(&EcKey::generate(&group()).unwrap());
+            assert_eq!(full_point(&compressed).unwrap(), full);
+        }
+        let mut off = points(&EcKey::generate(&group()).unwrap()).0;
+        off[0] = 4;
+        assert!(full_point(&off).is_err());
+        assert!(full_point(&[[2].as_slice(), &[0xff; 32]].concat().try_into().unwrap()).is_err());
+    }
+
+    #[test]
+    fn the_root_gives_its_key_id_and_point() {
+        let key = EcKey::generate(&group()).unwrap();
+        let pkey = PKey::from_ec_key(key.clone()).unwrap();
+        let mut name = X509NameBuilder::new().unwrap();
+        name.append_entry_by_nid(Nid::COMMONNAME, "root").unwrap();
+        let name = name.build();
+        let mut b = X509::builder().unwrap();
+        b.set_version(2).unwrap();
+        b.set_subject_name(&name).unwrap();
+        b.set_issuer_name(&name).unwrap();
+        b.set_not_before(&Asn1Time::days_from_now(0).unwrap())
+            .unwrap();
+        b.set_not_after(&Asn1Time::days_from_now(1).unwrap())
+            .unwrap();
+        b.set_pubkey(&pkey).unwrap();
+        b.append_extension(BasicConstraints::new().critical().ca().build().unwrap())
+            .unwrap();
+        let ski = SubjectKeyIdentifier::new()
+            .build(&b.x509v3_context(None, None))
+            .unwrap();
+        b.append_extension(ski).unwrap();
+        b.sign(&pkey, MessageDigest::sha256()).unwrap();
+        let cert = b.build();
+
+        let pem = cert.to_pem().unwrap();
+        let root = Certificate::from_pem(pem_blocks(&pem)[0]).unwrap();
+        let issuer = root_issuer(&root).unwrap();
+        assert_eq!(issuer.point, points(&key).1);
+        assert_eq!(
+            issuer.key_id.as_slice(),
+            cert.subject_key_id().unwrap().as_slice()
+        );
+    }
+
+    #[test]
+    fn only_the_issuers_signature_is_taken() {
+        let issuer = EcKey::generate(&group()).unwrap();
+        let other = EcKey::generate(&group()).unwrap();
+        let tbs = b"to be signed".to_vec();
+        let sign = |key: &EcKey<Private>| {
+            EcdsaSig::sign(&livi_crypto::sha256(&[&tbs]), key)
+                .unwrap()
+                .to_der()
+                .unwrap()
+        };
+        let leaf = |signature: Vec<u8>| Unpacked {
+            der: Vec::new(),
+            tbs: tbs.clone(),
+            signature,
+            leaf: false,
+            point: points(&other).1,
+            authority: [1; KEY_ID_LEN],
+            key_id: [2; KEY_ID_LEN],
+            property: None,
+        };
+        let trust = Trust {
+            issuers: vec![Issuer {
+                key_id: [1; KEY_ID_LEN],
+                point: points(&issuer).1,
+            }],
+            rooted: true,
+        };
+        assert!(trust.check(&leaf(sign(&issuer))).is_ok());
+        assert!(matches!(
+            trust.check(&leaf(sign(&other))),
+            Err(CertError::NotSigned)
+        ));
+
+        let fixed = EcdsaSig::sign(&livi_crypto::sha256(&[b"data"]), &other).unwrap();
+        let mut sig = [0; 64];
+        sig[..32].copy_from_slice(&fixed.r().to_vec_padded(32).unwrap());
+        sig[32..].copy_from_slice(&fixed.s().to_vec_padded(32).unwrap());
+        assert!(signed_by(&leaf(Vec::new()), b"data", &sig));
+        assert!(!signed_by(&leaf(Vec::new()), b"other", &sig));
+    }
 }

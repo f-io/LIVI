@@ -35,6 +35,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aead"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1973cfbc1a2daf9cf550e74e1f088c28e7f7d8c1e1418fb6c9dc5184b7e84c99"
+dependencies = [
+ "crypto-common 0.2.2",
+ "inout 0.2.6",
+]
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -62,10 +72,10 @@ version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "831010a0f742e1209b3bcea8fab6a8e149051ba6099432c8cb2cc117dec3ead1"
 dependencies = [
- "aead",
+ "aead 0.5.2",
  "aes 0.8.4",
  "cipher 0.4.4",
- "ctr",
+ "ctr 0.9.2",
  "ghash",
  "subtle",
 ]
@@ -821,6 +831,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccm"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be9b34d99d395af800e996c5784f810f8400ccd64202f91859dc677825b5378"
+dependencies = [
+ "aead 0.6.1",
+ "cipher 0.5.2",
+ "ctr 0.10.1",
+ "ctutils",
+]
+
+[[package]]
 name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -904,7 +926,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
- "aead",
+ "aead 0.5.2",
  "chacha20 0.9.1",
  "cipher 0.4.4",
  "poly1305",
@@ -942,6 +964,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf2a2c93cd704877c0858356ed03480ff301ee950b43f1cbe4573b088bfa6c"
 dependencies = [
+ "block-buffer 0.12.1",
  "crypto-common 0.2.2",
  "inout 0.2.6",
 ]
@@ -1307,6 +1330,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
 dependencies = [
  "cipher 0.4.4",
+]
+
+[[package]]
+name = "ctr"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baaca1c4b237092596f64d571e9db6ce4109c4ef9742e27590f1709594461f21"
+dependencies = [
+ "cipher 0.5.2",
 ]
 
 [[package]]
@@ -4314,6 +4346,7 @@ dependencies = [
  "num-bigint 0.5.1",
  "openssl",
  "openssl-sys",
+ "p256 0.14.0",
  "serde",
  "serde_json",
  "socket2",
@@ -4321,13 +4354,16 @@ dependencies = [
  "tokio",
  "tokio-openssl",
  "uuid",
+ "x509-cert",
 ]
 
 [[package]]
 name = "livi-crypto"
 version = "10.5.0"
 dependencies = [
+ "aes 0.9.4",
  "aws-lc-rs",
+ "ccm",
 ]
 
 [[package]]
@@ -6991,7 +7027,7 @@ version = "0.0.2-alpha"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f12052947763ab8515f753315357599e9b0b4dab3b8ba15f30f725fe6d025557"
 dependencies = [
- "aead",
+ "aead 0.5.2",
  "aes-gcm",
  "chacha20poly1305",
  "crypto-common 0.1.7",

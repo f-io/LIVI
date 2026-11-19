@@ -16,6 +16,7 @@ livi-session-io.workspace = true
 num-bigint = "0.5.1"
 openssl = "0.10.82"
 openssl-sys = "0.9.118"
+p256 = "0.14.0"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
@@ -23,6 +24,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
 tokio-openssl = "0.6.5"
 uuid = { workspace = true, features = ["v4"] }
+x509-cert = { version = "0.2.5", default-features = false, features = ["pem"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))'.dependencies]
 openssl = { version = "0.10.82", features = ["vendored"] }

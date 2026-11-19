@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use aes::Aes128;
 use aws_lc_rs::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
 use aws_lc_rs::agreement::{self, PrivateKey, UnparsedPublicKey};
 use aws_lc_rs::cipher::{AES_128, EncryptingKey, EncryptionContext, UnboundCipherKey};
 use aws_lc_rs::digest::{self, Context};
+use aws_lc_rs::encoding::{AsBigEndian, EcPublicKeyCompressedBin};
 use aws_lc_rs::hkdf::{HKDF_SHA512, KeyType, Salt};
 use aws_lc_rs::signature::{self, ED25519, Ed25519KeyPair, KeyPair};
+use aws_lc_rs::{cmac, hmac};
+use ccm::Ccm;
+use ccm::aead::{AeadInOut, KeyInit};
+use ccm::consts::{U12, U16};
 
 pub const TAG_LEN: usize = 16;
 
@@ -191,6 +197,90 @@ pub fn aes_ctr128(key: &[u8; 16], iv: &[u8; 16], data: &[u8]) -> Vec<u8> {
     out
 }
 
+pub fn aes128_cmac(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
+    let key = cmac::Key::new(cmac::AES_128, key).expect("16 bytes are an AES-128 key");
+    cmac::sign(&key, data)
+        .expect("CMAC over memory cannot fail")
+        .as_ref()
+        .try_into()
+        .expect("a CMAC tag is one AES block")
+}
+
+pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
+    hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, key), data)
+        .as_ref()
+        .try_into()
+        .expect("an HMAC-SHA256 tag is 32 bytes")
+}
+
+pub const CCM_TAG_LEN: usize = 16;
+
+type Aes128Ccm = Ccm<Aes128, U16, U12>;
+
+pub fn aes128_ccm_seal(key: &[u8; 16], nonce: &[u8; 12], aad: &[u8], plain: &[u8]) -> Vec<u8> {
+    let mut out = plain.to_vec();
+    Aes128Ccm::new(key.into())
+        .encrypt_in_place(nonce.into(), aad, &mut out)
+        .expect("CCM with a 12 byte nonce carries less than 16 MiB");
+    out
+}
+
+pub fn aes128_ccm_open(
+    key: &[u8; 16],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    sealed: &[u8],
+) -> Option<Vec<u8>> {
+    let mut out = sealed.to_vec();
+    Aes128Ccm::new(key.into())
+        .decrypt_in_place(nonce.into(), aad, &mut out)
+        .ok()?;
+    Some(out)
+}
+
+pub struct P256 {
+    secret: PrivateKey,
+    pub public: [u8; 33],
+}
+
+impl P256 {
+    pub fn generate() -> Self {
+        let secret = PrivateKey::generate(&agreement::ECDH_P256)
+            .expect("the system random source is unavailable");
+        let public: EcPublicKeyCompressedBin = secret
+            .compute_public_key()
+            .and_then(|p| p.as_be_bytes())
+            .expect("a P-256 key has a public half");
+        let public = public
+            .as_ref()
+            .try_into()
+            .expect("a compressed P-256 point is 33 bytes");
+        Self { secret, public }
+    }
+
+    pub fn shared(&self, peer: &[u8]) -> Option<[u8; 32]> {
+        agreement::agree(
+            &self.secret,
+            UnparsedPublicKey::new(&agreement::ECDH_P256, peer),
+            (),
+            |shared| shared.try_into().map_err(|_| ()),
+        )
+        .ok()
+    }
+}
+
+pub fn p256_verify_fixed(point: &[u8], data: &[u8], sig: &[u8]) -> bool {
+    signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, point)
+        .verify(data, sig)
+        .is_ok()
+}
+
+pub fn p256_verify_der(point: &[u8], data: &[u8], sig: &[u8]) -> bool {
+    signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_ASN1, point)
+        .verify(data, sig)
+        .is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,6 +458,55 @@ fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09
             ),
             hex("874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff")
         );
+    }
+
+    #[test]
+    fn cmac_matches_rfc4493_example_two() {
+        let key = hex("2b7e151628aed2a6abf7158809cf4f3c").try_into().unwrap();
+        assert_eq!(
+            aes128_cmac(&key, &hex("6bc1bee22e409f96e93d7e117393172a")).to_vec(),
+            hex("070a16b46b4d4144f79bdd9dd04a287c")
+        );
+    }
+
+    #[test]
+    fn hmac_sha256_matches_rfc4231_case_two() {
+        assert_eq!(
+            hmac_sha256(b"Jefe", b"what do ya want for nothing?").to_vec(),
+            hex("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+        );
+    }
+
+    #[test]
+    fn ccm_opens_what_it_seals_and_nothing_else() {
+        let (key, nonce) = ([9; 16], [4; 12]);
+        for len in [0, 1, 15, 16, 17, 300] {
+            let plain = vec![0x5a; len];
+            for aad in [&b""[..], b"ad"] {
+                let sealed = aes128_ccm_seal(&key, &nonce, aad, &plain);
+                assert_eq!(sealed.len(), len + CCM_TAG_LEN);
+                assert_eq!(
+                    aes128_ccm_open(&key, &nonce, aad, &sealed).as_ref(),
+                    Some(&plain)
+                );
+                let mut bent = sealed.clone();
+                bent[len] ^= 1;
+                assert_eq!(aes128_ccm_open(&key, &nonce, aad, &bent), None);
+                assert_eq!(aes128_ccm_open(&key, &[5; 12], aad, &sealed), None);
+            }
+        }
+        assert_eq!(aes128_ccm_open(&key, &nonce, b"", &[0; 15]), None);
+    }
+
+    #[test]
+    fn p256_agrees_on_both_sides_and_refuses_a_point_off_the_curve() {
+        let (a, b) = (P256::generate(), P256::generate());
+        assert!(matches!(a.public[0], 2 | 3));
+        assert_eq!(a.shared(&b.public), b.shared(&a.public));
+        assert!(a.shared(&b.public).is_some());
+        let mut off = b.public;
+        off[0] = 5;
+        assert_eq!(a.shared(&off), None);
     }
 
     #[test]
