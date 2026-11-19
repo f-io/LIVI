@@ -400,12 +400,17 @@ impl<O: Outside> Host<O> {
     }
 
     pub fn feed(&mut self, chunk: &[u8]) -> Result<(), TooLarge> {
-        self.framer.push(chunk);
-        while let Some(m) = self.framer.next_message() {
-            let m = m?;
-            self.dispatch(m.op, m.id, &m.rest);
-        }
-        Ok(())
+        let mut framer = std::mem::take(&mut self.framer);
+        framer.push(chunk);
+        let fed = loop {
+            match framer.next_ref() {
+                None => break Ok(()),
+                Some(Err(e)) => break Err(e),
+                Some(Ok(m)) => self.dispatch(m.op, m.id, m.rest),
+            }
+        };
+        self.framer = framer;
+        fed
     }
 
     fn dispatch(&mut self, op: u8, id: u32, rest: &[u8]) {

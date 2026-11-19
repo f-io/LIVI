@@ -10,21 +10,48 @@ use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 
 use livi_output_proto::{
-    CameraOrder, Framer, UrlStatus, VideoCodec, camera_body, encode_reply, parse_url_status,
-    plane_body, ui_planes, url_body,
+    CameraOrder, Framer, UrlStatus, VideoCodec, camera_body, encode_reply, encode_reply_into,
+    parse_url_status, plane_body, ui_planes, url_body,
 };
 
 use crate::{Plane, UrlPlay};
 
 const QUEUE: usize = 1024;
+const SPARE: usize = 3;
 
-fn connect(path: &str, id: u32, first: Vec<u8>) -> Option<(SyncSender<Vec<u8>>, UnixStream)> {
+#[derive(Clone, Default)]
+struct Spare(Arc<Mutex<Vec<Vec<u8>>>>);
+
+impl Spare {
+    fn take(&self) -> Vec<u8> {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop()
+            .unwrap_or_default()
+    }
+
+    fn give(&self, msg: Vec<u8>) {
+        let mut spare = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if spare.len() < SPARE {
+            spare.push(msg);
+        }
+    }
+}
+
+fn connect(
+    path: &str,
+    id: u32,
+    first: Vec<u8>,
+) -> Option<(SyncSender<Vec<u8>>, UnixStream, Spare)> {
     let mut sock = UnixStream::connect(path)
         .inspect_err(|e| eprintln!("[output] no UI for plane 0x{id:x} at {path}: {e}"))
         .ok()?;
     let back = sock.try_clone().ok()?;
     let (out, queued) = sync_channel::<Vec<u8>>(QUEUE);
     out.try_send(first).ok()?;
+    let spare = Spare::default();
+    let done = spare.clone();
     std::thread::Builder::new()
         .name(format!("ui-plane-{id:x}"))
         .spawn(move || {
@@ -32,31 +59,35 @@ fn connect(path: &str, id: u32, first: Vec<u8>) -> Option<(SyncSender<Vec<u8>>, 
                 if sock.write_all(&msg).is_err() {
                     return;
                 }
+                done.give(msg);
             }
         })
         .ok()?;
-    Some((out, back))
+    Some((out, back, spare))
 }
 
 pub struct UiPlane {
     id: u32,
     out: SyncSender<Vec<u8>>,
+    spare: Spare,
     lost: AtomicBool,
 }
 
 impl UiPlane {
     pub fn open(path: &str, id: u32, codec: VideoCodec, codec_data: &[u8]) -> Option<Self> {
         let create = encode_reply(ui_planes::CREATE, id, &plane_body(codec, codec_data));
-        let (out, _) = connect(path, id, create)?;
+        let (out, _, spare) = connect(path, id, create)?;
         Some(Self {
             id,
             out,
+            spare,
             lost: AtomicBool::new(false),
         })
     }
 
     fn send(&self, op: u8, rest: &[u8]) {
-        if let Err(TrySendError::Full(_)) = self.out.try_send(encode_reply(op, self.id, rest))
+        let msg = encode_reply_into(self.spare.take(), op, self.id, rest);
+        if let Err(TrySendError::Full(_)) = self.out.try_send(msg)
             && !self.lost.swap(true, Ordering::Relaxed)
         {
             eprintln!(
@@ -91,7 +122,7 @@ pub struct UiUrlPlayer {
 impl UiUrlPlayer {
     pub fn open(path: &str, id: u32, url: &str, audio_device: &str) -> Option<Self> {
         let play = encode_reply(ui_planes::PLAY_URL, id, &url_body(url, audio_device));
-        let (out, sock) = connect(path, id, play)?;
+        let (out, sock, _) = connect(path, id, play)?;
         let status = Arc::new(Mutex::new(UrlStatus::default()));
         let (mut from_ui, heard) = (sock.try_clone().ok()?, status.clone());
         std::thread::Builder::new()
@@ -167,7 +198,7 @@ pub struct UiCamera {
 impl UiCamera {
     pub fn open(path: &str, id: u32, order: &CameraOrder) -> Option<Self> {
         let open = encode_reply(ui_planes::CAMERA, id, &camera_body(order));
-        let (out, sock) = connect(path, id, open)?;
+        let (out, sock, _) = connect(path, id, open)?;
         let mut from_ui = sock.try_clone().ok()?;
         std::thread::Builder::new()
             .name(format!("ui-camera-{id:x}"))

@@ -36,24 +36,43 @@ impl Framer {
     }
 
     pub fn next_message(&mut self) -> Option<Result<Message, TooLarge>> {
-        loop {
-            let message = self.frames.next_with(|body| {
-                let (&[op, a, b, c, d], rest) = body.split_first_chunk::<HEAD_BYTES>()?;
-                Some(Message {
-                    op,
-                    id: u32::from_le_bytes([a, b, c, d]),
-                    rest: rest.to_vec(),
-                })
-            })?;
-            if let Some(message) = message.transpose() {
-                return Some(message);
+        Some(self.next_ref()?.map(|m| Message {
+            op: m.op,
+            id: m.id,
+            rest: m.rest.to_vec(),
+        }))
+    }
+
+    pub fn next_ref(&mut self) -> Option<Result<MessageRef<'_>, TooLarge>> {
+        let range = loop {
+            match self.frames.next_range()? {
+                Err(e) => return Some(Err(e)),
+                Ok(r) if r.len() >= HEAD_BYTES => break r,
+                Ok(_) => {}
             }
-        }
+        };
+        let body = self.frames.body(range);
+        let (&[op, a, b, c, d], rest) = body.split_first_chunk::<HEAD_BYTES>()?;
+        Some(Ok(MessageRef {
+            op,
+            id: u32::from_le_bytes([a, b, c, d]),
+            rest,
+        }))
     }
 }
 
+pub struct MessageRef<'a> {
+    pub op: u8,
+    pub id: u32,
+    pub rest: &'a [u8],
+}
+
 pub fn encode_reply(op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
-    let mut out = frame::open(HEAD_BYTES + rest.len());
+    encode_reply_into(Vec::new(), op, id, rest)
+}
+
+pub fn encode_reply_into(out: Vec<u8>, op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
+    let mut out = frame::reopen(out, HEAD_BYTES + rest.len());
     out.push(op);
     out.extend_from_slice(&id.to_le_bytes());
     out.extend_from_slice(rest);
