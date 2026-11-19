@@ -4,17 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["url-video"]
+url-video = ["dep:foreign-types", "dep:openssl", "dep:openssl-sys", "dep:tokio-openssl"]
+
 [dependencies]
 livi-base.workspace = true
 livi-crypto.workspace = true
 base64.workspace = true
 # The version the openssl crate implements, its trait is where Ssl::as_ptr comes from.
-foreign-types = "0.3.2"
+foreign-types = { version = "0.3.2", optional = true }
 livi-core-proto.workspace = true
 livi-session-io.workspace = true
 num-bigint = "0.5.1"
-openssl = "0.10.82"
-openssl-sys = "0.9.118"
+openssl = { version = "0.10.82", optional = true }
+openssl-sys = { version = "0.9.118", optional = true }
 p256 = "0.14.0"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 serde = { workspace = true, features = ["derive"] }
@@ -22,13 +26,13 @@ serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
-tokio-openssl = "0.6.5"
+tokio-openssl = { version = "0.6.5", optional = true }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 uuid = { workspace = true, features = ["v4"] }
 x509-cert = { version = "0.2.5", default-features = false, features = ["pem"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))'.dependencies]
-openssl = { version = "0.10.82", features = ["vendored"] }
+openssl = { version = "0.10.82", features = ["vendored"], optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 livi-net.workspace = true

@@ -66,7 +66,7 @@ livi-bt-host = { path = "crates/livi-bt-host" }
 livi-core = { path = "crates/livi-core" }
 livi-core-client = { path = "crates/livi-core-client" }
 livi-core-proto = { path = "crates/livi-core-proto" }
-livi-cp = { path = "crates/livi-cp" }
+livi-cp = { path = "crates/livi-cp", default-features = false }
 livi-crypto = { path = "crates/livi-crypto" }
 livi-dab = { path = "crates/livi-dab" }
 livi-fm = { path = "crates/livi-fm" }

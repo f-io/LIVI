@@ -8,6 +8,10 @@ license.workspace = true
 name = "livi-core"
 path = "src/main.rs"
 
+[features]
+default = ["url-video"]
+url-video = ["livi-cp/url-video"]
+
 [dependencies]
 livi-base.workspace = true
 livi-crypto.workspace = true
