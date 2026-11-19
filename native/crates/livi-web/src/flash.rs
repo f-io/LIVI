@@ -8,8 +8,6 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
-use livi_base::checksum::crc32;
-
 use crate::http::{S_200, S_400, S_500, T_JSON, err_json, js, ok_json};
 use crate::{Flash, MtdSlot, WebCaps};
 
@@ -231,10 +229,22 @@ pub(crate) fn raw_mtd(node: &str) -> String {
 }
 
 pub(crate) fn flash_matches(path: &str, expected: &[u8]) -> std::io::Result<bool> {
+    Ok(first_difference(path, expected)?.is_none())
+}
+
+fn first_difference(path: &str, expected: &[u8]) -> std::io::Result<Option<usize>> {
     let mut f = fs::File::open(path)?;
-    let mut buf = vec![0u8; expected.len()];
-    f.read_exact(&mut buf)?;
-    Ok(crc32(&buf) == crc32(expected))
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut at = 0;
+    for want in expected.chunks(buf.len()) {
+        let got = &mut buf[..want.len()];
+        f.read_exact(got)?;
+        if let Some(i) = got.iter().zip(want).position(|(a, b)| a != b) {
+            return Ok(Some(at + i));
+        }
+        at += want.len();
+    }
+    Ok(None)
 }
 
 pub(crate) fn write_chunked(path: &str, data: &[u8], node: &str) -> std::io::Result<()> {
@@ -286,23 +296,12 @@ pub(crate) fn flash_status_json() -> String {
 }
 
 pub(crate) fn verify_flash(path: &str, expected: &[u8]) -> std::io::Result<()> {
-    let mut f = fs::OpenOptions::new().read(true).open(path)?;
-    let mut got = vec![0u8; expected.len()];
-    f.read_exact(&mut got)?;
-    if got == expected {
-        Ok(())
-    } else {
-        let mut diff_at = 0;
-        for (i, (a, b)) in got.iter().zip(expected.iter()).enumerate() {
-            if a != b {
-                diff_at = i;
-                break;
-            }
-        }
-        Err(std::io::Error::new(
+    match first_difference(path, expected)? {
+        None => Ok(()),
+        Some(diff_at) => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("read-back mismatch at byte {diff_at}"),
-        ))
+        )),
     }
 }
 
