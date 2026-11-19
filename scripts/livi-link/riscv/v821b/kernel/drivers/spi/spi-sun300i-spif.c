@@ -88,7 +88,7 @@
 #define SPIF_DESC_BLOCK		GENMASK(31, 24)
 #define  SPIF_DESC_BLOCK_64B	3
 
-#define SPIF_MAX_DATA		4096
+#define SPIF_MAX_DATA		32768
 #define SPIF_TIMEOUT_US		(100 * USEC_PER_MSEC)
 
 struct sun300i_spif_desc {
@@ -103,6 +103,7 @@ struct sun300i_spif_desc {
 };
 
 struct sun300i_spif {
+	struct device *dev;
 	void __iomem *base;
 	struct clk *mod_clk;
 	struct completion done;
@@ -110,7 +111,6 @@ struct sun300i_spif {
 	struct sun300i_spif_desc *desc;
 	dma_addr_t desc_dma;
 	void *buf;
-	dma_addr_t buf_dma;
 };
 
 static irqreturn_t sun300i_spif_irq(int irq, void *data)
@@ -155,21 +155,27 @@ static int sun300i_spif_run_dma(struct sun300i_spif *spif, const struct spi_mem_
 				u32 bus, u32 count)
 {
 	bool in = op->data.dir == SPI_MEM_DATA_IN;
+	enum dma_data_direction dir = in ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
 	struct sun300i_spif_desc *desc = spif->desc;
+	dma_addr_t buf_dma;
 	int ret;
+
+	if (!in)
+		memcpy(spif->buf, op->data.buf.out, op->data.nbytes);
+
+	buf_dma = dma_map_single(spif->dev, spif->buf, op->data.nbytes, dir);
+	if (dma_mapping_error(spif->dev, buf_dma))
+		return -ENOMEM;
 
 	desc->flags = cpu_to_le32(SPIF_DESC_LAST | (in ? SPIF_DESC_TO_DRAM : 0) |
 				  FIELD_PREP(SPIF_DESC_BURST, SPIF_DESC_BURST_INCR16));
 	desc->len = cpu_to_le32(FIELD_PREP(SPIF_DESC_BLOCK, SPIF_DESC_BLOCK_64B) | op->data.nbytes);
-	desc->data = cpu_to_le32(spif->buf_dma >> 2);
+	desc->data = cpu_to_le32(buf_dma >> 2);
 	desc->next = 0;
 	desc->phase = cpu_to_le32(phase);
 	desc->addr = cpu_to_le32(op->addr.val);
 	desc->bus = cpu_to_le32(bus);
 	desc->count = cpu_to_le32(count);
-
-	if (!in)
-		memcpy(spif->buf, op->data.buf.out, op->data.nbytes);
 
 	reinit_completion(&spif->done);
 	spif->status = 0;
@@ -185,6 +191,7 @@ static int sun300i_spif_run_dma(struct sun300i_spif *spif, const struct spi_mem_
 	ret = wait_for_completion_timeout(&spif->done, usecs_to_jiffies(SPIF_TIMEOUT_US)) ?
 	      0 : -ETIMEDOUT;
 	writel(0, spif->base + SPIF_INT_EN);
+	dma_unmap_single(spif->dev, buf_dma, op->data.nbytes, dir);
 	if (ret)
 		return ret;
 	if (spif->status & SPIF_INT_ERR)
@@ -303,6 +310,7 @@ static int sun300i_spif_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	spif = spi_controller_get_devdata(ctlr);
+	spif->dev = dev;
 	init_completion(&spif->done);
 
 	spif->base = devm_platform_ioremap_resource(pdev, 0);
@@ -325,7 +333,7 @@ static int sun300i_spif_probe(struct platform_device *pdev)
 		return ret;
 
 	spif->desc = dmam_alloc_coherent(dev, sizeof(*spif->desc), &spif->desc_dma, GFP_KERNEL);
-	spif->buf = dmam_alloc_coherent(dev, SPIF_MAX_DATA, &spif->buf_dma, GFP_KERNEL);
+	spif->buf = devm_kmalloc(dev, SPIF_MAX_DATA, GFP_KERNEL);
 	if (!spif->desc || !spif->buf)
 		return -ENOMEM;
 
