@@ -351,8 +351,8 @@
 			flash@0 {
 				compatible = "jedec,spi-nor";
 				reg = <0>;
-				/* Writes failed with "FIFO overflow on Rx" at 85 MHz, the CPU does not drain the FIFO in time. */
-					spi-max-frequency = <5000000>;
+				/* Writes failed with "FIFO overflow on Rx" at 85 MHz, the 8-entry FIFO pauses about 52 SCK cycles per refill. */
+				spi-max-frequency = <42500000>;
 				spi-rx-bus-width = <4>;
 				spi-tx-bus-width = <4>;
 
