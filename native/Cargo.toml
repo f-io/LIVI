@@ -8,7 +8,7 @@ femtovg = { path = "vendor/femtovg" }
 i-slint-backend-android-activity = { path = "vendor/i-slint-backend-android-activity" }
 
 [workspace.package]
-version = "10.5.0"
+version = "10.6.0"
 edition = "2024"
 description = "LIVI - Linux In-Vehicle Infotainment"
 homepage = "https://f-io.dev"
@@ -46,7 +46,7 @@ socket2 = "0.6.5"
 thiserror = "2.0.21"
 tokio = "1.54.1"
 tokio-util = "0.7.20"
-uuid = "1.29.2"
+uuid = "1.29.3"
 zbus = { version = "6.3.0", default-features = false }
 
 iap2-csm = { path = "crates/iap2-csm" }
