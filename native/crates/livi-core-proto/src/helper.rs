@@ -100,8 +100,8 @@ pub struct Mirror {
 
 pub fn mirror_name(car_name: &str) -> String {
     match car_name.trim() {
-        "" => "LIVI".into(),
-        name => name.into(),
+        "" => "LIVI Mirror".into(),
+        name => format!("{name} Mirror"),
     }
 }
 
@@ -215,7 +215,9 @@ impl HelperStart {
                 .and_then(|v| v.parse().ok())
                 .filter(|p| *p > 0)
                 .map(|port| Mirror {
-                    name: mirror_name(&text(MIRROR_NAME)),
+                    name: Some(text(MIRROR_NAME))
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| mirror_name("")),
                     port,
                     txt: text(MIRROR_TXT).lines().map(str::to_string).collect(),
                 }),
