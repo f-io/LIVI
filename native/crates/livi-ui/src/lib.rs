@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod app;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod bundle;
 pub mod clock;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod core_process;
 #[cfg(not(target_os = "android"))]
 mod cursor_ui;
 mod dashboard_ui;
@@ -15,6 +21,8 @@ mod fullscreen;
 mod icon_ui;
 mod icons;
 mod keys_ui;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod log;
 mod media;
 mod media_ui;
 mod overlay_ui;
@@ -24,6 +32,9 @@ mod settings_ui;
 mod shape_ui;
 mod touch_ui;
 mod video_ui;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use app::main;
 
 use std::cell::{Cell, RefCell};
 use std::os::unix::net::UnixStream;

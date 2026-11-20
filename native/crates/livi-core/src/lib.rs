@@ -13,6 +13,7 @@ use livi_core_proto::state::{Front, PerScreen, State};
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
 
+mod app;
 mod audio;
 mod camera;
 mod devices;
@@ -33,6 +34,8 @@ mod system;
 mod ui;
 mod update;
 mod vehicle;
+
+pub use app::main;
 
 use devices::Shared;
 use files::config_file::{CAR_NAME_MAX, ConfigFile, HostFacts};
