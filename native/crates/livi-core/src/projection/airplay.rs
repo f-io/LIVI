@@ -346,6 +346,13 @@ impl AirplayMedia for GstAirplay {
         mirror_name(&self.hub.applied().borrow().car_name)
     }
 
+    fn screen(&self) -> (u32, u32, u32) {
+        let applied = self.hub.applied();
+        let cfg = applied.borrow();
+        let (w, h) = super::carplay::main_size(&cfg);
+        (w, h, super::carplay::main_fps(&cfg))
+    }
+
     fn metadata(&self, id: u64, meta: AirplayMeta) {
         let patch = now_playing(meta);
         let _ = self.events.send(ApEvent::NowPlaying { id, patch });
