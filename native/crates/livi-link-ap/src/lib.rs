@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 #[cfg(target_os = "linux")]
-pub mod hostapd;
+pub use livi_wifi::hostapd;
 pub mod radio;
 #[cfg(target_os = "linux")]
 pub mod server;

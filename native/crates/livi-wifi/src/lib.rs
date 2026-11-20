@@ -7,6 +7,8 @@
 pub mod ap_config;
 pub mod band;
 mod error;
+#[cfg(unix)]
+pub mod hostapd;
 pub mod radio;
 pub mod security;
 
