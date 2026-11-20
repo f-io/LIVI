@@ -149,6 +149,7 @@ fn apply_look(ui: &AppWindow, look: Look) {
     apply_language(ui, &look.language);
     if ZOOM.get() != look.zoom {
         ZOOM.set(look.zoom);
+        ui.global::<Ui>().set_zoom(look.zoom);
         apply_zoom(ui);
     }
 }

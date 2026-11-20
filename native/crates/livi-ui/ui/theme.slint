@@ -30,7 +30,8 @@ export global Theme {
 export global Ui {
     in property <length> width: 1280px;
     in property <length> height: 720px;
-    out property <bool> xs-icons: height <= 320px;
+    in property <float> zoom: 1;
+    out property <bool> xs-icons: height * zoom <= 320px;
     out property <bool> show-clock: height > 220px;
     out property <length> icon-size: xs-icons ? 24px : 32px;
     out property <length> nav-width: 56px;
