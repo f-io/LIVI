@@ -8,6 +8,8 @@ use std::time::Duration;
 
 pub mod bridge;
 pub mod ca;
+#[cfg(target_os = "linux")]
+pub mod dhcp;
 pub mod port;
 pub mod tunnel;
 
