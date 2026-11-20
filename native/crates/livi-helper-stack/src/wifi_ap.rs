@@ -379,7 +379,8 @@ fn setup_interface(cfg: &ApConfig) {
 }
 
 fn hostapd_state(iface: &str) -> String {
-    let out = cmd_stdout("hostapd_cli", &["-p", HOSTAPD_CTRL, "-i", iface, "status"]);
+    let out = livi_wifi::hostapd::status(&std::path::Path::new(HOSTAPD_CTRL).join(iface))
+        .unwrap_or_default();
     out.lines()
         .find_map(|l| l.strip_prefix("state="))
         .unwrap_or("")

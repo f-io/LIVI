@@ -129,6 +129,10 @@ pub fn ctrl(iface: &str) -> PathBuf {
     Path::new(CTRL_DIR).join(iface)
 }
 
+pub fn status(ctrl: &Path) -> io::Result<String> {
+    Client::open(ctrl)?.request("STATUS")
+}
+
 pub fn deauth_all(ctrl: &Path) -> io::Result<usize> {
     let client = Client::open(ctrl)?;
     let macs = client.stations()?;
