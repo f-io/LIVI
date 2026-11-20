@@ -75,10 +75,11 @@ export component RowFrame inherits Rectangle {
     in property <image> badge-logo;
     out property <bool> active: touch.pressed || touch.has-hover || root.focused;
     out property <bool> lit: root.active && (root.clickable || root.focused);
+    in property <bool> on-paper;
     callback clicked();
 
     height: Metrics.row-h;
-    background: Theme.paper;
+    background: root.on-paper ? transparent : Theme.paper;
     border-top-left-radius: root.first ? 10px : 0;
     border-top-right-radius: root.first ? 10px : 0;
     border-bottom-left-radius: root.last ? 10px : 0;

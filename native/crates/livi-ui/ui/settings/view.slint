@@ -175,6 +175,7 @@ export component SettingsView inherits Rectangle {
                                 width: parent.width;
                                 height: parent.height;
                                 data: r;
+                                on-paper: true;
                                 focused: r.tool-offset != 0 && r.focus-at >= 0 && parent.rel == 0;
                                 capture => { SettingsState.capture(i); }
                                 focus-tool: r.tool-offset >= 0 && r.focus-at >= 0 && parent.rel >= r.tool-offset && parent.rel - r.tool-offset < r.tools.length ? parent.rel - r.tool-offset : -1;
