@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -310,17 +311,34 @@ pub(crate) fn reboot_soon() -> (&'static str, &'static str, Vec<u8>) {
     (S_200, T_JSON, ok_json("rebooting"))
 }
 
+/// Opened and never fed, the watchdog resets the board if the reboot hangs.
+fn arm_watchdog() -> Option<fs::File> {
+    const WDIOC_SETTIMEOUT: u32 = 0xc004_5706;
+    const TIMEOUT_S: libc::c_int = 10;
+    let dog = fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/watchdog")
+        .ok()?;
+    let mut secs = TIMEOUT_S;
+    // SAFETY: the ioctl reads and writes one int, secs outlives the call.
+    unsafe { libc::ioctl(dog.as_raw_fd(), WDIOC_SETTIMEOUT as _, &mut secs) };
+    Some(dog)
+}
+
 pub(crate) fn reboot_after(delay: Duration) {
     thread::spawn(move || {
+        let dog = arm_watchdog();
         thread::sleep(delay);
         // SAFETY: sync has no preconditions.
         unsafe {
             libc::sync();
         }
-        let _ = Command::new("/sbin/reboot").arg("-f").status();
         // SAFETY: reboot takes a plain command value and touches no memory of ours.
         unsafe {
             libc::reboot(libc::LINUX_REBOOT_CMD_RESTART);
         }
+        let _ = Command::new("/sbin/reboot").arg("-f").status();
+        // Kept open: depending on the driver, closing stops the watchdog.
+        std::mem::forget(dog);
     });
 }
