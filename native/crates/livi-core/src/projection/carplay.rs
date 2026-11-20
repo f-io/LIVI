@@ -292,12 +292,20 @@ fn oriented((w_mm, h_mm): (i64, i64), (w, h): (u32, u32)) -> (i64, i64) {
     }
 }
 
-fn main_size(cfg: &Config) -> (u32, u32) {
+pub(super) fn main_size(cfg: &Config) -> (u32, u32) {
     let or = |v: u32, d: u32| if v == 0 { d } else { v };
     (
         even(or(cfg.projection_width, 1920)),
         even(or(cfg.projection_height, 1080)),
     )
+}
+
+pub(super) fn main_fps(cfg: &Config) -> u32 {
+    if cfg.projection_fps == 0 {
+        60
+    } else {
+        cfg.projection_fps
+    }
 }
 
 fn main_mm(
@@ -440,7 +448,7 @@ pub fn stack_config(
                 height_pixels: main_h.into(),
                 width_physical_mm: main_mm.map(|m| m.0),
                 height_physical_mm: main_mm.map(|m| m.1),
-                fps: Some(or(cfg.projection_fps, 60).into()),
+                fps: Some(main_fps(cfg).into()),
                 primary_input_device: Some(1),
                 view_area: insets(
                     cfg.projection_view_area_top,
