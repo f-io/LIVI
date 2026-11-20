@@ -21,6 +21,7 @@ use livi_screen_stream::ScreenSink;
 use livi_video::fanout::Fanout;
 use livi_video::nal::CpCodec;
 
+mod app;
 mod audio;
 pub mod feed;
 pub mod gst;
@@ -30,6 +31,8 @@ mod shown;
 mod spectrum;
 pub mod ui_plane;
 mod video;
+
+pub use app::main;
 
 use livi_output_proto::ops::*;
 use spectrum::Spectrum;

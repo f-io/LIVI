@@ -8,7 +8,7 @@ use std::os::fd::FromRawFd;
 use std::process::ChildStdin;
 use std::thread;
 
-use livi_ui::clock;
+use crate::clock;
 
 pub fn to_core(mut core: ChildStdin) -> std::io::Result<()> {
     let mut fds = [0; 2];
