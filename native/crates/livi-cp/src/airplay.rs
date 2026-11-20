@@ -179,7 +179,7 @@ pub struct AirplayCtx {
     pub helper: HelperSock,
     pub device_id: String,
     pub source_version: String,
-    pub features: u64,
+    pub features: Arc<AtomicU64>,
     pub txt: Vec<String>,
     pub sample_rate: u32,
 }
@@ -418,7 +418,10 @@ impl Conn {
             if asked_txt {
                 return plist(&dict([(
                     "txtAirPlay",
-                    Value::Data(txt_bytes(&self.ctx.txt)),
+                    Value::Data(txt_bytes(&livi_core_proto::features::with_features(
+                        &self.ctx.txt,
+                        self.ctx.features.load(Ordering::Relaxed),
+                    ))),
                 )]));
             }
             return plist(&self.info());
@@ -549,7 +552,7 @@ impl Conn {
         dict([
             ("deviceID", Value::String(ctx.device_id.clone())),
             ("macAddress", Value::String(ctx.device_id.clone())),
-            ("features", Value::Int(ctx.features)),
+            ("features", Value::Int(ctx.features.load(Ordering::Relaxed))),
             ("statusFlags", Value::Int(68)),
             ("model", Value::String("LIVI".into())),
             ("manufacturer", Value::String("LIVI".into())),
