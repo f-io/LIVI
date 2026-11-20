@@ -635,7 +635,17 @@ fn log_file(path: &std::path::Path) -> Option<std::fs::File> {
     std::fs::File::create(path).ok()
 }
 
+pub fn board_codecs() -> Option<livi_output_proto::Probe> {
+    let line = std::env::var("LIVI_CODECS").ok()?;
+    line.parse()
+        .inspect_err(|e| eprintln!("[core] LIVI_CODECS unreadable: {e}"))
+        .ok()
+}
+
 pub async fn probe_codecs(launch: &Launch) -> Option<livi_output_proto::Probe> {
+    if let Some(codecs) = board_codecs() {
+        return Some(codecs);
+    }
     let launch = match launch {
         Launch::Process(process) => process,
         Launch::InProcess(host) => {

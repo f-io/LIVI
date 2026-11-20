@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
@@ -167,6 +168,13 @@ impl Services {
         let mirror = receiver
             .as_ref()
             .map(crate::projection::airplay::Receiver::mirror);
+        let mirror_features = receiver
+            .as_ref()
+            .map(crate::projection::airplay::Receiver::features);
+        if let (Some(f), Some(codecs)) = (&mirror_features, livi_media::output::board_codecs()) {
+            crate::projection::airplay::offer_hevc(f, android_auto::codecs(&codecs).hevc);
+        }
+        let announced = mirror_features.clone();
         let helper_restart = Arc::new(Notify::new());
         let applied = hub.applied();
         let env_identity = identity.clone();
@@ -185,6 +193,13 @@ impl Services {
                     livi_core_proto::helper::HelperStart {
                         mirror: mirror.clone().map(|m| livi_core_proto::helper::Mirror {
                             name: livi_core_proto::helper::mirror_name(&start.settings.car_name),
+                            txt: match &announced {
+                                Some(f) => livi_core_proto::features::with_features(
+                                    &m.txt,
+                                    f.load(Ordering::Relaxed),
+                                ),
+                                None => m.txt.clone(),
+                            },
                             ..m
                         }),
                         ..start
@@ -303,6 +318,7 @@ impl Services {
             user_data: user_data.to_path_buf(),
             sockets: paths.helper.clone(),
             probe: host_launch(&res, user_data, None),
+            mirror_features,
             debug: helper::debug(&cfg),
             helper_restart,
             telemetry,
@@ -371,6 +387,7 @@ struct CarPlay {
     user_data: PathBuf,
     sockets: HelperSockets,
     probe: Option<Launch>,
+    mirror_features: Option<Arc<AtomicU64>>,
     debug: bool,
     helper_restart: Arc<Notify>,
     telemetry: mpsc::UnboundedSender<serde_json::Value>,
@@ -397,12 +414,17 @@ impl CarPlay {
         source.follow();
         let probing = source.clone();
         if let Some(probe) = self.probe {
+            let mirror_features = self.mirror_features;
             tokio::spawn(async move {
                 let Some(codecs) = livi_media::output::probe_codecs(&probe).await else {
                     return;
                 };
                 println!("[core] output codecs {codecs}");
-                probing.set_codecs(android_auto::codecs(&codecs));
+                let offered = android_auto::codecs(&codecs);
+                if let Some(f) = &mirror_features {
+                    crate::projection::airplay::offer_hevc(f, offered.hevc);
+                }
+                probing.set_codecs(offered);
                 probing.set_url_video(codecs.url);
                 let _ = tokio::task::spawn_blocking(move || probing.refresh()).await;
             });

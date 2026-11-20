@@ -35,6 +35,7 @@ pub const CARPLAY_CONTROL: u64 = 1 << 37;
 pub const COREUTILS_PAIRING: u64 = 1 << 38;
 pub const BUFFERED_AUDIO: u64 = 1 << 40;
 pub const PTP: u64 = 1 << 41;
+pub const SCREEN_MULTI_CODEC: u64 = 1 << 42;
 pub const HOMEKIT_PAIRING: u64 = 1 << 46;
 pub const PEER_MANAGEMENT: u64 = 1 << 47;
 pub const TRANSIENT_PAIRING: u64 = 1 << 48;
@@ -63,6 +64,19 @@ pub const CARPLAY_AUDIO_FEATURES: u64 = AUDIO
 
 pub fn txt(features: u64) -> String {
     format!("{:#X},{:#X}", features as u32, features >> 32)
+}
+
+pub fn with_features(record: &[String], features: u64) -> Vec<String> {
+    record
+        .iter()
+        .map(|e| {
+            if e.starts_with("features=") {
+                format!("features={}", txt(features))
+            } else {
+                e.clone()
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

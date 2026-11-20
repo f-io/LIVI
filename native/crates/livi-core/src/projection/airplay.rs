@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
@@ -75,6 +76,7 @@ pub struct Receiver {
     device_id: String,
     source_version: String,
     txt: Vec<String>,
+    features: Arc<AtomicU64>,
 }
 
 impl Receiver {
@@ -84,6 +86,17 @@ impl Receiver {
             port: self.port,
             txt: self.txt.clone(),
         }
+    }
+
+    pub fn features(&self) -> Arc<AtomicU64> {
+        self.features.clone()
+    }
+}
+
+pub fn offer_hevc(features: &AtomicU64, hevc: bool) {
+    let off = std::env::var("LIVI_MIRROR_HEVC").is_ok_and(|v| v.trim() == "0");
+    if hevc && !off {
+        features.fetch_or(SCREEN_MULTI_CODEC, Ordering::Relaxed);
     }
 }
 
@@ -115,6 +128,7 @@ pub fn bind(identity: &Identity, accessory: &str, source_version: String) -> Opt
         device_id,
         source_version,
         txt,
+        features: Arc::new(AtomicU64::new(FEATURES)),
     })
 }
 
@@ -152,7 +166,7 @@ pub fn start(
         helper: HelperSock::new(helper),
         device_id: receiver.device_id,
         source_version: receiver.source_version,
-        features: FEATURES,
+        features: receiver.features,
         txt: receiver.txt,
         sample_rate,
     });
