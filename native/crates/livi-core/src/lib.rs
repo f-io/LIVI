@@ -162,6 +162,8 @@ pub async fn run(
     tokio::spawn(vehicle::car_bridge::run(core.clone(), inside.clone()));
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     tokio::spawn(audio::system_volume::follow(core.clone()));
+    #[cfg(target_os = "linux")]
+    tokio::spawn(system::backlight::follow(core.clone()));
     #[cfg(feature = "net")]
     tokio::spawn(update::run(
         core.clone(),
