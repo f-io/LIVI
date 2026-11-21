@@ -107,6 +107,7 @@ impl Rig {
             telemetry: telemetry_tx,
             settings,
             themes: dir.0.join("themes"),
+            mfi_chip: dir.0.join("mfi-chip.json"),
         };
         let p = Projection::new(
             hub.clone(),

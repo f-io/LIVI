@@ -46,7 +46,6 @@ const SETTINGS: &[(&str, &str)] = &[
     ("edgeBottom", "VerticalAlignBottomOutlined"),
     ("edgeLeft", "WestOutlined"),
     ("edgeRight", "EastOutlined"),
-    ("i2cBus", "CableOutlined"),
     ("powerPin", "BoltOutlined"),
     ("gps", "SatelliteAltOutlined"),
     ("gpsEnabled", "GpsFixedOutlined"),

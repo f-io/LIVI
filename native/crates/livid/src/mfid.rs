@@ -11,21 +11,16 @@ use livi_net::port::MFI;
 
 pub const STATE: &str = "/tmp/livi/mfi";
 
-pub fn run(args: Vec<String>) -> i32 {
-    let bus: u32 = args
-        .first()
-        .map(|a| a.trim_start_matches("/dev/i2c-"))
-        .and_then(|a| a.parse::<u32>().ok())
-        .unwrap_or(1);
-    let mut chip = match I2cCoprocessor::open(bus, -1) {
+pub fn run() -> i32 {
+    let mut chip = match I2cCoprocessor::open(-1) {
         Ok(chip) => chip,
         Err(e) => {
-            eprintln!("[mfid] no MFi chip on i2c-{bus}: {e}");
+            eprintln!("[mfid] no MFi chip on any I2C bus: {e}");
             let _ = fs::remove_file(STATE);
             return 1;
         }
     };
-    let addr = chip.address();
+    let (bus, addr) = (chip.bus(), chip.address());
     let major = protocol_major(&mut chip).map(|m| m.to_string());
     println!(
         "[mfid] MFi @0x{addr:02X} on i2c-{bus}, protocol major {}",

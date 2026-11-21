@@ -149,7 +149,7 @@ pub fn main() -> ExitCode {
         "livi-ledd" | "ledd" => ledd::run(rest),
         "livi-netd" | "netd" => netd::run(rest),
         "config" => config::run(rest),
-        "livi-mfid" | "mfid" => mfid::run(rest),
+        "livi-mfid" | "mfid" => mfid::run(),
         "livi-wifid" | "wifid" => wifid::run(rest),
         _ => {
             eprintln!("livid: unknown command '{}'", cmd);

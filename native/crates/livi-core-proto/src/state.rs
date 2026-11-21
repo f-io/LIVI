@@ -216,6 +216,18 @@ pub struct Mfi {
     pub identity: bool,
     pub generation: Option<u8>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub probed: bool,
+    #[serde(default)]
+    pub chip: Option<MfiChip>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MfiChip {
+    pub bus: u32,
+    pub address: u16,
+    pub generation: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

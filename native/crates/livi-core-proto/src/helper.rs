@@ -4,6 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::state::MfiChip;
+
 const HELPER_DIR: &str = "/tmp";
 pub const USER_DATA: &str = "LIVI_USER_DATA";
 
@@ -23,9 +25,7 @@ const WIFI_TYPE: &str = "LIVI_WIFI_TYPE";
 const CHANNEL: &str = "LIVI_CHANNEL";
 const COUNTRY: &str = "LIVI_COUNTRY";
 const SOURCE_VERSION: &str = "LIVI_CP_SOURCE_VERSION";
-const MFI_I2C_BUS: &str = "LIVI_CP_MFI_I2C_BUS";
 const MFI_POWER_GPIO: &str = "LIVI_CP_MFI_POWER_GPIO";
-const MFI_I2C_BUS_DEFAULT: u32 = 2;
 const MFI_POWER_GPIO_DEFAULT: i32 = -1;
 const DEVICE_ID: &str = "LIVI_CP_DEVICE_ID";
 const PUBLIC_KEY: &str = "LIVI_CP_PK";
@@ -42,6 +42,7 @@ pub struct HelperSockets {
     pub shared: PathBuf,
     pub sco_mic: PathBuf,
     pub sessions: PathBuf,
+    pub mfi_chip: PathBuf,
 }
 
 impl HelperSockets {
@@ -52,12 +53,24 @@ impl HelperSockets {
             shared: dir.join("livi-shared.sock"),
             sco_mic: dir.join("aa-sco.mic"),
             sessions: dir.to_path_buf(),
+            mfi_chip: dir.join("mfi-chip.json"),
         }
     }
 
     pub fn system() -> Self {
         Self::within(Path::new(HELPER_DIR))
     }
+}
+
+pub fn write_mfi_chip(path: &Path, chip: Option<&MfiChip>) {
+    if let Err(e) = std::fs::write(path, serde_json::to_vec(&chip).unwrap_or_default()) {
+        eprintln!("[helper] {}: {e}", path.display());
+    }
+}
+
+/// `None` while no helper has probed I2C, `Some(None)` when it found no chip.
+pub fn read_mfi_chip(path: &Path) -> Option<Option<MfiChip>> {
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,7 +90,6 @@ pub struct HelperSettings {
     pub channel: u32,
     pub country: String,
     pub source_version: String,
-    pub mfi_i2c_bus: u32,
     pub mfi_power_gpio: i32,
 }
 
@@ -123,7 +135,6 @@ impl Default for HelperSettings {
             channel: 0,
             country: String::new(),
             source_version: String::new(),
-            mfi_i2c_bus: MFI_I2C_BUS_DEFAULT,
             mfi_power_gpio: MFI_POWER_GPIO_DEFAULT,
         }
     }
@@ -157,7 +168,6 @@ impl HelperStart {
             (CHANNEL, channel),
             (COUNTRY, s.country.clone()),
             (SOURCE_VERSION, s.source_version.clone()),
-            (MFI_I2C_BUS, s.mfi_i2c_bus.to_string()),
             (MFI_POWER_GPIO, s.mfi_power_gpio.to_string()),
             (CP_DEBUG, flag(s.debug, "")),
             (DEVICE_ID, self.device_id.clone()),
@@ -198,9 +208,6 @@ impl HelperStart {
                 channel: var(CHANNEL).and_then(|v| v.parse().ok()).unwrap_or(0),
                 country: text(COUNTRY),
                 source_version: text(SOURCE_VERSION),
-                mfi_i2c_bus: var(MFI_I2C_BUS)
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(MFI_I2C_BUS_DEFAULT),
                 mfi_power_gpio: var(MFI_POWER_GPIO)
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(MFI_POWER_GPIO_DEFAULT),
@@ -247,7 +254,6 @@ mod tests {
                 channel: 6,
                 country: "DE".into(),
                 source_version: "950.7.1".into(),
-                mfi_i2c_bus: 1,
                 mfi_power_gpio: 21,
             },
             device_id: "88:00:33:77:8C:26".into(),

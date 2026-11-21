@@ -62,9 +62,23 @@ fn signing(state: &Value, t: &Strings) -> String {
     let both =
         mfi["certificate"].as_bool() == Some(true) && mfi["identity"].as_bool() == Some(true);
     match mfi["generation"].as_u64() {
-        Some(3) if both => t.t("settings.mfiFiles3", "Files, 3.0 (P-256)"),
-        Some(2) if both => t.t("settings.mfiFiles2", "Files, 2.0 (RSA)"),
-        _ => t.t("settings.mfiChip", "Coprocessor"),
+        Some(3) if both => return t.t("settings.mfiFiles3", "Files, 3.0 (P-256)"),
+        Some(2) if both => return t.t("settings.mfiFiles2", "Files, 2.0 (RSA)"),
+        _ => {}
+    }
+    let chip = &mfi["chip"];
+    let name = t.t("settings.mfiChip", "Coprocessor");
+    match (chip["bus"].as_u64(), chip["address"].as_u64()) {
+        (Some(bus), Some(address)) => {
+            let generation = chip["generation"]
+                .as_u64()
+                .map_or(String::new(), |g| format!(" {g}.0"));
+            format!("{name}{generation}, i2c-{bus} @0x{address:02X}")
+        }
+        _ if mfi["probed"].as_bool() == Some(true) => {
+            t.t("settings.mfiNoChip", "No coprocessor found")
+        }
+        _ => name,
     }
 }
 
@@ -118,5 +132,14 @@ mod tests {
         assert_eq!(rows(&half, &t)[2].value, "Coprocessor");
         let broken = json!({ "mfi": { "identity": true, "error": "mfi files: bad key" } });
         assert_eq!(rows(&broken, &t)[2].value, "mfi files: bad key");
+    }
+
+    #[test]
+    fn a_found_chip_names_its_generation_and_bus() {
+        let t = Strings::default();
+        let found = json!({ "mfi": { "probed": true, "chip": { "bus": 4, "address": 16, "generation": 3 } } });
+        assert_eq!(rows(&found, &t)[2].value, "Coprocessor 3.0, i2c-4 @0x10");
+        let none = json!({ "mfi": { "probed": true, "chip": null } });
+        assert_eq!(rows(&none, &t)[2].value, "No coprocessor found");
     }
 }

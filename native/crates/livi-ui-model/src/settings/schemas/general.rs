@@ -602,12 +602,6 @@ fn mfi() -> Node {
         "mfi",
         Label::new("settings.mfi", "MFi"),
         vec![
-            Node::number(Label::new("settings.i2cBus", "I2C Bus"), "carPlayMfiI2cBus")
-                .icon("i2cBus")
-                .range(Some(0.0), Some(20.0), Some(1.0))
-                .default_number(2.0)
-                .display_value()
-                .page(Label::new("settings.i2cBus", "I2C Bus")),
             Node::number(
                 Label::new("settings.mfiPowerGpio", "Power Pin"),
                 "carPlayMfiPowerGpio",
