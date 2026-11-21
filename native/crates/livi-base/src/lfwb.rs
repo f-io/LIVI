@@ -5,6 +5,7 @@
 use crate::checksum::crc32;
 
 pub const MAGIC: &[u8; 4] = b"LFWB";
+pub const HOLD: &str = "/tmp/livi/flashing";
 const VERSION: u8 = 1;
 const HEADER_LEN: usize = 8;
 const DESC_LEN: usize = 12;

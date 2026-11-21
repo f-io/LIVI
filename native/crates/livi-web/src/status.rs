@@ -14,9 +14,10 @@ use crate::{BUILD, VERSION, caps};
 
 pub(crate) fn caps_json() -> String {
     format!(
-        r#"{{"flash":{{"mtd":{}}},"led":{}}}"#,
+        r#"{{"flash":{{"mtd":{}}},"led":{},"switches":{}}}"#,
         !caps().flash.mtd.is_empty(),
-        caps().led
+        caps().led,
+        caps().switches
     )
 }
 
@@ -215,6 +216,19 @@ pub(crate) fn fmt_uptime(s: &str) -> String {
 }
 
 pub(crate) fn fmt_meminfo() -> String {
+    let (total_kb, avail_kb) = meminfo_kb();
+    mem_text(total_kb, avail_kb)
+}
+
+/// A session does not give all its memory back, the room has to exceed the bundle.
+const FLASH_HEADROOM: u64 = 6 << 20;
+
+pub(crate) fn flash_room_json() -> String {
+    let room = meminfo_kb().1 * 1024 >= crate::http::max_body() + FLASH_HEADROOM;
+    format!(r#"{{"room":{room}}}"#)
+}
+
+fn meminfo_kb() -> (u64, u64) {
     let mut total_kb = 0u64;
     let mut avail_kb = 0u64;
     if let Ok(s) = fs::read_to_string("/proc/meminfo") {
@@ -234,7 +248,7 @@ pub(crate) fn fmt_meminfo() -> String {
             }
         }
     }
-    mem_text(total_kb, avail_kb)
+    (total_kb, avail_kb)
 }
 
 pub(crate) fn mem_text(total_kb: u64, avail_kb: u64) -> String {

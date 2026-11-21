@@ -8,6 +8,9 @@ license.workspace = true
 name = "livid"
 path = "src/main.rs"
 
+[features]
+screen = ["dep:drm", "dep:png"]
+
 [dependencies]
 livi-base.workspace = true
 
@@ -19,6 +22,8 @@ livi-link-hci.workspace = true
 livi-net.workspace = true
 iap2-mfi.workspace = true
 libc.workspace = true
+drm = { version = "0.14.1", optional = true }
+png = { version = "0.18.1", optional = true }
 [target.'cfg(all(target_os = "linux", not(target_arch = "riscv32")))'.dependencies]
 imx6ul-uboot.workspace = true
 

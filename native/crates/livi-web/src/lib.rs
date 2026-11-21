@@ -17,13 +17,20 @@ use livi_link_ap::radio::Radio;
 use flash::{flash_dispatch, flash_status_json, reboot_soon};
 use http::{INDEX_HTML, S_200, S_404, T_HTML, T_JSON, T_TEXT, serve_forever};
 use led::{led_json, set_led};
-use status::{bt_json, caps_json, status_json, switch_radio, wifi_json};
+use status::{bt_json, caps_json, flash_room_json, status_json, switch_radio, wifi_json};
 use update::{set_update, update_json};
 
 #[derive(Default)]
 pub struct Flash {
     pub mtd: Vec<MtdSlot>,
     pub check: Option<String>,
+    pub hand_over: Option<HandOver>,
+}
+
+#[derive(Clone, Copy)]
+pub struct HandOver {
+    pub take: fn() -> Result<(), String>,
+    pub give_back: fn(),
 }
 
 pub struct MtdSlot {
@@ -38,6 +45,9 @@ pub struct MtdSlot {
 pub type Stage = fn(&[u8], &[u8]) -> Result<Vec<u8>, String>;
 
 pub struct WebCaps {
+    pub product: String,
+    pub host: String,
+    pub switches: bool,
     pub model: String,
     pub target: String,
     pub port: u16,
@@ -61,6 +71,17 @@ const BUILD: &str = match option_env!("LIVI_BUILD") {
 };
 
 static CAPS: OnceLock<WebCaps> = OnceLock::new();
+static PAGE: OnceLock<Vec<u8>> = OnceLock::new();
+
+fn page() -> Vec<u8> {
+    PAGE.get_or_init(|| {
+        INDEX_HTML
+            .replace("LIVI Link", &caps().product)
+            .replace("livi-link.local", &caps().host)
+            .into_bytes()
+    })
+    .clone()
+}
 
 fn caps() -> &'static WebCaps {
     CAPS.get()
@@ -100,7 +121,7 @@ fn route(
     }
 
     match (method, path) {
-        ("GET", "/") | ("GET", "/index.html") => (S_200, T_HTML, INDEX_HTML.as_bytes().to_vec()),
+        ("GET", "/") | ("GET", "/index.html") => (S_200, T_HTML, page()),
         ("GET", "/api/status") => (S_200, T_JSON, status_json().into_bytes()),
         ("GET", "/api/wifi") => (S_200, T_JSON, wifi_json().into_bytes()),
         ("POST", "/api/wifi") => switch_radio(body, Radio::Wifi),
@@ -108,6 +129,9 @@ fn route(
         ("POST", "/api/bt") => switch_radio(body, Radio::Bt),
         ("GET", "/api/caps") => (S_200, T_JSON, caps_json().into_bytes()),
         ("GET", "/api/flash/status") => (S_200, T_JSON, flash_status_json().into_bytes()),
+        ("GET", "/api/flash/room") => (S_200, T_JSON, flash_room_json().into_bytes()),
+        ("POST", "/api/flash/prepare") => flash::take_over(&c.flash),
+        ("POST", "/api/flash/resume") => flash::hand_back(&c.flash),
         ("GET", "/api/update") => (S_200, T_JSON, update_json().into_bytes()),
         ("POST", "/api/update") => set_update(body),
         ("POST", "/api/reboot") => reboot_soon(),

@@ -4722,6 +4722,7 @@ dependencies = [
 name = "livid"
 version = "10.6.0"
 dependencies = [
+ "drm",
  "iap2-mfi",
  "imx6ul-uboot",
  "libc 1.0.0-alpha.5",
@@ -4731,6 +4732,7 @@ dependencies = [
  "livi-mdns",
  "livi-net",
  "livi-web",
+ "png",
 ]
 
 [[package]]

@@ -7,14 +7,66 @@ use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::process::Command;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
 use crate::http::{S_200, S_400, S_500, T_JSON, err_json, js, ok_json};
-use crate::{Flash, MtdSlot, WebCaps};
+use crate::{Flash, HandOver, MtdSlot, WebCaps};
+
+const HAND_BACK_AFTER: Duration = Duration::from_secs(180);
+
+static TAKEN: AtomicU64 = AtomicU64::new(0);
+static FLASHING: AtomicBool = AtomicBool::new(false);
+static REBOOTING: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn take_over(f: &Flash) -> (&'static str, &'static str, Vec<u8>) {
+    let Some(hand) = f.hand_over else {
+        return (S_200, T_JSON, ok_json("nothing to free"));
+    };
+    if let Err(e) = (hand.take)() {
+        return (S_500, T_JSON, err_json(&e));
+    }
+    let taken = TAKEN.fetch_add(1, Ordering::SeqCst) + 1;
+    thread::spawn(move || {
+        thread::sleep(HAND_BACK_AFTER);
+        if TAKEN.load(Ordering::SeqCst) == taken {
+            give_back(hand);
+        }
+    });
+    (S_200, T_JSON, ok_json("freed for the upload"))
+}
+
+pub(crate) fn hand_back(f: &Flash) -> (&'static str, &'static str, Vec<u8>) {
+    if let Some(hand) = f.hand_over {
+        give_back(hand);
+    }
+    (S_200, T_JSON, ok_json("given back"))
+}
+
+fn give_back(hand: HandOver) {
+    if FLASHING.load(Ordering::SeqCst) || REBOOTING.load(Ordering::SeqCst) {
+        return;
+    }
+    TAKEN.fetch_add(1, Ordering::SeqCst);
+    (hand.give_back)();
+}
 
 pub(crate) fn flash_dispatch(
+    c: &WebCaps,
+    body: Option<&[u8]>,
+    clen: u64,
+) -> (&'static str, &'static str, Vec<u8>) {
+    FLASHING.store(true, Ordering::SeqCst);
+    let out = flash_body(c, body, clen);
+    FLASHING.store(false, Ordering::SeqCst);
+    if let Some(hand) = c.flash.hand_over {
+        give_back(hand);
+    }
+    out
+}
+
+fn flash_body(
     c: &WebCaps,
     body: Option<&[u8]>,
     clen: u64,
@@ -375,6 +427,7 @@ impl Drop for Fed {
 }
 
 pub(crate) fn reboot_after(delay: Duration, dog: Option<fs::File>) {
+    REBOOTING.store(true, Ordering::SeqCst);
     thread::spawn(move || {
         let dog = dog.or_else(arm_watchdog);
         thread::sleep(delay);

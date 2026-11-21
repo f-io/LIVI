@@ -22,6 +22,8 @@ mod ledd;
 mod mfid;
 #[cfg(target_os = "linux")]
 mod netd;
+#[cfg(all(target_os = "linux", feature = "screen"))]
+mod screen;
 #[cfg(target_os = "linux")]
 mod wifid;
 
@@ -31,6 +33,9 @@ fn board() -> (&'static str, &'static str) {
     let has = |c: &[u8]| compatible.windows(c.len()).any(|w| w == c);
     if has(b"axera,ax520") {
         return ("AX520 + AIC8800D80", "ax520_aic8800d80");
+    }
+    if has(b"livi,f133b-xfh") {
+        return ("F133-B + AIC8800D40L", "f133_aic8800d40l");
     }
     #[cfg(not(target_arch = "riscv32"))]
     if has(b"livi,link-imx6ull") {
@@ -43,7 +48,7 @@ fn board() -> (&'static str, &'static str) {
 fn wifi_standards(target: &str) -> livi_link_ap::server::Standards {
     use livi_link_ap::server::Standards;
     match target {
-        "v821b_aic8800d80" | "ax520_aic8800d80" => Standards {
+        "v821b_aic8800d80" | "ax520_aic8800d80" | "f133_aic8800d40l" => Standards {
             vht: true,
             he: true,
         },
@@ -56,7 +61,7 @@ fn wifi_standards(target: &str) -> livi_link_ap::server::Standards {
 }
 
 #[cfg(target_os = "linux")]
-fn web_caps() -> livi_web::WebCaps {
+fn web_caps(args: &[String]) -> livi_web::WebCaps {
     let (model, target) = board();
     let slot = |typ, node: &str, magic: &[u8], size| livi_web::MtdSlot {
         typ,
@@ -67,6 +72,21 @@ fn web_caps() -> livi_web::WebCaps {
         before_write: None,
     };
     let (led, flash) = match target {
+        "f133_aic8800d40l" => (
+            false,
+            livi_web::Flash {
+                mtd: vec![
+                    slot(1, "mtdblock1", b"sunxi-package", 0x41_0000),
+                    slot(2, "mtdblock2", b"hsqs", 0xb4_0000),
+                ],
+                #[cfg(feature = "screen")]
+                hand_over: Some(livi_web::HandOver {
+                    take: screen::take,
+                    give_back: screen::give_back,
+                }),
+                ..Default::default()
+            },
+        ),
         "ax520_aic8800d80" => (
             true,
             livi_web::Flash {
@@ -76,6 +96,7 @@ fn web_caps() -> livi_web::WebCaps {
                     slot(6, "mtdblock6", b"hsqs", 0x44_0000),
                 ],
                 check: Some("/usr/sbin/sfc-sr".into()),
+                ..Default::default()
             },
         ),
         #[cfg(not(target_arch = "riscv32"))]
@@ -105,6 +126,12 @@ fn web_caps() -> livi_web::WebCaps {
         ),
     };
     livi_web::WebCaps {
+        product: args.first().cloned().unwrap_or_else(|| "LIVI Link".into()),
+        host: args
+            .get(1)
+            .cloned()
+            .unwrap_or_else(|| "livi-link.local".into()),
+        switches: std::path::Path::new("/usr/bin/livi-radio").exists(),
         model: model.into(),
         target: target.into(),
         port: 80,
@@ -132,7 +159,7 @@ pub fn main() -> ExitCode {
             Some(sub) => (sub.as_str(), args[2..].to_vec()),
             None => {
                 eprintln!(
-                    "usage: livid <bt-up|bt-probe|btd|config|httpd|ledd|mfid|netd|wifid> [args…]"
+                    "usage: livid <bt-up|bt-probe|btd|config|httpd|ledd|mdnsd|mfid|netd|wifid> [args…]"
                 );
                 return ExitCode::from(2);
             }
@@ -145,12 +172,15 @@ pub fn main() -> ExitCode {
         "livi-bt-up" | "bt-up" => bt_up::run(rest),
         "bt-probe" => exit_rc(livi_link_hci::probe()),
         "livi-btd" | "btd" => btd::run(rest),
-        "livi-httpd" | "httpd" => livi_web::run(web_caps()),
+        "livi-httpd" | "httpd" => livi_web::run(web_caps(&rest)),
+        "livi-mdnsd" | "mdnsd" => exit_rc(livi_mdns::daemon::run(&rest)),
         "livi-ledd" | "ledd" => ledd::run(rest),
         "livi-netd" | "netd" => netd::run(rest),
         "config" => config::run(rest),
         "livi-mfid" | "mfid" => mfid::run(),
         "livi-wifid" | "wifid" => wifid::run(rest),
+        #[cfg(feature = "screen")]
+        "splash" => screen::splash(),
         _ => {
             eprintln!("livid: unknown command '{}'", cmd);
             2

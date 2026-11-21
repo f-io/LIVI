@@ -126,7 +126,14 @@ async fn run(
             }
             other => eprintln!("[core] UI exited: {other:?}"),
         }
-        if started.elapsed() >= STABLE_AFTER {
+        let held = Path::new(livi_base::lfwb::HOLD).exists();
+        while Path::new(livi_base::lfwb::HOLD).exists() {
+            tokio::select! {
+                _ = tokio::time::sleep(restart_delay) => {}
+                _ = stop.changed() => return,
+            }
+        }
+        if held || started.elapsed() >= STABLE_AFTER {
             restarts = 0;
         }
         restarts += 1;
