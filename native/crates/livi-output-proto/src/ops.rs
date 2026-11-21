@@ -29,6 +29,7 @@ pub const OP_PLAY_SEEK: u8 = 24;
 pub const OP_PLAY_MUTE: u8 = 25;
 pub const OP_CAMERA_OPEN: u8 = 26;
 pub const OP_CAMERAS_WATCH: u8 = 27;
+pub const OP_AUDIO_MUTE: u8 = 28;
 
 pub const REPLY_PORT: u8 = 1;
 pub const REPLY_CONFIG: u8 = 2;

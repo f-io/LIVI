@@ -14,11 +14,12 @@ use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 
 use crate::audio::system_volume::{Fault, OutputEvent};
+use crate::system::keys::{self, Key};
 
 pub const MODEL: &str = "AB5301B";
 
@@ -48,6 +49,10 @@ const ASKS_SOURCE: u8 = 0xc0;
 const ALIVE: u8 = 0xce;
 const KNOB_DOWN: u8 = 0x05;
 const KNOB_UP: u8 = 0x04;
+const PRESS: u8 = 0x02;
+const LONG_PRESS: u8 = 0x01;
+/// Each press arrives about three times.
+const PRESS_REPEATS: Duration = Duration::from_millis(500);
 /// Text lines, the pairing state and the RFCOMM data of the classic bluetooth.
 const CLASSIC_BT: [u8; 4] = [0xd4, 0xd5, 0xd6, 0xdb];
 
@@ -56,6 +61,7 @@ struct Link {
     level: Mutex<Option<f64>>,
     watcher: Mutex<Option<mpsc::UnboundedSender<OutputEvent>>>,
     helper: Mutex<Option<UnixStream>>,
+    pressed: Mutex<Option<(u8, Instant)>>,
 }
 
 fn frame(dir: u8, cmd: u8, data: &[u8]) -> Vec<u8> {
@@ -132,12 +138,23 @@ impl Link {
         }
     }
 
+    fn press(&self, code: u8, key: Key) {
+        let now = Instant::now();
+        let before = self.pressed.lock().unwrap().replace((code, now));
+        if !before.is_some_and(|(c, at)| c == code && now - at < PRESS_REPEATS) {
+            keys::pressed(key);
+        }
+    }
+
     fn received(&self, f: &[u8]) {
         let (dir, cmd, data) = (f[1], f[2], &f[4..f.len() - 1]);
         match (dir, cmd, data) {
             (CHIP, KEY, [_, ALIVE, ..]) => self.send(HOST, KEY_ACK, &[ALIVE, 0x01, 0, 0, 0]),
             (CHIP, KEY, [_, KNOB_UP, ..]) => self.knob(1.0),
             (CHIP, KEY, [_, KNOB_DOWN, ..]) => self.knob(-1.0),
+            (CHIP, KEY, [_, PRESS, ..]) => self.press(PRESS, Key::Display),
+            // The chip silences the amplifier itself for about 2 s on a long press.
+            (CHIP, KEY, [_, LONG_PRESS, ..]) => self.press(LONG_PRESS, Key::Mute),
             (CHIP, KEY, [_, key, ..]) => println!("[ab5301] key {key:02x}"),
             (CHIP, ASKS_SOURCE, _) => self.send(CHIP, ASKS_SOURCE, &[0, 0]),
             (CHIP, cmd, _) if CLASSIC_BT.contains(&cmd) => {
@@ -227,6 +244,7 @@ fn link() -> Result<&'static Link, Fault> {
             level: Mutex::new(None),
             watcher: Mutex::new(None),
             helper: Mutex::new(None),
+            pressed: Mutex::new(None),
         })
         .inspect(|_| started(reader))
     });

@@ -35,6 +35,9 @@ impl<O: Outside> Host<O> {
         if self.visualizer_enabled {
             speaker.set_visualizer_enabled(true);
         }
+        if self.muted {
+            speaker.set_volume(0.0, 0);
+        }
         let speaker = Output::new(speaker);
 
         let active = Arc::new(AtomicBool::new(false));
@@ -96,7 +99,7 @@ impl<O: Outside> Host<O> {
     ) -> Option<O::Speaker> {
         let speaker = self.outside.create_speaker(cfg)?;
         if let Some(level) = level {
-            speaker.set_volume(level, 0);
+            speaker.set_volume(if self.muted { 0.0 } else { level }, 0);
         }
         if self.visualizer_enabled {
             speaker.set_visualizer_enabled(true);
@@ -160,6 +163,17 @@ impl<O: Outside> Host<O> {
                 self.taps.insert(id, tap);
             }
             None => eprintln!("livi: open microphone tap 0x{id:x} FAILED"),
+        }
+    }
+
+    pub(super) fn set_muted(&mut self, muted: bool) {
+        self.muted = muted;
+        for a in self.audio.borrow().values() {
+            let level = if muted { 0.0 } else { a.level.unwrap_or(1.0) };
+            a.speaker.get().set_volume(level, 0);
+        }
+        for (id, p) in &self.url_players {
+            p.set_muted(muted || self.url_muted.contains(id));
         }
     }
 

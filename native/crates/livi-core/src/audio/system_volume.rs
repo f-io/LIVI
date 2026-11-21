@@ -172,8 +172,11 @@ pub async fn follow(core: Arc<Core>) {
     let mut read_at: Option<Instant> = None;
     let mut last: Option<f64> = None;
     loop {
-        let cfg = state.borrow_and_update().config.clone();
-        let target = cfg.hu_volume;
+        let (cfg, muted) = {
+            let s = state.borrow_and_update();
+            (s.config.clone(), s.system.muted)
+        };
+        let target = if muted { 0.0 } else { cfg.hu_volume };
         if !cfg.hu_volume_link_system {
             if following.take().is_some() {
                 watcher = None;
@@ -234,6 +237,10 @@ pub async fn follow(core: Arc<Core>) {
                     continue;
                 }
                 last = Some(level);
+                if muted {
+                    core.hub.update(|s| s.system.muted = false);
+                    continue;
+                }
                 applied = Some(level);
                 take_system_level(&core, level, "follows the system").await;
             }

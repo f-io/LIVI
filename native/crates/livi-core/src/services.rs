@@ -341,6 +341,7 @@ impl Services {
             clusters.clone(),
         ));
         tokio::spawn(follow_audio_output(state.clone(), gst.clone()));
+        tokio::spawn(follow_muted(state.clone(), gst.clone()));
         tokio::spawn(follow_host(gst, plane, airplay_plane, clusters, state));
 
         Self {
@@ -744,6 +745,17 @@ async fn follow_audio_output(mut state: watch::Receiver<State>, gst: Output) {
         if now != device {
             gst.set_audio_output(now.as_deref().unwrap_or(""));
             device = now;
+        }
+    }
+}
+
+async fn follow_muted(mut state: watch::Receiver<State>, gst: Output) {
+    let mut muted = false;
+    while state.changed().await.is_ok() {
+        let now = state.borrow_and_update().system.muted;
+        if now != muted {
+            gst.set_audio_muted(now);
+            muted = now;
         }
     }
 }

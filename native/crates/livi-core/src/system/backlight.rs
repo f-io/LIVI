@@ -37,7 +37,7 @@ pub async fn follow(core: Arc<Core>) {
         return;
     }
     let mut state = core.hub.watch();
-    let mut applied: Option<f64> = None;
+    let mut applied: Option<Option<f64>> = None;
     loop {
         let level = {
             let s = state.borrow_and_update();
@@ -47,13 +47,15 @@ pub async fn follow(core: Arc<Core>) {
                 .then(|| s.telemetry.get("dimmerPct").and_then(Value::as_f64))
                 .flatten()
                 .map(|pct| pct / 100.0);
-            dimmer.unwrap_or(s.config.display_brightness)
+            (!s.system.display_off).then(|| dimmer.unwrap_or(s.config.display_brightness))
         };
-        if level.is_finite() && applied != Some(level) {
+        if level.is_none_or(f64::is_finite) && applied != Some(level) {
             applied = Some(level);
             for l in &lights {
-                // No brightness setting leaves the display dark.
-                let raw = ((level.clamp(0.0, 1.0) * l.max as f64).round() as u32).max(1);
+                // Only switching the display off reaches 0, no brightness setting can leave it dark.
+                let raw = level.map_or(0, |level| {
+                    ((level.clamp(0.0, 1.0) * l.max as f64).round() as u32).max(1)
+                });
                 if let Err(e) = std::fs::write(&l.brightness, raw.to_string()) {
                     eprintln!("[backlight] {}: {e}", l.brightness.display());
                 }

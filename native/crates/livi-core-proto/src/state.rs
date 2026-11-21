@@ -283,6 +283,10 @@ pub struct System {
     pub start_page: String,
     pub fonts: Vec<String>,
     pub utc_offset_minutes: Option<i32>,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub display_off: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

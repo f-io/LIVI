@@ -96,6 +96,7 @@ struct State {
     accept_task: Option<tokio::task::JoinHandle<()>>,
     tap: bool,
     cameras: bool,
+    muted: bool,
 }
 
 struct Inner {
@@ -293,6 +294,9 @@ impl Output {
                 }
                 if st.cameras {
                     let _ = tx.send(frame(OP_CAMERAS_WATCH, 0, &[]));
+                }
+                if st.muted {
+                    let _ = tx.send(frame(OP_AUDIO_MUTE, 0, &[1]));
                 }
                 for queued in st.queue.drain(..) {
                     let _ = tx.send(queued);
@@ -559,6 +563,17 @@ impl Output {
     pub fn set_audio_output(&self, device: &str) {
         if self.state().running {
             self.send(frame(OP_AUDIO_OUTPUT, 0, device.as_bytes()));
+        }
+    }
+
+    pub fn set_audio_muted(&self, muted: bool) {
+        let connected = {
+            let mut st = self.state();
+            st.muted = muted;
+            st.out.is_some()
+        };
+        if connected {
+            self.send(frame(OP_AUDIO_MUTE, 0, &[u8::from(muted)]));
         }
     }
 

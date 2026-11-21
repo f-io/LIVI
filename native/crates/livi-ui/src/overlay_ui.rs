@@ -4,11 +4,11 @@
 
 use std::time::Duration;
 
-use livi_ui_model::overlay::{VolumeIcon, percent, volume_icon};
+use livi_ui_model::overlay::{Level, VolumeIcon, percent, volume_icon};
 use slint::{ComponentHandle, Timer, TimerMode};
 
 use crate::icons::icon;
-use crate::{AppWindow, OverlayState, Page};
+use crate::{AppWindow, OverlayState};
 
 const LEVEL_SHOWN: Duration = Duration::from_millis(1500);
 const PHONE_SHOWN: Duration = Duration::from_millis(1170);
@@ -34,10 +34,11 @@ fn hide_later(
     });
 }
 
-pub fn volume(ui: &AppWindow, level: f64) {
-    if ui.get_page() == Page::Settings {
-        return;
-    }
+pub fn volume(ui: &AppWindow, level: Level) {
+    let (level, muted) = match level {
+        Level::Muted => (0.0, true),
+        Level::At(level) => (level, false),
+    };
     let name = match volume_icon(level) {
         VolumeIcon::Off => "VolumeOffRounded",
         VolumeIcon::Down => "VolumeDownRounded",
@@ -48,6 +49,7 @@ pub fn volume(ui: &AppWindow, level: f64) {
         o.set_level_icon(img);
     }
     o.set_level_percent(percent(level) as i32);
+    o.set_level_muted(muted);
     o.set_level_shown(true);
     hide_later(&LEVEL_HIDE, ui, LEVEL_SHOWN, |o| o.set_level_shown(false));
 }

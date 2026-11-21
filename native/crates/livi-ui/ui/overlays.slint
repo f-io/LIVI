@@ -8,6 +8,7 @@ export global OverlayState {
     in property <bool> level-shown;
     in property <image> level-icon;
     in property <int> level-percent;
+    in property <bool> level-muted;
     in property <bool> phone-shown;
     in property <image> phone-icon;
     in property <string> phone-name;
@@ -46,7 +47,7 @@ export component LevelOverlay inherits Card {
             source: OverlayState.level-icon;
             colorize: #ffffffeb;
         }
-        Rectangle {
+        if !OverlayState.level-muted: Rectangle {
             width: root.bar;
             Rectangle {
                 y: (parent.height - self.height) / 2;
@@ -61,7 +62,7 @@ export component LevelOverlay inherits Card {
                 }
             }
         }
-        Rectangle {
+        if !OverlayState.level-muted: Rectangle {
             width: widest.preferred-width;
             widest := Text {
                 text: "100%";

@@ -164,6 +164,8 @@ pub async fn run(
     tokio::spawn(audio::system_volume::follow(core.clone()));
     #[cfg(target_os = "linux")]
     tokio::spawn(system::backlight::follow(core.clone()));
+    #[cfg(feature = "uart-module")]
+    tokio::spawn(system::keys::follow(core.clone()));
     #[cfg(feature = "net")]
     tokio::spawn(update::run(
         core.clone(),

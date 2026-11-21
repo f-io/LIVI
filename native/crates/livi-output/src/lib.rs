@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -368,6 +368,9 @@ pub struct Host<O: Outside> {
     uplinks: HashMap<u32, O::Uplink>,
     taps: HashMap<u32, O::Tap>,
     url_players: HashMap<u32, O::UrlPlayer>,
+    /// Players core muted itself, they stay muted when the master mute lifts.
+    url_muted: HashSet<u32>,
+    muted: bool,
     cameras: HashMap<u32, O::Camera>,
     cameras_watched: bool,
     feed_fans: FeedFans,
@@ -390,6 +393,8 @@ impl<O: Outside> Host<O> {
             uplinks: HashMap::new(),
             taps: HashMap::new(),
             url_players: HashMap::new(),
+            url_muted: HashSet::new(),
+            muted: false,
             cameras: HashMap::new(),
             cameras_watched: false,
             feed_fans: Rc::new(RefCell::new(HashMap::new())),
@@ -448,8 +453,15 @@ impl<O: Outside> Host<O> {
                 }
             }
             OP_PLAY_MUTE => {
-                if let (Some(p), Some(b)) = (self.url_players.get(&id), rest.first()) {
-                    p.set_muted(b & 1 != 0);
+                if let Some(b) = rest.first() {
+                    if b & 1 != 0 {
+                        self.url_muted.insert(id);
+                    } else {
+                        self.url_muted.remove(&id);
+                    }
+                    if let Some(p) = self.url_players.get(&id) {
+                        p.set_muted(self.muted || b & 1 != 0);
+                    }
                 }
             }
             OP_GAMMA => self.set_gamma(id, rest),
@@ -470,10 +482,13 @@ impl<O: Outside> Host<O> {
                         0
                     };
                     a.level = Some(level);
-                    a.speaker.get().set_volume(level, ms);
+                    a.speaker
+                        .get()
+                        .set_volume(if self.muted { 0.0 } else { level }, ms);
                 }
             }
             OP_AUDIO_OUTPUT => self.set_audio_output(rest),
+            OP_AUDIO_MUTE => self.set_muted(rest.first().is_some_and(|b| b & 1 != 0)),
             OP_AUDIO_STOP => {
                 self.audio.borrow_mut().remove(&id);
             }

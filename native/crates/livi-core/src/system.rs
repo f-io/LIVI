@@ -9,6 +9,8 @@ pub mod gvfs_guard;
 pub mod host;
 pub mod host_setup;
 pub mod hwaddr;
+#[cfg(feature = "uart-module")]
+pub mod keys;
 pub mod kiosk_unit;
 pub mod power;
 pub mod privileged;

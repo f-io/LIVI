@@ -31,14 +31,24 @@ pub fn enabled(state: &State) -> bool {
     state.config.overlay_messages
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Level {
+    Muted,
+    At(f64),
+}
+
 #[derive(Default)]
 pub struct Volume {
-    seen: Option<f64>,
+    seen: Option<Level>,
 }
 
 impl Volume {
-    pub fn update(&mut self, state: &State) -> Option<f64> {
-        let level = Some(state.config.hu_volume);
+    pub fn update(&mut self, state: &State) -> Option<Level> {
+        let level = Some(if state.system.muted {
+            Level::Muted
+        } else {
+            Level::At(state.config.hu_volume)
+        });
         let before = std::mem::replace(&mut self.seen, level);
         match (before, level) {
             (Some(b), Some(l)) if b != l && enabled(state) => Some(l),
@@ -109,9 +119,18 @@ mod tests {
         let mut w = Volume::default();
         assert_eq!(w.update(&with_volume(0.5)), None);
         assert_eq!(w.update(&with_volume(0.5)), None);
-        assert_eq!(w.update(&with_volume(0.6)), Some(0.6));
+        assert_eq!(w.update(&with_volume(0.6)), Some(Level::At(0.6)));
         let off = state(json!({ "config": { "huVolume": 0.2, "overlayMessages": false } }));
         assert_eq!(w.update(&off), None);
+    }
+
+    #[test]
+    fn muting_shows_without_a_level() {
+        let mut w = Volume::default();
+        w.update(&with_volume(0.5));
+        let muted = state(json!({ "config": { "huVolume": 0.5 }, "system": { "muted": true } }));
+        assert_eq!(w.update(&muted), Some(Level::Muted));
+        assert_eq!(w.update(&with_volume(0.5)), Some(Level::At(0.5)));
     }
 
     #[test]
