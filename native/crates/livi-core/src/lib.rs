@@ -226,6 +226,7 @@ pub async fn run(
         _ = stop => {}
         _ = quit.notified() => println!("[core] stopping"),
     }
+    core.flush_config();
     let _ = tokio::time::timeout(Duration::from_secs(2), system::gvfs_guard::stop()).await;
     goodbye(&core).await;
     services.stop().await;

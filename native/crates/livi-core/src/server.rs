@@ -5,7 +5,7 @@
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use livi_core_proto::PROTOCOL;
@@ -27,9 +27,32 @@ use crate::projection::{UiCommand, UiSenders};
 use crate::radio::{Band, RadioAsk, Station};
 use crate::update::UpdateAsk;
 
+/// Sliders send every 100 ms, each NOR flash save takes longer and wears it.
+const SAVE_QUIET: Duration = Duration::from_millis(500);
+
+struct ConfigSaves {
+    file: ConfigFile,
+    wanted: AtomicU64,
+    saved: std::sync::Mutex<u64>,
+}
+
+impl ConfigSaves {
+    fn write(&self, hub: &Hub) {
+        let mut saved = self.saved.lock().unwrap_or_else(|e| e.into_inner());
+        let wanted = self.wanted.load(Ordering::SeqCst);
+        if *saved == wanted {
+            return;
+        }
+        if let Err(e) = self.file.save(&hub.config()) {
+            eprintln!("[core] config not saved: {e}");
+        }
+        *saved = wanted;
+    }
+}
+
 pub struct Core {
     pub hub: Arc<Hub>,
-    config_file: ConfigFile,
+    config_saves: Arc<ConfigSaves>,
     config_writes: Mutex<()>,
     pub quit: Arc<Notify>,
     pub restart: AtomicBool,
@@ -53,7 +76,11 @@ impl Core {
     ) -> Self {
         Self {
             hub: Arc::new(hub),
-            config_file,
+            config_saves: Arc::new(ConfigSaves {
+                file: config_file,
+                wanted: AtomicU64::new(0),
+                saved: std::sync::Mutex::new(0),
+            }),
             config_writes: Mutex::new(()),
             quit,
             restart: AtomicBool::new(false),
@@ -106,11 +133,20 @@ impl Core {
     pub async fn set_config(&self, patch: &Value) -> Result<(), String> {
         let _one_at_a_time = self.config_writes.lock().await;
         let next = apply_patch(&self.hub.config(), patch)?;
-        self.config_file
-            .save(&next)
-            .map_err(|e| format!("not saved: {e}"))?;
         self.hub.update(|s| s.config = next);
+        let wanted = self.config_saves.wanted.fetch_add(1, Ordering::SeqCst) + 1;
+        let (saves, hub) = (self.config_saves.clone(), self.hub.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(SAVE_QUIET).await;
+            if saves.wanted.load(Ordering::SeqCst) == wanted {
+                saves.write(&hub);
+            }
+        });
         Ok(())
+    }
+
+    pub fn flush_config(&self) {
+        self.config_saves.write(&self.hub);
     }
 
     pub fn activity(&self) -> watch::Receiver<Activity> {
@@ -820,7 +856,7 @@ mod tests {
     #[tokio::test]
     async fn a_config_change_reaches_every_client_and_the_file() {
         let dir = TempDir::new();
-        let (_core, path) = start(&dir);
+        let (core, path) = start(&dir);
         let mut ui = Peer::hello(&path).await;
         let mut dash = Peer::hello(&path).await;
 
@@ -843,6 +879,7 @@ mod tests {
         assert!([&first, &second].contains(&&FromCore::Reply { id: 1, error: None }));
         assert_eq!(dash.recv().await, Some(patch));
 
+        core.flush_config();
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.0.join("config.json")).unwrap())
                 .unwrap();
