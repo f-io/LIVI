@@ -1,0 +1,222 @@
+name: livi-os
+run-name: "livi-os → ${{ github.ref_name }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      f133b_xfh:
+        description: "Build f133b_xfh (F133-B XFH head unit, riscv64, musl, mainline kernel)"
+        type: boolean
+        default: true
+      pages:
+        description: "Publish the built firmware on GitHub Pages (release also updates the nightly)"
+        type: choice
+        options: [nightly, release, none]
+        default: nightly
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  targets:
+    name: Select targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      any: ${{ steps.set.outputs.any }}
+    steps:
+      - id: set
+        env:
+          F133B_XFH: ${{ inputs.f133b_xfh }}
+        run: |
+          set -euo pipefail
+          arr=()
+          [[ "$F133B_XFH" == "true" ]] && arr+=('"f133b_xfh"')
+          {
+            printf 'matrix={"target":[%s]}\n' "$(IFS=,; echo "${arr[*]}")"
+            printf 'any=%s\n' "$(IFS=,; echo "${arr[*]}")"
+          } >>"$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: targets
+    if: needs.targets.outputs.any != ''
+    runs-on: ubuntu-latest
+    container:
+      image: debian:forky-slim
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.targets.outputs.matrix) }}
+    env:
+      TOP: ${{ github.workspace }}/build/${{ matrix.target }}
+
+    steps:
+      - name: Install build deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils bzip2 zstd build-essential file rsync \
+            gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu bc bison flex libssl-dev libelf-dev \
+            device-tree-compiler liblz4-1 squashfs-tools python3 meson ninja-build cmake pkg-config perl
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Firmware version
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LIVI_BUILD="${GITHUB_SHA::8}"
+          source scripts/livi-link/version.sh
+          echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
+          echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
+
+      # Sources and firmware survive a failed run, the scripts take what still matches its hash.
+      - name: Restore downloads
+        id: downloads
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            build/${{ matrix.target }}/userspace/src/*.tar.*
+            build/${{ matrix.target }}/*.tar.*
+            build/${{ matrix.target }}/sha256sums.asc
+            build/${{ matrix.target }}/radxa-aic8800
+            build/${{ matrix.target }}/radxa-allwinner-bsp
+          key: livi-os-dl-${{ matrix.target }}-${{ hashFiles('scripts/livi-os/**', 'scripts/livi-link/common/**') }}
+          restore-keys: livi-os-dl-${{ matrix.target }}-
+
+      # gst.sh rebuilds the prefix when its stamp does not match.
+      - name: Restore GStreamer
+        id: gst
+        uses: actions/cache/restore@v6
+        with:
+          path: build/${{ matrix.target }}/gst-prefix
+          key: livi-os-gst-${{ matrix.target }}-${{ hashFiles('scripts/livi-os/riscv/f133/gst.sh', 'scripts/livi-os/riscv/f133/gst-patches/**') }}
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          init=https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+          curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "$init" -o /tmp/rustup-init
+          init_sha=$(curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "$init.sha256" | cut -d' ' -f1)
+          echo "$init_sha  /tmp/rustup-init" | sha256sum -c
+          chmod +x /tmp/rustup-init
+          /tmp/rustup-init -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" update stable --no-self-update
+          "$HOME/.cargo/bin/rustup" toolchain install
+          "$HOME/.cargo/bin/rustup" target add riscv64gc-unknown-linux-musl
+          "$HOME/.cargo/bin/rustc" --version
+
+      - name: Restore cargo cache
+        id: cargo
+        uses: ./.github/actions/cargo-cache/restore
+        with:
+          name: livi-os-${{ matrix.target }}
+
+      - name: Build the firmware bundle
+        shell: bash
+        env:
+          BOARD_DIR: scripts/livi-os/riscv/${{ matrix.target == 'f133b_xfh' && 'f133' || '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$TOP"
+          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
+          bash "$BOARD_DIR/build.sh"
+          bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
+          bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
+
+          BUNDLE=$(source "$BOARD_DIR/board.sh" && echo "$BUNDLE")
+          mkdir -p "assets/livi-os/${{ matrix.target }}"
+          cp "$BUNDLE" "assets/livi-os/${{ matrix.target }}/"
+          source scripts/livi-link/version.sh
+          livi_firmware_json "assets/livi-os/${{ matrix.target }}/$(basename "$BUNDLE")"
+
+      - name: Save downloads
+        if: always() && steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            build/${{ matrix.target }}/userspace/src/*.tar.*
+            build/${{ matrix.target }}/*.tar.*
+            build/${{ matrix.target }}/sha256sums.asc
+            build/${{ matrix.target }}/radxa-aic8800
+            build/${{ matrix.target }}/radxa-allwinner-bsp
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
+
+      - name: Save GStreamer
+        if: steps.gst.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: build/${{ matrix.target }}/gst-prefix
+          key: ${{ steps.gst.outputs.cache-primary-key }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: assets/livi-os/${{ matrix.target }}
+          retention-days: 30
+
+      - name: Save cargo cache
+        if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        uses: ./.github/actions/cargo-cache/save
+        with:
+          key: ${{ steps.cargo.outputs.key }}
+
+  commit:
+    name: Commit updated assets
+    needs: [targets, build]
+    if: always() && needs.targets.result == 'success' && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Download the built bundles
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          path: assets/livi-os
+
+      - name: Publish the firmware bundles
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh scripts/assets.sh publish livi-os
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A assets/livi-os
+          if git diff --cached --quiet -- assets/livi-os; then
+            echo "No asset changes to commit"
+            exit 0
+          fi
+          details="$(git diff --cached --name-only -- assets/livi-os \
+            | sed -n 's#^assets/livi-os/\([^/]*\)/.*#\1#p' | sort -u \
+            | paste -sd, - | sed 's/,/, /g')"
+          git commit -m "chore(livi-os): update firmware${details:+ ($details)}"
+          git push
+
+      - name: Publish on GitHub Pages
+        if: inputs.pages != 'none'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILT: ${{ needs.targets.outputs.any }}
+          CHANNELS: ${{ inputs.pages == 'release' && 'nightly release' || 'nightly' }}
+        run: bash scripts/pages-channel.sh livi-os "$CHANNELS" "$(echo "$BUILT" | tr -d '"' | tr , ' ')"
