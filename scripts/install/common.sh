@@ -15,7 +15,7 @@ LIVI_SUDOERS_TEMPLATE="99-LIVI-helper.sudoers.template"
 LIVI_KIOSK_TEMPLATE="livi-kiosk.service.template"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 
-# I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
+# I2C bus for the MFi i2c-gpio overlay
 LIVI_MFI_I2C_BUS=""
 LIVI_MFI_POWER_GPIO="21"
 LIVI_USER_DATA="${LIVI_USER_DATA:-${XDG_CONFIG_HOME:-$HOME/.config}/LIVI}"
@@ -665,10 +665,10 @@ livi_seed_mfi_config() {
   livi_require_jq || return 1
   mkdir -p "$(dirname "$LIVI_APP_CONFIG")"
   cfg="$(livi_app_config_jq '
-    .carPlayMfiI2cBus = $bus
+    del(.carPlayMfiI2cBus)
     | if .carPlayMfiPowerGpio == null or .carPlayMfiPowerGpio == "" or .carPlayMfiPowerGpio == -1
       then .carPlayMfiPowerGpio = $gpio else . end' \
-    --argjson bus "$LIVI_MFI_I2C_BUS" --argjson gpio "$LIVI_MFI_POWER_GPIO")" || return 1
+    --argjson gpio "$LIVI_MFI_POWER_GPIO")" || return 1
   [ -n "$cfg" ] || return 1
   printf '%s\n' "$cfg" > "$LIVI_APP_CONFIG"
 }
@@ -719,7 +719,7 @@ livi_apply_mfi() {
   local dev="/dev/i2c-${LIVI_MFI_I2C_BUS}"
   local overlay="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
 
-  echo "→ Setting MFi i2c bus ${LIVI_MFI_I2C_BUS} and power pin ${LIVI_MFI_POWER_GPIO} in the app config"
+  echo "→ Setting MFi power pin ${LIVI_MFI_POWER_GPIO} in the app config"
   livi_seed_mfi_config
 
   echo "→ Enabling I2C for the MFi coprocessor"

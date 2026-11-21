@@ -84,6 +84,11 @@ impl Projection {
             CpEvent::HelperConnected => {
                 let targets = self.targets();
                 self.devices.page(targets, true);
+                let chip = livi_core_proto::helper::read_mfi_chip(&self.mfi_chip);
+                self.hub.update(|s| {
+                    s.mfi.probed = chip.is_some();
+                    s.mfi.chip = chip.flatten();
+                });
             }
             CpEvent::HostUiRequested { id } => {
                 println!("[core] CarPlay asks for the car's own UI");

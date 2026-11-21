@@ -80,13 +80,13 @@ impl AuthCoprocessor for NoCoprocessor {
 
 pub const BUSY_RETRY: Duration = Duration::from_micros(500);
 pub const IO_TIMEOUT: Duration = Duration::from_secs(2);
-pub const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+pub const PROBE_TIMEOUT: Duration = Duration::from_millis(200);
 pub const AUTH_POLL: Duration = Duration::from_millis(10);
 pub const AUTH_TIMEOUT: Duration = Duration::from_secs(3);
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 mod linux;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub use linux::I2cCoprocessor;
 
 pub mod ncm;

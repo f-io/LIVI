@@ -29,7 +29,6 @@ pub struct Config {
     pub country: String,
 
     pub car_play_source_version: String,
-    pub car_play_mfi_i2c_bus: u32,
     pub car_play_mfi_power_gpio: i32,
     pub car_play_mfi_files: String,
     pub car_play_vehicle_climate: bool,
@@ -551,7 +550,6 @@ pub fn defaults() -> Config {
         wifi_channel_width: 40,
         country: "DE".into(),
         car_play_source_version: "950.7.1".into(),
-        car_play_mfi_i2c_bus: 2,
         car_play_mfi_power_gpio: -1,
         car_play_mfi_files: String::new(),
         car_play_vehicle_climate: false,

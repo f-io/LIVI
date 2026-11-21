@@ -40,6 +40,7 @@ pub fn read(dir: &Path) -> Mfi {
         identity: key.is_some(),
         generation: key.as_deref().and_then(|k| identity_major(k).ok()),
         error: error.map(|e| e.to_string()),
+        ..Mfi::default()
     }
 }
 

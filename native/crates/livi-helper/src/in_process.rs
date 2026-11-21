@@ -106,22 +106,37 @@ impl Drop for InProcessHelper {
 }
 
 fn chip(start: &HelperStart, host: &Host) -> Option<Box<dyn AuthCoprocessor + Send>> {
+    let _ = std::fs::remove_file(&host.sockets.mfi_chip);
     if let Some(files) = crate::mfi::open_in(&host.mfi) {
         return Some(Box::new(files));
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
-        let (bus, gpio) = (start.settings.mfi_i2c_bus, start.settings.mfi_power_gpio);
-        println!("[helper] opening MFi bus={bus} gpio={gpio}");
-        match iap2_mfi::I2cCoprocessor::open(bus, gpio) {
-            Ok(chip) => {
-                println!("[helper] MFi addr=0x{:02X}", chip.address());
+        use livi_core_proto::helper::write_mfi_chip;
+        use livi_core_proto::state::MfiChip;
+        let gpio = start.settings.mfi_power_gpio;
+        println!("[helper] looking for an MFi chip on I2C, power gpio={gpio}");
+        match iap2_mfi::I2cCoprocessor::open(gpio) {
+            Ok(mut chip) => {
+                let found = MfiChip {
+                    bus: chip.bus(),
+                    address: chip.address(),
+                    generation: chip.protocol_major().ok(),
+                };
+                println!(
+                    "[helper] MFi on i2c-{} addr=0x{:02X}",
+                    found.bus, found.address
+                );
+                write_mfi_chip(&host.sockets.mfi_chip, Some(&found));
                 return Some(Box::new(chip));
             }
-            Err(e) => println!("[helper] no MFi chip on the bus: {e}"),
+            Err(e) => {
+                println!("[helper] no MFi chip on any I2C bus: {e}");
+                write_mfi_chip(&host.sockets.mfi_chip, None);
+            }
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     let _ = start;
     println!(
         "[helper] no MFi files in {}, CarPlay waits for a LIVI Link dongle's chip",

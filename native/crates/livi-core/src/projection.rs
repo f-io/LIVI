@@ -366,6 +366,7 @@ pub struct Drivers {
     pub telemetry: mpsc::UnboundedSender<Value>,
     pub settings: mpsc::UnboundedSender<Value>,
     pub themes: PathBuf,
+    pub mfi_chip: PathBuf,
 }
 
 pub struct Projection {
@@ -405,6 +406,7 @@ pub struct Projection {
     apply_due: Option<tokio::time::Instant>,
     cluster: Cluster,
     themes: PathBuf,
+    mfi_chip: PathBuf,
     theme_asked: String,
     theme_ready: (mpsc::UnboundedSender<Theme>, mpsc::UnboundedReceiver<Theme>),
     radio: Option<mpsc::UnboundedSender<crate::radio::RadioAsk>>,
@@ -543,6 +545,7 @@ impl Projection {
             telemetry,
             settings,
             themes,
+            mfi_chip,
         } = drivers;
         let cp_telemetry = CpTelemetry::new(devices.helper.clone());
         let cfg = hub.config();
@@ -588,6 +591,7 @@ impl Projection {
             apply_due: None,
             cluster,
             themes,
+            mfi_chip,
             theme_asked: String::new(),
             theme_ready: mpsc::unbounded_channel(),
             radio: None,

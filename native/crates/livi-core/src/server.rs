@@ -89,7 +89,13 @@ impl Core {
     pub async fn refresh_mfi(&self) -> Result<(), String> {
         let view = crate::mfi::read(&self.mfi_dir);
         let files = crate::mfi::digest(&self.mfi_dir);
-        self.hub.update(|s| s.mfi = view);
+        self.hub.update(|s| {
+            s.mfi = livi_core_proto::state::Mfi {
+                probed: s.mfi.probed,
+                chip: s.mfi.chip.take(),
+                ..view
+            }
+        });
         if self.hub.config().car_play_mfi_files == files {
             return Ok(());
         }

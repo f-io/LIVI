@@ -58,12 +58,11 @@ Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so the
 
 LIVI does not support Apple's Basic Accessory Authentication on MacOS, but may in the future.
 
-For a chip on the board, configuration (`config.json`):
+For a chip on the board, LIVI looks on every I²C bus. Configuration (`config.json`):
 
-| Key                   | Default | Description                          |
-| --------------------- | ------- | ------------------------------------ |
-| `carPlayMfiI2cBus`    | `2`     | I²C bus number the coprocessor is on |
-| `carPlayMfiPowerGpio` | `21`    | GPIO that powers the coprocessor     |
+| Key                   | Default | Description                      |
+| --------------------- | ------- | -------------------------------- |
+| `carPlayMfiPowerGpio` | `21`    | GPIO that powers the coprocessor |
 
 Without one of these, native CarPlay is unavailable. All Android Auto paths work regardless.
 
