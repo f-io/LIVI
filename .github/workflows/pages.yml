@@ -3,7 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "scripts/livi-link/pages-firmware.sh", ".github/workflows/pages.yml"]
+    paths: ["docs/**", "scripts/pages-firmware.sh", ".github/workflows/pages.yml"]
   release:
     types: [published, unpublished, deleted]
   workflow_dispatch:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Website and dongle firmware
+    name: Website and firmware
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -31,7 +31,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
             docs
-            scripts/livi-link
+            scripts
 
       - name: Gather the site
         env:
@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -p site
           cp -a docs/. site/
-          bash scripts/livi-link/pages-firmware.sh site/firmware
+          bash scripts/pages-firmware.sh site/firmware
 
       - uses: actions/configure-pages@v6
 

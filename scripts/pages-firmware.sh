@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Dongle firmware and the provisioning tool of the nightly and the latest release, for GitHub Pages.
-# The manifests come from the livi-link-<channel> branch that livi-link runs update, the release's
-# from its tag once the release is newer than that branch; the files from the "assets" release.
+# LIVI Link and LIVI OS firmware and the provisioning tool of the nightly and the latest release, for
+# GitHub Pages. The manifests come from the <product>-<channel> branch that the livi-link and livi-os
+# runs update, the release's from its tag once the release is newer than that branch, the files from
+# the "assets" release. Devices look for <tag>/<target>/firmware.json, the target names are unique
+# across both products.
 #
 # usage: pages-firmware.sh <dest-dir>
 set -euo pipefail
@@ -18,7 +20,7 @@ sha() {
 
 manifest() {
   gh api -H 'Accept: application/vnd.github.raw+json' \
-    "repos/$REPO/contents/assets/livi-link/$2/firmware.json?ref=$1" 2>/dev/null
+    "repos/$REPO/contents/assets/$1/$3/firmware.json?ref=$2" 2>/dev/null
 }
 
 page() {
@@ -64,7 +66,18 @@ fi
 [ -n "$latest" ] && tags+=("$latest")
 
 branch_date() {
-  gh api "repos/$REPO/commits/livi-link-$1" -q .commit.committer.date 2>/dev/null
+  gh api "repos/$REPO/commits/$1-$2" -q .commit.committer.date 2>/dev/null
+}
+
+# Where a channel's manifests of a product are read from.
+ref_of() {
+  if [ "$2" = nightly ]; then
+    branch_date "$1" nightly >/dev/null && { echo "$1-nightly"; return; }
+  elif head=$(branch_date "$1" release) && [[ "$head" > "$published" ]]; then
+    echo "$1-release"
+    return
+  fi
+  echo "$2"
 }
 
 platform() {
@@ -99,23 +112,16 @@ tools() {
   echo "<h2 id=\"provision\">Provisioning tool</h2><table><tr><th>Platform</th><th>File</th><th>Size</th></tr>$rows</table>"
 }
 
-channels='<tr><th>Channel</th><th>Version</th><th>Built</th><th>Targets</th><th>Provisioning tool</th></tr>'
-for tag in "${tags[@]}"; do
-  ref=$tag
-  if [ "$tag" = nightly ]; then
-    branch_date nightly >/dev/null && ref=livi-link-nightly
-  elif head=$(branch_date release) && [[ "$head" > "$published" ]]; then
-    ref=livi-link-release
-  fi
+# Fills $DEST/<tag>/<target> for one product, prints its table and leaves version, built and count set.
+firmware() {
+  local product=$1 tag=$2 ref=$3 rows targets target dir file want build kib
   rows='<tr><th>Target</th><th>Version</th><th>Built</th><th>Bundle</th><th>Size</th><th>Manifest</th></tr>'
-  version=
-  built=
-  count=0
-  targets=$(gh api "repos/$REPO/contents/assets/livi-link?ref=$ref" -q '.[] | select(.type == "dir") | .name')
+  version='' built='' count=0
+  targets=$(gh api "repos/$REPO/contents/assets/$product?ref=$ref" -q '.[] | select(.type == "dir") | .name' 2>/dev/null) || targets=
   for target in $targets; do
     dir=$DEST/$tag/$target
     mkdir -p "$dir"
-    manifest "$ref" "$target" > "$dir/firmware.json" || { rm -rf "$dir"; continue; }
+    manifest "$product" "$ref" "$target" > "$dir/firmware.json" || { rm -rf "$dir"; continue; }
     file=$(field "$dir/firmware.json" file)
     want=$(field "$dir/firmware.json" sha256)
     gh release download assets --repo "$REPO" --pattern "${file%.lfwb}-${want:0:16}.lfwb" --output "$dir/$file"
@@ -127,13 +133,41 @@ for tag in "${tags[@]}"; do
     kib=$(($(field "$dir/firmware.json" size) / 1024))
     rows+="<tr><td>$target</td><td>$version</td><td>$built</td><td><a href=\"$target/$file\">$file</a></td><td>$kib KiB</td><td><a href=\"$target/firmware.json\">firmware.json</a></td></tr>"
     count=$((count + 1))
-    echo "$tag/$target: $file"
+    echo "$tag/$target: $file" >&2
   done
-  provision=$(tools "$tag" "$ref")
-  page "LIVI Link firmware · $tag" "<a href=\"../\">All channels</a> · <a href=\"https://github.com/$REPO/releases/tag/$tag\">Release</a>" \
-    "<h2>Firmware</h2><table>$rows</table>$provision" > "$DEST/$tag/index.html"
-  channels+="<tr><td><a href=\"$tag/\">$tag</a></td><td>$version</td><td>$built</td><td>$count</td><td>${provision:+<a href=\"$tag/#provision\">download</a>}</td></tr>"
+  table="<table>$rows</table>"
+}
+
+declare -A NAME=([livi-link]="LIVI Link firmware" [livi-os]="LIVI OS firmware")
+declare -A CHANNELS=()
+for product in livi-link livi-os; do
+  CHANNELS[$product]='<tr><th>Channel</th><th>Version</th><th>Built</th><th>Targets</th></tr>'
+done
+CHANNELS[livi-link]='<tr><th>Channel</th><th>Version</th><th>Built</th><th>Targets</th><th>Provisioning tool</th></tr>'
+
+for tag in "${tags[@]}"; do
+  body=
+  for product in livi-link livi-os; do
+    ref=$(ref_of "$product" "$tag")
+    firmware "$product" "$tag" "$ref"
+    ((count)) || continue
+    if [ "$product" = livi-link ]; then
+      provision=$(tools "$tag" "$ref")
+      body+="<h2 id=\"$product\">${NAME[$product]}</h2>$table$provision"
+      CHANNELS[$product]+="<tr><td><a href=\"$tag/#$product\">$tag</a></td><td>$version</td><td>$built</td><td>$count</td><td>${provision:+<a href=\"$tag/#provision\">download</a>}</td></tr>"
+    else
+      body+="<h2 id=\"$product\">${NAME[$product]}</h2>$table"
+      CHANNELS[$product]+="<tr><td><a href=\"$tag/#$product\">$tag</a></td><td>$version</td><td>$built</td><td>$count</td></tr>"
+    fi
+  done
+  [ -n "$body" ] || continue
+  page "LIVI Firmware · $tag" "<a href=\"../\">All channels</a> · <a href=\"https://github.com/$REPO/releases/tag/$tag\">Release</a>" \
+    "$body" > "$DEST/$tag/index.html"
 done
 
 mkdir -p "$DEST"
-page "LIVI Link firmware" "Firmware and the provisioning tool for the <a href=\"https://github.com/$REPO/blob/main/LIVI-LINK.md\">LIVI-LINK</a>." "<table>$channels</table>" > "$DEST/index.html"
+for product in livi-link livi-os; do
+  [[ ${CHANNELS[$product]} == *"<td>"* ]] || CHANNELS[$product]+='<tr><td colspan="5">No builds yet</td></tr>'
+done
+page "LIVI Firmware" "Firmware for the <a href=\"https://github.com/$REPO/blob/main/LIVI-LINK.md\">LIVI Link</a> dongles and the head units running LIVI OS, and the provisioning tool for the LIVI Link." \
+  "<h2>${NAME[livi-link]}</h2><table>${CHANNELS[livi-link]}</table><h2>${NAME[livi-os]}</h2><table>${CHANNELS[livi-os]}</table>" > "$DEST/index.html"
