@@ -64,6 +64,7 @@ mod players;
 mod screens;
 mod sessions;
 mod state;
+#[cfg_attr(not(feature = "net"), allow(dead_code, unused_imports))]
 pub mod theme_catalog;
 
 const RAMP_DOWN_MS: u32 = 500;

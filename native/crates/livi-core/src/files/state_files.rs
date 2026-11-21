@@ -64,14 +64,14 @@ const VEHICLE: Kind = Kind {
     version: 1,
     pace: Duration::from_secs(1),
 };
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 const SDR: Kind = Kind {
     name: "sdr.json",
     version: 1,
     pace: QUICK,
 };
 
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Sdr {
@@ -81,14 +81,14 @@ pub struct Sdr {
     pub last_fm: Option<u32>,
 }
 
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 pub fn load_sdr(user_data: &Path) -> Sdr {
     payload_of(user_data, &SDR)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default()
 }
 
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 pub fn save_sdr(user_data: &Path, sdr: &Sdr) {
     write(
         &user_data.join(DIR).join(SDR.name),
@@ -343,7 +343,7 @@ pub fn saved(user_data: &Path) -> Saved {
 
 #[cfg(test)]
 mod tests {
-    use livi_core_proto::state::{DabStation, FmStation, Front, PerScreen};
+    use livi_core_proto::state::{Front, PerScreen};
 
     use super::*;
     use crate::files::config_file::defaults;
@@ -558,8 +558,11 @@ mod tests {
         assert!(dir.0.join("config.json").exists());
     }
 
+    #[cfg(all(usb_host, feature = "sdr"))]
     #[test]
     fn the_station_list_lives_in_sdr_json() {
+        use livi_core_proto::state::{DabStation, FmStation};
+
         let dir = TempDir::new();
         assert_eq!(load_sdr(&dir.0), Sdr::default());
         let sdr = Sdr {

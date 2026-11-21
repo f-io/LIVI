@@ -124,6 +124,7 @@ impl Core {
             .map_err(|_| "updates are not available".to_string())
     }
 
+    #[cfg(feature = "net")]
     pub fn relaunch(&self, program: PathBuf) {
         *self.relaunch.lock().unwrap_or_else(|e| e.into_inner()) = Some(program);
         self.restart.store(true, Ordering::SeqCst);

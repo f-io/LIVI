@@ -9,8 +9,11 @@ name = "livi-core"
 path = "src/main.rs"
 
 [features]
-default = ["url-video"]
+default = ["url-video", "sdr", "mutter", "net"]
 url-video = ["livi-cp/url-video"]
+sdr = ["dep:livi-dab", "dep:livi-fm", "dep:livi-rtlsdr"]
+mutter = ["dep:zbus"]
+net = ["dep:reqwest", "dep:skrifa"]
 
 [dependencies]
 livi-base.workspace = true
@@ -23,8 +26,8 @@ livi-cp.workspace = true
 livi-link-host.workspace = true
 livi-output-proto.workspace = true
 livi-media.workspace = true
-livi-dab.workspace = true
-livi-fm.workspace = true
+livi-dab = { workspace = true, optional = true }
+livi-fm = { workspace = true, optional = true }
 livi-session-io.workspace = true
 livi-wifi.workspace = true
 axum = "0.8.9"
@@ -34,8 +37,8 @@ jiff = { version = "1.0.1", default-features = false, features = ["std", "tz-sys
 libc.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
-skrifa = { version = "0.50.0", default-features = false, features = ["std"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"], optional = true }
+skrifa = { version = "0.50.0", default-features = false, features = ["std"], optional = true }
 socketioxide = "0.18.9"
 tokio = { workspace = true, features = [
   "rt-multi-thread",
@@ -49,14 +52,14 @@ tokio = { workspace = true, features = [
   "fs",
 ] }
 tower-http = { version = "0.7.1", features = ["cors"] }
-zbus = { workspace = true, features = ["tokio"] }
+zbus = { workspace = true, features = ["tokio"], optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 livi-aaudio.workspace = true
 livi-net.workspace = true
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
-livi-rtlsdr.workspace = true
+livi-rtlsdr = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -295,7 +295,7 @@ impl Services {
             hub.clone(),
             settings.clone(),
         ));
-        #[cfg(usb_host)]
+        #[cfg(all(usb_host, feature = "sdr"))]
         if let Some(radio_asks) = asks.radio.take() {
             tokio::spawn(crate::radio::run(
                 hub.clone(),
@@ -306,7 +306,7 @@ impl Services {
                 resume_radio,
             ));
         }
-        #[cfg(not(usb_host))]
+        #[cfg(not(all(usb_host, feature = "sdr")))]
         let _ = (asks.radio.take(), resume_radio);
 
         let carplay = CarPlay {

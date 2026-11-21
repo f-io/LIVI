@@ -2,23 +2,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#[cfg(feature = "mutter")]
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(feature = "mutter")]
 use zbus::OwnedVariant;
 
+#[cfg(feature = "mutter")]
 use livi_core_proto::state::Display;
 
 use crate::hub::Hub;
 use crate::system::privileged;
 
+#[cfg(feature = "mutter")]
 const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
 const PIN_TIMEOUT: Duration = Duration::from_secs(5);
 const VIDEO_MODE_HELPER: &str = "/usr/local/lib/livi/livi-video-mode.sh";
+#[cfg(feature = "mutter")]
 const MUTTER: &str = "org.gnome.Mutter.DisplayConfig";
+#[cfg(feature = "mutter")]
 const MUTTER_PATH: &str = "/org/gnome/Mutter/DisplayConfig";
 
+#[cfg(feature = "mutter")]
 fn largest_first(sizes: impl Iterator<Item = (u32, u32)>) -> Vec<String> {
     let mut modes: Vec<(u32, u32)> = Vec::new();
     for size in sizes {
@@ -30,9 +37,13 @@ fn largest_first(sizes: impl Iterator<Item = (u32, u32)>) -> Vec<String> {
     modes.into_iter().map(|(w, h)| format!("{w}x{h}")).collect()
 }
 
+#[cfg(feature = "mutter")]
 type Props = HashMap<String, OwnedVariant>;
+#[cfg(feature = "mutter")]
 type MutterMode = (String, i32, i32, f64, f64, Vec<f64>, Props);
+#[cfg(feature = "mutter")]
 type MutterMonitor = ((String, String, String, String), Vec<MutterMode>, Props);
+#[cfg(feature = "mutter")]
 type MutterLogical = (
     i32,
     i32,
@@ -42,8 +53,10 @@ type MutterLogical = (
     Vec<(String, String, String, String)>,
     Props,
 );
+#[cfg(feature = "mutter")]
 type MutterState = (u32, Vec<MutterMonitor>, Vec<MutterLogical>, Props);
 
+#[cfg(feature = "mutter")]
 fn mutter_displays_in(monitors: &[MutterMonitor]) -> Vec<Display> {
     monitors
         .iter()
@@ -68,6 +81,7 @@ fn mutter_displays_in(monitors: &[MutterMonitor]) -> Vec<Display> {
         .collect()
 }
 
+#[cfg(feature = "mutter")]
 async fn mutter_displays() -> Vec<Display> {
     let state = async {
         let bus = zbus::Connection::session().await.ok()?;
@@ -109,16 +123,22 @@ pub async fn prepare(hub: &Hub) {
     if !cfg!(target_os = "linux") {
         return;
     }
-    let displays = mutter_displays().await;
-    if !displays.is_empty() {
-        hub.update(|s| s.system.displays = displays);
+    #[cfg(feature = "mutter")]
+    {
+        let displays = mutter_displays().await;
+        if !displays.is_empty() {
+            hub.update(|s| s.system.displays = displays);
+        }
     }
+    #[cfg(not(feature = "mutter"))]
+    let _ = hub;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(feature = "mutter")]
     #[test]
     fn gnome_gives_its_modes_as_sizes_of_every_monitor() {
         let mode = |w: i32, h: i32, hz: f64| {

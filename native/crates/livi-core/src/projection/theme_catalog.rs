@@ -43,6 +43,7 @@ pub fn cached(dir: &Path, configured: &str) -> Option<Theme> {
         .filter(|t| t.id == configured)
 }
 
+#[cfg(feature = "net")]
 pub async fn fetch(dir: &Path, configured: &str) -> Result<Theme, String> {
     let id = ThemeId::parse(configured).ok_or_else(|| format!("not a theme id: {configured}"))?;
     let catalog = catalog_client().await?;
@@ -59,6 +60,7 @@ pub async fn fetch(dir: &Path, configured: &str) -> Result<Theme, String> {
     Ok(theme)
 }
 
+#[cfg(feature = "net")]
 async fn catalog_client() -> Result<reqwest::Client, String> {
     let der = crate::http::builder()
         .build()
@@ -83,6 +85,7 @@ async fn catalog_client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "net")]
 async fn package_url(client: &reqwest::Client, id: &ThemeId) -> Result<String, String> {
     let ask = json!({
         "AssetAudience": "0c88076f-c292-4dad-95e7-304db9d29d34",
@@ -143,6 +146,7 @@ struct ZipIndex {
     entries: Vec<ZipEntry>,
 }
 
+#[cfg(feature = "net")]
 impl ZipIndex {
     async fn read(client: &reqwest::Client, url: &str) -> Result<Self, String> {
         let tail = client
@@ -178,6 +182,7 @@ impl ZipIndex {
     }
 }
 
+#[cfg(feature = "net")]
 async fn range(
     client: &reqwest::Client,
     url: &str,
@@ -195,6 +200,7 @@ async fn range(
     Ok(answer.bytes().await.map_err(|e| e.to_string())?.to_vec())
 }
 
+#[cfg(feature = "net")]
 async fn json_entry(
     client: &reqwest::Client,
     url: &str,

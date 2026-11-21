@@ -2,26 +2,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod audio;
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod dab;
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod fm;
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod focus;
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod list;
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod receiver;
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 mod thread;
 
 use livi_core_proto::message::MediaControl;
 use livi_core_proto::state::{Dab, Fm, Protocol};
 use tokio::sync::mpsc;
 
-#[cfg(usb_host)]
+#[cfg(all(usb_host, feature = "sdr"))]
 pub use receiver::run;
 
 /// One stick, so one band at a time.

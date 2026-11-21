@@ -19,9 +19,11 @@ mod camera;
 mod devices;
 mod dongle;
 mod files;
+#[cfg(all(feature = "net", not(target_env = "musl")))]
 mod fonts;
 mod gnss;
 mod helper;
+#[cfg(feature = "net")]
 mod http;
 mod hub;
 mod mfi;
@@ -32,6 +34,7 @@ mod server;
 mod services;
 mod system;
 mod ui;
+#[cfg_attr(not(feature = "net"), allow(dead_code, unused_imports))]
 mod update;
 mod vehicle;
 
@@ -157,11 +160,15 @@ pub async fn run(
     tokio::spawn(vehicle::car_bridge::run(core.clone(), inside.clone()));
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     tokio::spawn(audio::system_volume::follow(core.clone()));
+    #[cfg(feature = "net")]
     tokio::spawn(update::run(
         core.clone(),
         update_asks,
         res.installer.clone(),
     ));
+    #[cfg(not(feature = "net"))]
+    drop(update_asks);
+    #[cfg(all(feature = "net", not(target_env = "musl")))]
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));
     files::state_files::start(&core, core.activity(), &user_data);
     tokio::spawn(audio::audio_devices::follow(

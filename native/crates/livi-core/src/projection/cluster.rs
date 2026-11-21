@@ -41,15 +41,18 @@ impl Projection {
         if theme.id != self.cluster.theme.id {
             self.cluster = kept_cluster(cfg, theme);
         }
-        if !fetch {
-            return;
+        if fetch {
+            self.fetch_theme(configured.clone());
         }
+    }
+
+    #[cfg(not(feature = "net"))]
+    fn fetch_theme(&mut self, _: String) {}
+
+    #[cfg(feature = "net")]
+    fn fetch_theme(&mut self, configured: String) {
         self.theme_asked = configured.clone();
-        let (dir, id, ready) = (
-            self.themes.clone(),
-            configured.clone(),
-            self.theme_ready.0.clone(),
-        );
+        let (dir, id, ready) = (self.themes.clone(), configured, self.theme_ready.0.clone());
         tokio::spawn(async move {
             match theme_catalog::fetch(&dir, &id).await {
                 Ok(theme) => {
