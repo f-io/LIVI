@@ -158,11 +158,12 @@ jobs:
           path: build/${{ matrix.target }}/gst-prefix
           key: ${{ steps.gst.outputs.cache-primary-key }}
 
+      # The job holds only its own target, the artifact keeps the target's folder.
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
-          path: assets/livi-os/${{ matrix.target }}
+          path: assets/livi-os
           retention-days: 30
 
       - name: Save cargo cache
@@ -189,6 +190,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: assets/livi-os
+          merge-multiple: true
 
       - name: Publish the firmware bundles
         env:

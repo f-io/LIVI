@@ -47,6 +47,9 @@ for channel in $CHANNELS; do
       git fetch -q --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
       seed "$work" "refs/tags/$tag" ;;
   esac
+  # Only manifests belong here, and only in a target's folder.
+  find "$work/assets" -type f ! -name '*.json' -delete 2>/dev/null || true
+  find "$work/assets/$PRODUCT" -maxdepth 1 -type f -delete 2>/dev/null || true
 
   for t in $TARGETS; do
     [ -f "assets/$PRODUCT/$t/firmware.json" ] || continue
