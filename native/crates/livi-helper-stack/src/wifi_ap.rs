@@ -16,6 +16,7 @@ const HOSTAPD_LOG: &str = "/tmp/livi-hostapd.log";
 const NM_UNMANAGED_CONF: &str = "/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf";
 const FIREWALLD_ZONE: &str = "/run/livi-ap-firewalld-zone";
 const LAST_GOOD: &str = "/tmp/livi-ap-last-good";
+const SAE_PROBE_CONF: &str = "/tmp/livi-hostapd-sae-probe.conf";
 const SAFE_CHANNEL_5: Channel = Channel {
     band: Band::Ghz5,
     number: 36,
@@ -37,7 +38,7 @@ pub struct ApConfig {
 }
 
 fn radio(iface: &str) -> Radio {
-    livi_wifi::radio(iface)
+    let mut radio = livi_wifi::radio(iface)
         .filter(|r| !r.bands.is_empty())
         .unwrap_or_else(|| {
             Standards {
@@ -45,7 +46,32 @@ fn radio(iface: &str) -> Radio {
                 he: false,
             }
             .into()
-        })
+        });
+    if radio.ap_sae && !hostapd_has_sae() {
+        radio.ap_sae = false;
+    }
+    radio
+}
+
+/// hostapd built without CONFIG_SAE rejects SAE while reading its config, before it opens the interface.
+fn hostapd_has_sae() -> bool {
+    let conf = "interface=livi-sae-probe\nssid=probe\nwpa=2\nwpa_passphrase=probeprobe\n\
+                wpa_key_mgmt=SAE\nrsn_pairwise=CCMP\nieee80211w=2\n";
+    if std::fs::write(SAE_PROBE_CONF, conf).is_err() {
+        return true;
+    }
+    let out = Command::new(livi_base::sys::tool("hostapd"))
+        .arg(SAE_PROBE_CONF)
+        .stdin(Stdio::null())
+        .output();
+    let _ = std::fs::remove_file(SAE_PROBE_CONF);
+    let Ok(out) = out else { return true };
+    let text = [out.stdout, out.stderr].concat();
+    let has = !String::from_utf8_lossy(&text).contains("invalid key_mgmt 'SAE'");
+    if !has {
+        println!("[wifi-ap] hostapd has no SAE, WPA3 is not offered");
+    }
+    has
 }
 
 fn described(radio: &Radio) -> String {
@@ -378,6 +404,22 @@ fn setup_interface(cfg: &ApConfig) {
     ensure_link_local(&cfg.iface);
 }
 
+fn wait_for_iface(iface: &str) {
+    let dir = std::path::Path::new("/sys/class/net").join(iface);
+    if dir.exists() {
+        return;
+    }
+    println!("[wifi-ap] waiting for {iface} to appear");
+    let since = Instant::now();
+    while !dir.exists() {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    println!(
+        "[wifi-ap] {iface} appeared after {:.1}s",
+        since.elapsed().as_secs_f32()
+    );
+}
+
 fn hostapd_state(iface: &str) -> String {
     let out = livi_wifi::hostapd::status(&std::path::Path::new(HOSTAPD_CTRL).join(iface))
         .unwrap_or_default();
@@ -457,6 +499,30 @@ fn spawn_hostapd() -> std::io::Result<Child> {
         .spawn()
 }
 
+fn has(tool: &str) -> bool {
+    std::path::Path::new(&livi_base::sys::tool(tool)).is_absolute()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn serve_dhcp(_: &ApConfig) {}
+
+#[cfg(target_os = "linux")]
+fn serve_dhcp(cfg: &ApConfig) {
+    let Ok(ip) = cfg.ap_ip.parse::<std::net::Ipv4Addr>() else {
+        eprintln!("[wifi-ap] {} is no IPv4 address, no DHCP", cfg.ap_ip);
+        return;
+    };
+    let iface = cfg.iface.clone();
+    std::thread::spawn(move || {
+        loop {
+            if let Err(e) = livi_net::dhcp::serve(&iface, ip, 10, 50) {
+                eprintln!("[wifi-ap] dhcp on {iface}: {e}");
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
 fn spawn_dnsmasq() -> std::io::Result<Child> {
     Command::new(livi_base::sys::tool("dnsmasq"))
         .args([
@@ -491,15 +557,22 @@ pub fn run(cfg: ApConfig) -> ! {
     firewalld_open(&cfg.iface);
     let _ = std::fs::remove_file(HOSTAPD_LOG);
     let mut cfg = cfg;
+    wait_for_iface(&cfg.iface);
     let radio = radio(&cfg.iface);
     println!("[wifi-ap] {} offers {}", cfg.iface, described(&radio));
+    let dnsmasq_here = has("dnsmasq");
+    if !dnsmasq_here {
+        serve_dhcp(&cfg);
+    }
     let mut weakened: Option<String> = None;
     loop {
         run_cmd("pkill", &["-f", &format!("hostapd.*{HOST_CONF}")]);
         run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
         std::thread::sleep(Duration::from_millis(300));
         setup_interface(&cfg);
-        wait_regulatory(&cfg.country, Duration::from_secs(10));
+        if has("iw") {
+            wait_regulatory(&cfg.country, Duration::from_secs(10));
+        }
         let conf = weakened
             .clone()
             .unwrap_or_else(|| hostapd_conf(&cfg, &radio));
@@ -508,7 +581,7 @@ pub fn run(cfg: ApConfig) -> ! {
             std::thread::sleep(Duration::from_secs(5));
             continue;
         }
-        let mut dnsmasq = match spawn_dnsmasq() {
+        let mut dnsmasq = match dnsmasq_here.then(spawn_dnsmasq).transpose() {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("[wifi-ap] dnsmasq spawn failed: {e}");
@@ -520,7 +593,9 @@ pub fn run(cfg: ApConfig) -> ! {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("[wifi-ap] hostapd spawn failed: {e}");
-                let _ = dnsmasq.kill();
+                if let Some(d) = dnsmasq.as_mut() {
+                    let _ = d.kill();
+                }
                 std::thread::sleep(Duration::from_secs(5));
                 continue;
             }
@@ -563,7 +638,7 @@ pub fn run(cfg: ApConfig) -> ! {
                 eprintln!("[wifi-ap] hostapd exited ({st}), restarting");
                 break;
             }
-            if let Ok(Some(st)) = dnsmasq.try_wait() {
+            if let Some(Ok(Some(st))) = dnsmasq.as_mut().map(Child::try_wait) {
                 eprintln!("[wifi-ap] dnsmasq exited ({st}), restarting");
                 break;
             }
@@ -579,8 +654,10 @@ pub fn run(cfg: ApConfig) -> ! {
         }
         let _ = hostapd.kill();
         let _ = hostapd.wait();
-        let _ = dnsmasq.kill();
-        let _ = dnsmasq.wait();
+        if let Some(mut d) = dnsmasq {
+            let _ = d.kill();
+            let _ = d.wait();
+        }
         std::thread::sleep(Duration::from_secs(2));
     }
 }

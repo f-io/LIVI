@@ -73,13 +73,16 @@ pub fn serve(iface: &str, server_ip: Ipv4Addr, pool_start: u8, pool_end: u8) -> 
             size_of::<libc::c_int>() as u32,
         );
         let iface_bytes = iface.as_bytes();
-        libc::setsockopt(
+        if libc::setsockopt(
             sock,
             libc::SOL_SOCKET,
             libc::SO_BINDTODEVICE,
             iface_bytes.as_ptr() as *const _,
             iface_bytes.len() as u32,
-        );
+        ) < 0
+        {
+            return Err(io::Error::last_os_error());
+        }
 
         let addr = libc::sockaddr_in {
             sin_family: libc::AF_INET as u16,
@@ -182,14 +185,20 @@ pub fn serve(iface: &str, server_ip: Ipv4Addr, pool_start: u8, pool_end: u8) -> 
                 },
                 sin_zero: [0; 8],
             };
-            libc::sendto(
+            if libc::sendto(
                 sock,
                 out.as_ptr() as *const _,
                 out.len(),
                 0,
                 &dst as *const _ as *const _,
                 size_of_val(&dst) as u32,
-            );
+            ) < 0
+            {
+                eprintln!(
+                    "[dhcp] {label} not sent: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
         }
     }
 }

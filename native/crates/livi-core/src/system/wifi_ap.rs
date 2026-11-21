@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -219,13 +219,10 @@ fn parse_status(out: &str) -> Option<Running> {
     })
 }
 
-async fn settle(p: &Privileged, core: &Core, started: &Config) -> Config {
+async fn settle(helper: &Path, core: &Core, started: &Config) -> Config {
     let mut ran = started.clone();
     for _ in 0..SETTLE_TRIES {
-        let out = Command::new(&p.helper)
-            .arg("--wifi-ap-status")
-            .output()
-            .await;
+        let out = Command::new(helper).arg("--wifi-ap-status").output().await;
         if let Some(live) = out
             .ok()
             .and_then(|o| parse_status(&String::from_utf8_lossy(&o.stdout)))
@@ -266,13 +263,16 @@ pub async fn follow(core: Arc<Core>, p: Privileged) {
     if !cfg!(target_os = "linux") {
         return;
     }
+    if !Path::new(&systemctl()).exists() {
+        return own_child(core, p.helper).await;
+    }
     let mut applied = core.hub.applied();
     let cfg = applied.borrow_and_update().clone();
     if reconcile(&p, &cfg).await {
         on_air(&cfg.wifi_interface).await;
     }
     core.ap_ready().send_replace(true);
-    let ran = settle(&p, &core, &cfg).await;
+    let ran = settle(&p.helper, &core, &cfg).await;
     let mut linked = link_settings(&ran);
     let mut started_with = ap_settings(&ran);
     while applied.changed().await.is_ok() {
@@ -293,9 +293,64 @@ pub async fn follow(core: Arc<Core>, p: Privileged) {
         sudo(&[&systemctl(), "restart", SERVICE]).await;
         on_air(&cfg.wifi_interface).await;
         core.ap_ready().send_replace(true);
-        let ran = settle(&p, &core, &cfg).await;
+        let ran = settle(&p.helper, &core, &cfg).await;
         linked = link_settings(&ran);
         started_with = ap_settings(&ran);
+    }
+}
+
+fn spawn_ap(helper: &Path) -> Option<tokio::process::Child> {
+    let mut cmd = Command::new(helper);
+    cmd.arg("--wifi-ap").kill_on_drop(true);
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: prctl is async-signal-safe and touches only the child's own state.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
+    }
+    cmd.spawn()
+        .inspect_err(|e| eprintln!("[wifi-ap] {} --wifi-ap: {e}", helper.display()))
+        .ok()
+}
+
+async fn own_child(core: Arc<Core>, helper: PathBuf) {
+    let mut applied = core.hub.applied();
+    let mut cfg = applied.borrow_and_update().clone();
+    loop {
+        let ap = wanted(&cfg).then(|| spawn_ap(&helper)).flatten();
+        let ran = if ap.is_some() {
+            core.ap_ready().send_replace(false);
+            on_air(&cfg.wifi_interface).await;
+            core.ap_ready().send_replace(true);
+            settle(&helper, &core, &cfg).await
+        } else {
+            core.ap_ready().send_replace(true);
+            cfg.clone()
+        };
+        let started = (wanted(&ran), ap_settings(&ran));
+        loop {
+            if applied.changed().await.is_err() {
+                return;
+            }
+            cfg = applied.borrow_and_update().clone();
+            if (wanted(&cfg), ap_settings(&cfg)) != started {
+                break;
+            }
+        }
+        if let Some(mut ap) = ap {
+            let _ = ap.kill().await;
+            let _ = Command::new(&helper)
+                .arg("--wifi-ap-teardown")
+                .status()
+                .await;
+        }
+        if wanted(&cfg) {
+            println!("[wifi-ap] restarting with the new settings");
+        }
     }
 }
 
