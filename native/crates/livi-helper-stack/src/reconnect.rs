@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "bluez")]
 use zbus::Connection;
 
 use crate::state::HelperState;
@@ -122,12 +123,14 @@ pub async fn run(radio: impl Paging, state: Arc<HelperState>) {
     }
 }
 
+#[cfg(feature = "bluez")]
 pub struct Bluez {
     pub conn: Connection,
     pub adapter: String,
     pub ap_iface: String,
 }
 
+#[cfg(feature = "bluez")]
 impl Paging for Bluez {
     fn ready(&self) -> bool {
         crate::net::wlan_link_local(&self.ap_iface).is_some()
@@ -169,6 +172,7 @@ impl Paging for Bluez {
     }
 }
 
+#[cfg(feature = "bluez")]
 fn device_path(adapter: &str, mac: &str) -> String {
     format!(
         "/org/bluez/{}/dev_{}",
@@ -177,6 +181,7 @@ fn device_path(adapter: &str, mac: &str) -> String {
     )
 }
 
+#[cfg(feature = "bluez")]
 async fn device_connected(conn: &Connection, path: &str) -> Option<bool> {
     let reply = conn
         .call_method(
@@ -192,6 +197,7 @@ async fn device_connected(conn: &Connection, path: &str) -> Option<bool> {
     bool::try_from(value).ok()
 }
 
+#[cfg(feature = "bluez")]
 async fn page(conn: &Connection, path: &str, uuid: Option<&str>) -> Result<(), zbus::Error> {
     match uuid {
         Some(uuid) => {
@@ -218,6 +224,7 @@ async fn page(conn: &Connection, path: &str, uuid: Option<&str>) -> Result<(), z
     Ok(())
 }
 
+#[cfg(feature = "bluez")]
 async fn disconnect(conn: &Connection, path: &str) -> Result<(), zbus::Error> {
     conn.call_method(
         Some("org.bluez"),

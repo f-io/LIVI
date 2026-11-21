@@ -364,10 +364,10 @@ async fn find_usb_iface(udid: String, found: tokio::sync::watch::Sender<Option<S
     eprintln!("[wired] {}: no USB network interface: {last}", short(&udid));
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 const AIRPLAY_NAME: &str = "LIVI";
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 #[derive(Clone)]
 pub struct Airplay {
     pub txt: Vec<String>,
@@ -530,7 +530,7 @@ impl LocalNcm {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub(crate) fn announce(
     ifname: &str,
     address: std::net::Ipv6Addr,

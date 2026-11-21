@@ -18,8 +18,50 @@ mod pactl;
 
 #[cfg(target_os = "macos")]
 use coreaudio as output;
+
 #[cfg(target_os = "linux")]
-use pactl as output;
+mod output {
+    use tokio::sync::mpsc;
+
+    use super::{Fault, OutputEvent, pactl};
+    #[cfg(feature = "uart-module")]
+    use crate::uart_module;
+
+    pub enum Watch {
+        #[cfg(feature = "uart-module")]
+        Module(#[allow(dead_code)] uart_module::Watch),
+        Pactl(#[allow(dead_code)] pactl::Watch),
+    }
+
+    #[cfg(feature = "uart-module")]
+    fn module() -> bool {
+        livi_core_proto::helper::uart_module().is_some()
+    }
+
+    pub async fn get(device: &str) -> Result<f64, Fault> {
+        #[cfg(feature = "uart-module")]
+        if module() {
+            return uart_module::get(device).await;
+        }
+        pactl::get(device).await
+    }
+
+    pub async fn set(device: &str, level: f64) -> Result<(), Fault> {
+        #[cfg(feature = "uart-module")]
+        if module() {
+            return uart_module::set(device, level).await;
+        }
+        pactl::set(device, level).await
+    }
+
+    pub fn watch(tx: mpsc::UnboundedSender<OutputEvent>) -> Watch {
+        #[cfg(feature = "uart-module")]
+        if module() {
+            return Watch::Module(uart_module::watch(tx));
+        }
+        Watch::Pactl(pactl::watch(tx))
+    }
+}
 
 const ECHO_WINDOW: Duration = Duration::from_millis(400);
 const READ_DEBOUNCE: Duration = Duration::from_millis(120);
@@ -131,6 +173,7 @@ pub async fn follow(core: Arc<Core>) {
     let mut last: Option<f64> = None;
     loop {
         let cfg = state.borrow_and_update().config.clone();
+        let target = cfg.hu_volume;
         if !cfg.hu_volume_link_system {
             if following.take().is_some() {
                 watcher = None;
@@ -143,16 +186,15 @@ pub async fn follow(core: Arc<Core>) {
                 println!("[volume] watching the output for changes made outside LIVI");
             }
             let level = mixer.get(cfg.audio_output_device.as_deref()).await;
-            if let Some(level) = level {
-                take_system_level(&core, level, "starts from the system").await;
+            match level {
+                Some(level) => take_system_level(&core, level, "starts from the system").await,
+                None => mixer.set(target, cfg.audio_output_device.as_deref()).await,
             }
-            applied = Some(level.unwrap_or(cfg.hu_volume));
+            applied = Some(level.unwrap_or(target));
             last = level;
-        } else if applied.is_none_or(|a| (cfg.hu_volume - a).abs() >= SAME) {
-            applied = Some(cfg.hu_volume);
-            mixer
-                .set(cfg.hu_volume, cfg.audio_output_device.as_deref())
-                .await;
+        } else if applied.is_none_or(|a| (target - a).abs() >= SAME) {
+            applied = Some(target);
+            mixer.set(target, cfg.audio_output_device.as_deref()).await;
         }
         let deadline = read_at;
         let debounce = async move {

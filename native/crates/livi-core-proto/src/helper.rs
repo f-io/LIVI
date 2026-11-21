@@ -34,6 +34,29 @@ const AIRPLAY_PORT: &str = "LIVI_CP_AIRPLAY_PORT";
 const MIRROR_PORT: &str = "LIVI_AIRPLAY_PORT";
 const MIRROR_TXT: &str = "LIVI_AIRPLAY_TXT";
 const MIRROR_NAME: &str = "LIVI_AIRPLAY_NAME";
+const UART_MODULE: &str = "LIVI_UART_MODULE";
+
+pub const MODULE: &str = "module";
+
+pub fn uart_module() -> Option<PathBuf> {
+    std::env::var_os(UART_MODULE).map(PathBuf::from)
+}
+
+pub const MODULE_BT_MAC: &str = "/tmp/livi/bt-mac";
+
+pub fn module_bt_mac() -> Option<[u8; 6]> {
+    let text = std::fs::read_to_string(MODULE_BT_MAC).ok()?;
+    let mut out = [0u8; 6];
+    let mut parts = text.trim().split(':');
+    for byte in &mut out {
+        *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
+    }
+    parts.next().is_none().then_some(out)
+}
+
+pub fn kernel_bluetooth() -> bool {
+    cfg!(target_os = "linux") && Path::new("/sys/class/bluetooth").exists()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HelperSockets {
@@ -42,6 +65,7 @@ pub struct HelperSockets {
     pub shared: PathBuf,
     pub sco_mic: PathBuf,
     pub sessions: PathBuf,
+    pub module: PathBuf,
     pub mfi_chip: PathBuf,
 }
 
@@ -53,6 +77,7 @@ impl HelperSockets {
             shared: dir.join("livi-shared.sock"),
             sco_mic: dir.join("aa-sco.mic"),
             sessions: dir.to_path_buf(),
+            module: dir.join("module.sock"),
             mfi_chip: dir.join("mfi-chip.json"),
         }
     }

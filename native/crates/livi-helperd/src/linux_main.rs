@@ -82,7 +82,7 @@ fn configured_channel(dc: &DeviceConfig) -> Channel {
 }
 
 fn ap_iface(dc: &DeviceConfig) -> String {
-    livi_helper::bluez::ap_iface(&dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0"))
+    livi_helper::ap_iface(&dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0"))
 }
 
 pub fn host() -> Host {

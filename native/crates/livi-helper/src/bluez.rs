@@ -40,14 +40,6 @@ pub struct Bluetooth {
     pub sco_sink: ScoSink,
 }
 
-pub fn ap_iface(chosen: &str) -> String {
-    let iface = crate::or(chosen, "wlan0");
-    if iface != livi_link_host::link::CHOICE {
-        return iface;
-    }
-    livi_link_host::link::host_iface().unwrap_or(iface)
-}
-
 pub fn session_cp(cp: &CpConfig, dongle_ap: bool) -> CpConfig {
     if !dongle_ap {
         return cp.clone();
@@ -236,7 +228,7 @@ async fn access_point(cfg: &AaConfig, dongle_ap: bool) -> Told {
     tokio::task::spawn_blocking(move || {
         if dongle_ap {
             let passphrase = base.passphrase.clone();
-            return on_dongle(&base, passphrase);
+            return on_dongle(&base, passphrase, livi_link_host::link::CHOICE);
         }
         let iface = base.wifi_iface.clone();
         let live = livi_link_host::on_air(&iface);

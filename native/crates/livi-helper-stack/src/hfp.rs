@@ -40,6 +40,26 @@ impl Hfp {
         self.inner.calls.load(Ordering::Relaxed) > 0
     }
 
+    pub fn chip_link(&self, mac: &str, up: bool) {
+        let inner = &self.inner;
+        if inner.links.lock().unwrap().contains(&mac.to_uppercase()) == up {
+            return;
+        }
+        if up {
+            inner.links.lock().unwrap().insert(mac.to_uppercase());
+            inner.established.store(true, Ordering::SeqCst);
+            slc::emit(
+                inner,
+                livi_core_proto::aa_events::AaHelperEvent::Hfp {
+                    up: true,
+                    mac: Some(mac.to_string()),
+                },
+            );
+        } else {
+            slc::finish(inner, mac, true, false);
+        }
+    }
+
     pub fn accept(&self, fd: std::os::fd::OwnedFd, mac: String) {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || slc::slc_loop(&inner, fd, Vec::new(), true, &mac));
@@ -128,13 +148,13 @@ mod slc {
         }
     }
 
-    fn emit(inner: &HfpInner, event: AaHelperEvent) {
+    pub(super) fn emit(inner: &HfpInner, event: AaHelperEvent) {
         if let Some(ev) = inner.events.lock().unwrap().as_ref() {
             ev.push_json(event.to_line());
         }
     }
 
-    fn finish(inner: &HfpInner, mac: &str, was_up: bool, calling: bool) {
+    pub(super) fn finish(inner: &HfpInner, mac: &str, was_up: bool, calling: bool) {
         inner.links.lock().unwrap().remove(&mac.to_uppercase());
         if calling {
             inner.calls.fetch_sub(1, Ordering::Relaxed);

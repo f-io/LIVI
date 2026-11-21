@@ -103,6 +103,11 @@ impl Drop for Bonjour {
     }
 }
 
+#[cfg(not(target_vendor = "apple"))]
+pub fn avahi() -> bool {
+    std::path::Path::new(&livi_base::sys::tool("avahi-publish-service")).is_absolute()
+}
+
 fn publish(record: &Record, device_id: &str) -> std::io::Result<Publisher> {
     let txt = txt_records(device_id, &record.source_version, &record.pk, &record.pi);
     spawn("LIVI", record.airplay_port, &txt)

@@ -18,5 +18,10 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "
 serde_json.workspace = true
 libc.workspace = true
 
+[features]
+default = ["bluez"]
+bluez = ["livi-helper/bluez", "livi-helper-stack/bluez"]
+ab5301 = ["livi-helper/ab5301"]
+
 [lints]
 workspace = true

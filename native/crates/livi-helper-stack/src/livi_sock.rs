@@ -56,9 +56,16 @@ impl Broadcaster {
     }
 }
 
+#[cfg(feature = "bluez")]
+pub type Bus = zbus::Connection;
+
+#[cfg(not(feature = "bluez"))]
+#[derive(Clone, Debug)]
+pub enum Bus {}
+
 #[derive(Clone)]
 pub struct Bluez {
-    pub bus: zbus::Connection,
+    pub bus: Bus,
     pub adapter: String,
     pub bt_mac: [u8; 6],
 }
@@ -375,11 +382,13 @@ pub async fn pump_events_for(
     }
 }
 
-pub async fn device_disconnect(
-    bus: &zbus::Connection,
-    adapter: &str,
-    mac: &str,
-) -> Result<(), BtError> {
+#[cfg(not(feature = "bluez"))]
+pub async fn device_disconnect(bus: &Bus, _adapter: &str, _mac: &str) -> Result<(), BtError> {
+    match *bus {}
+}
+
+#[cfg(feature = "bluez")]
+pub async fn device_disconnect(bus: &Bus, adapter: &str, mac: &str) -> Result<(), BtError> {
     let path = format!(
         "/org/bluez/{}/dev_{}",
         adapter,

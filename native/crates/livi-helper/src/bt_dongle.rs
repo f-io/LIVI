@@ -49,6 +49,10 @@ impl Dongle {
     }
 
     pub fn disconnect(&self, mac: &str) -> Result<(), String> {
+        #[cfg(feature = "uart-module")]
+        if crate::uart_module::up() {
+            return crate::uart_module::disconnect(mac);
+        }
         let addr = hci::parse_addr(mac).ok_or_else(|| format!("{mac} is no Bluetooth address"))?;
         let stack = self.stack().ok_or("the dongle's Bluetooth is not up")?;
         if stack.disconnect(&addr) {

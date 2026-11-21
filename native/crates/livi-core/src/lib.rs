@@ -33,6 +33,8 @@ pub mod resources;
 mod server;
 mod services;
 mod system;
+#[cfg(feature = "uart-module")]
+mod uart_module;
 mod ui;
 #[cfg_attr(not(feature = "net"), allow(dead_code, unused_imports))]
 mod update;

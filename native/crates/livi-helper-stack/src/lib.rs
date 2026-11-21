@@ -26,7 +26,7 @@ pub mod state;
 pub mod vehicle;
 pub mod wifi_ap;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bluez"))]
 pub mod bt;
 pub mod mfi_async;
 

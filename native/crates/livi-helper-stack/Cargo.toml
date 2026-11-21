@@ -27,9 +27,13 @@ libc.workspace = true
 base64.workspace = true
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
-zbus = { workspace = true, features = ["tokio", "service"] }
+zbus = { workspace = true, features = ["tokio", "service"], optional = true }
 livi-hfp.workspace = true
 thiserror.workspace = true
+
+[features]
+default = ["bluez"]
+bluez = ["dep:zbus"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "test-util"] }

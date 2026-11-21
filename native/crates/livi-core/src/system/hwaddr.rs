@@ -103,8 +103,17 @@ pub fn bt_mac(adapter: &str) -> Option<String> {
     if let Ok(mac) = std::env::var("AA_BT_MAC") {
         return Some(mac);
     }
-    if adapter == livi_link_host::link::CHOICE && !cfg!(target_os = "linux") {
-        return livi_link_host::ap::bt_mac().map(|b| {
+    let userspace = if livi_core_proto::helper::kernel_bluetooth() {
+        None
+    } else if adapter == livi_link_host::link::CHOICE {
+        Some(livi_link_host::ap::bt_mac())
+    } else if adapter == livi_core_proto::helper::MODULE {
+        Some(livi_core_proto::helper::module_bt_mac())
+    } else {
+        None
+    };
+    if let Some(mac) = userspace {
+        return mac.map(|b| {
             b.iter()
                 .map(|x| format!("{x:02X}"))
                 .collect::<Vec<_>>()
@@ -157,7 +166,11 @@ fn bt_adapters_in(dir: &Path) -> Vec<String> {
 }
 
 pub fn bt_adapters() -> Vec<String> {
-    bt_adapters_in(Path::new(BT_SYSFS))
+    let mut adapters = bt_adapters_in(Path::new(BT_SYSFS));
+    if cfg!(feature = "uart-module") && livi_core_proto::helper::uart_module().is_some() {
+        adapters.push(livi_core_proto::helper::MODULE.into());
+    }
+    adapters
 }
 
 const CHIPS: [(u16, u16, &str); 11] = [
@@ -207,7 +220,19 @@ fn interface_models_in(net: &Path, bt: &Path, names: &[String]) -> BTreeMap<Stri
 }
 
 pub fn interface_models(names: &[String]) -> BTreeMap<String, String> {
-    interface_models_in(Path::new(NET_SYSFS), Path::new(BT_SYSFS), names)
+    let models = interface_models_in(Path::new(NET_SYSFS), Path::new(BT_SYSFS), names);
+    #[cfg(feature = "uart-module")]
+    let models = {
+        let mut models = models;
+        if names.iter().any(|n| n == livi_core_proto::helper::MODULE) {
+            models.insert(
+                livi_core_proto::helper::MODULE.into(),
+                crate::uart_module::MODEL.into(),
+            );
+        }
+        models
+    };
+    models
 }
 
 pub fn accessory_id(wifi_interface: &str) -> Option<String> {

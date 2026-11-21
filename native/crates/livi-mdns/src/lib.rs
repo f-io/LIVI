@@ -4,8 +4,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod daemon;
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub mod responder;
-#[cfg(any(target_os = "android", test))]
+#[cfg(any(target_os = "android", target_os = "linux", test))]
 pub mod service;
 pub mod wire;

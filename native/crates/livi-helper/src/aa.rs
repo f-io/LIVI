@@ -19,8 +19,6 @@ use livi_helper_stack::state::HelperState;
 use livi_wifi::{Channel, Security};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-#[cfg(not(target_os = "linux"))]
-const AP_WAIT: Duration = Duration::from_secs(15);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -52,9 +50,8 @@ impl WiredPhones {
     }
 }
 
-pub fn on_dongle(base: &AaConfig, passphrase: String) -> Told {
-    use livi_link_host::{ap, link};
-    let live = livi_link_host::on_air(link::CHOICE);
+pub fn on_dongle(base: &AaConfig, passphrase: String, wifi: &str) -> Told {
+    let live = livi_link_host::on_air(wifi);
     let told = AaConfig {
         ssid: live
             .as_ref()
@@ -62,48 +59,70 @@ pub fn on_dongle(base: &AaConfig, passphrase: String) -> Told {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| base.ssid.clone()),
         channel: live.as_ref().map_or(base.channel, |ap| ap.channel),
-        ap_ip: ip_facing_dongle().unwrap_or_else(|| base.ap_ip.clone()),
+        ap_ip: ap_ip(wifi).unwrap_or_else(|| base.ap_ip.clone()),
         passphrase,
         ..base.clone()
     };
     (
         told,
         live.map(|ap| ap.security).unwrap_or_default(),
-        ap::mac().unwrap_or_default(),
+        ap_mac(wifi).unwrap_or_default(),
     )
 }
 
-fn ip_facing_dongle() -> Option<String> {
+fn ap_mac(wifi: &str) -> Option<String> {
+    if wifi == livi_link_host::link::CHOICE {
+        livi_link_host::ap::mac()
+    } else {
+        livi_helper_stack::net::wlan_mac(wifi)
+    }
+}
+
+fn ap_ip(wifi: &str) -> Option<String> {
     #[cfg(target_os = "linux")]
-    let iface = livi_link_host::link::host_iface();
+    let iface = if wifi == livi_link_host::link::CHOICE {
+        livi_link_host::link::host_iface()
+    } else {
+        Some(wifi.to_string())
+    };
     #[cfg(not(target_os = "linux"))]
-    let iface =
-        livi_link_host::link::name().and_then(|name| livi_helper_stack::net::iface_facing(&name));
+    let iface = Some(crate::dongle::phones_iface(wifi)).filter(|i| !i.is_empty());
     iface
         .and_then(|iface| livi_helper_stack::net::ipv4_of(&iface))
         .map(|a| a.to_string())
 }
 
-#[cfg(not(target_os = "linux"))]
 pub async fn watch_dongle(
     mut arrivals: tokio::sync::mpsc::UnboundedReceiver<crate::bt_dongle::Arrival>,
     cfg: AaConfig,
+    wifi: String,
     bcast: Broadcaster,
     wired: WiredPhones,
     state: Arc<livi_helper_stack::state::HelperState>,
 ) {
     while let Some(arrival) = arrivals.recv().await {
-        let (cfg, bcast, wired, state) = (cfg.clone(), bcast.clone(), wired.clone(), state.clone());
+        let (cfg, wifi, bcast, wired, state) = (
+            cfg.clone(),
+            wifi.clone(),
+            bcast.clone(),
+            wired.clone(),
+            state.clone(),
+        );
         tokio::spawn(async move {
             let mac = arrival.peer;
-            println!("[aa] phone connected mac={mac} over the dongle");
-            let up = tokio::task::spawn_blocking(|| livi_link_host::ap::ready(AP_WAIT)).await;
+            println!("[aa] phone connected mac={mac} over bluetooth");
+            let ready = wifi.clone();
+            let up = tokio::task::spawn_blocking(move || {
+                crate::dongle::ap_ready(&ready, crate::dongle::AP_WAIT)
+            })
+            .await;
             if !up.unwrap_or(false) {
-                eprintln!("[aa] {mac}: the dongle's access point is not up");
+                eprintln!("[aa] {mac}: the access point is not up");
                 return;
             }
             let told =
-                tokio::task::spawn_blocking(move || on_dongle(&cfg, cfg.passphrase.clone())).await;
+                tokio::task::spawn_blocking(move || on_dongle(&cfg, cfg.passphrase.clone(), &wifi))
+                    .await;
             let Ok(told) = told else { return };
             bootstrap(arrival.stream, &mac, told, &bcast, &wired, &state).await;
         });

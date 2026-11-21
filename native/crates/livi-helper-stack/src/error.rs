@@ -12,8 +12,10 @@ pub enum AuthError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BtError {
+    #[cfg(feature = "bluez")]
     #[error(transparent)]
     Bus(#[from] zbus::Error),
+    #[cfg(feature = "bluez")]
     #[error("BlueZ never published {path}: {source}")]
     NoAdapter { path: String, source: zbus::Error },
     #[error("{0} requires a MAC")]

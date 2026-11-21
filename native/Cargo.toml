@@ -70,8 +70,8 @@ livi-cp = { path = "crates/livi-cp", default-features = false }
 livi-crypto = { path = "crates/livi-crypto" }
 livi-dab = { path = "crates/livi-dab" }
 livi-fm = { path = "crates/livi-fm" }
-livi-helper = { path = "crates/livi-helper" }
-livi-helper-stack = { path = "crates/livi-helper-stack" }
+livi-helper = { path = "crates/livi-helper", default-features = false }
+livi-helper-stack = { path = "crates/livi-helper-stack", default-features = false }
 livi-hfp = { path = "crates/livi-hfp" }
 livi-link-ap = { path = "crates/livi-link-ap" }
 livi-link-hci = { path = "crates/livi-link-hci" }

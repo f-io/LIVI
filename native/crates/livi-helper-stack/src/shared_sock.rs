@@ -9,12 +9,13 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use zbus::Connection;
+#[cfg(feature = "bluez")]
 use zbus::OwnedVariant;
 
 use crate::BtError;
-use crate::livi_sock::Broadcaster;
+use crate::livi_sock::{Broadcaster, Bus};
 
+#[cfg(feature = "bluez")]
 const WAKE_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 
 type SetPlaybackStatus = Box<dyn Fn(&str) + Send + Sync>;
@@ -30,7 +31,7 @@ pub struct SharedSockDeps {
     pub bluetooth: Option<Bluetooth>,
 }
 
-pub async fn serve(path: &Path, bus: Option<Connection>, deps: SharedSockDeps) -> io::Result<()> {
+pub async fn serve(path: &Path, bus: Option<Bus>, deps: SharedSockDeps) -> io::Result<()> {
     let listener = bind(path, "shared-sock")?;
     let deps = Arc::new(deps);
     loop {
@@ -55,7 +56,7 @@ pub(crate) fn bind(path: &Path, name: &str) -> io::Result<UnixListener> {
 
 async fn handle(
     mut stream: UnixStream,
-    bus: Option<Connection>,
+    bus: Option<Bus>,
     deps: Arc<SharedSockDeps>,
 ) -> io::Result<()> {
     let line = read_line(&mut stream).await?;
@@ -187,6 +188,7 @@ pub(crate) async fn read_line(stream: &mut UnixStream) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&buf).trim().to_string())
 }
 
+#[cfg(feature = "bluez")]
 fn device_path(adapter: &str, mac: &str) -> String {
     format!(
         "/org/bluez/{}/dev_{}",
@@ -195,8 +197,9 @@ fn device_path(adapter: &str, mac: &str) -> String {
     )
 }
 
+#[cfg(feature = "bluez")]
 async fn device_call(
-    bus: &Connection,
+    bus: &Bus,
     adapter: &str,
     mac: &str,
     method: &'static str,
@@ -232,7 +235,8 @@ async fn device_call(
     Ok(())
 }
 
-async fn remove_device(bus: &Connection, adapter: &str, mac: &str) -> Result<(), BtError> {
+#[cfg(feature = "bluez")]
+async fn remove_device(bus: &Bus, adapter: &str, mac: &str) -> Result<(), BtError> {
     if mac.is_empty() {
         return Err(BtError::NoMac("remove"));
     }
@@ -249,7 +253,8 @@ async fn remove_device(bus: &Connection, adapter: &str, mac: &str) -> Result<(),
     Ok(())
 }
 
-async fn get_prop<T>(bus: &Connection, path: &str, prop: &str) -> Option<T>
+#[cfg(feature = "bluez")]
+async fn get_prop<T>(bus: &Bus, path: &str, prop: &str) -> Option<T>
 where
     T: TryFrom<OwnedVariant>,
 {
@@ -267,7 +272,8 @@ where
     T::try_from(value).ok()
 }
 
-async fn list_paired(bus: &Connection, adapter: &str) -> Result<Vec<String>, BtError> {
+#[cfg(feature = "bluez")]
+async fn list_paired(bus: &Bus, adapter: &str) -> Result<Vec<String>, BtError> {
     let reply = bus
         .call_method(
             Some("org.bluez"),
@@ -328,7 +334,13 @@ async fn list_paired(bus: &Connection, adapter: &str) -> Result<Vec<String>, BtE
     Ok(devices.into_iter().map(|d| d.3).collect())
 }
 
-async fn bluez_verb(bus: &Connection, verb: &str, arg: &str, adapter: &str) -> String {
+#[cfg(not(feature = "bluez"))]
+async fn bluez_verb(bus: &Bus, _verb: &str, _arg: &str, _adapter: &str) -> String {
+    match *bus {}
+}
+
+#[cfg(feature = "bluez")]
+async fn bluez_verb(bus: &Bus, verb: &str, arg: &str, adapter: &str) -> String {
     match verb {
         "list_paired" => match list_paired(bus, adapter).await {
             Ok(devices) => format!("{{\"ok\":true,\"devices\":[{}]}}", devices.join(",")),

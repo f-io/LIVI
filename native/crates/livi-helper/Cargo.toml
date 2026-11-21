@@ -17,13 +17,17 @@ iap2-mfi = { workspace = true, features = ["files"] }
 iap2-usbmux.workspace = true
 iap2-wired.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net"] }
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
 livi-bt-host.workspace = true
 livi-hfp.workspace = true
 
-[target.'cfg(target_os = "android")'.dependencies]
+[target.'cfg(any(target_os = "android", target_os = "linux"))'.dependencies]
 livi-mdns.workspace = true
+
+[features]
+default = ["bluez"]
+bluez = ["livi-helper-stack/bluez"]
+uart-module = []
+ab5301 = ["uart-module"]
 
 [build-dependencies]
 livi-cfg.workspace = true

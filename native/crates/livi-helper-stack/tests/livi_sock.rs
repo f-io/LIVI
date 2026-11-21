@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#[cfg(feature = "bluez")]
 use base64::Engine;
+#[cfg(feature = "bluez")]
 use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -153,6 +155,7 @@ async fn request(path: &str, line: &str) -> String {
     resp.trim().to_string()
 }
 
+#[cfg(feature = "bluez")]
 #[tokio::test]
 async fn certificate_sign_and_subscribe() {
     let dir = std::env::temp_dir().join(format!("livi-sock-{}", std::process::id()));
