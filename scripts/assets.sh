@@ -1,11 +1,11 @@
 #!/bin/sh
-# GStreamer bundles, dongle firmware and the provisioning tool, kept on the "assets" release
+# GStreamer bundles, firmware and the provisioning tool, kept on the "assets" release
 # instead of in git.
 #
 # usage: assets.sh fetch gstreamer <platform>...
-#        assets.sh fetch livi-link
+#        assets.sh fetch livi-link|livi-os
 #        assets.sh publish gstreamer <platform> <archive>
-#        assets.sh publish livi-link
+#        assets.sh publish livi-link|livi-os
 #        assets.sh publish provision <dir>
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -62,8 +62,8 @@ fetch_gstreamer() {
   echo "fetched gstreamer $1"
 }
 
-fetch_livi_link() {
-  for json in "$ROOT"/assets/livi-link/*/firmware.json; do
+fetch_firmware() {
+  for json in "$ROOT/assets/$1"/*/firmware.json; do
     [ -f "$json" ] || continue
     dir=$(dirname "$json")
     file=$(fw_field "$json" file)
@@ -86,8 +86,8 @@ publish_gstreamer() {
   echo "$sum" > "$dir/sha256.txt"
 }
 
-publish_livi_link() {
-  for json in "$ROOT"/assets/livi-link/*/firmware.json; do
+publish_firmware() {
+  for json in "$ROOT/assets/$1"/*/firmware.json; do
     [ -f "$json" ] || continue
     dir=$(dirname "$json")
     file=$(fw_field "$json" file)
@@ -115,9 +115,9 @@ publish_provision() {
 
 case "${1:-} ${2:-}" in
   "fetch gstreamer") shift 2; for p in "$@"; do fetch_gstreamer "$p"; done ;;
-  "fetch livi-link") fetch_livi_link ;;
+  "fetch livi-link" | "fetch livi-os") fetch_firmware "$2" ;;
   "publish gstreamer") publish_gstreamer "$3" "$4" ;;
-  "publish livi-link") publish_livi_link ;;
+  "publish livi-link" | "publish livi-os") publish_firmware "$2" ;;
   "publish provision") publish_provision "$3" ;;
   *) sed -n '5,9s/^# //p' "$0" >&2; exit 2 ;;
 esac

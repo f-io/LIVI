@@ -63,8 +63,9 @@ Thumbs.db
 !/assets/gstreamer/*/packages.txt
 !/assets/gstreamer/*/sha256.txt
 
-# LIVI Link dongle stack — firmware fetched from the assets release
+# LIVI Link and LIVI OS firmware, fetched from the assets release
 assets/livi-link/*/*.gz
 assets/livi-link/*/*.lfwb
+assets/livi-os/*/*.lfwb
 assets/livi-link/*/MANIFEST.md5
 native/crates/livi-link-provision/assets/bindshell/*

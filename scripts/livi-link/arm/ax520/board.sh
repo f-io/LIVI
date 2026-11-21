@@ -11,6 +11,7 @@ ROOTFS_IMG=$OUT/livi-link-ax520-rootfs.bin
 ROOTFS_SIZE=$((0x440000))  # "rootfs" partition in ax520.dts
 # The MTD index in ax520.dts: 3 = boot (kernel uImage), 6 = rootfs.
 BUNDLE=$OUT/livi-link-ax520.lfwb
+BUNDLE_TARGET=ax520_aic8800d80
 BUNDLE_IMAGES=("3:$OUT/livi-link-ax520-boot.uimg" "6:$ROOTFS_IMG")
 
 rootfs_payload() {

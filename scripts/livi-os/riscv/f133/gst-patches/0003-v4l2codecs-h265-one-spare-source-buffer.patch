@@ -1,0 +1,36 @@
+The decoder kept the DPB plus what downstream asked for, at least two, as source buffers: 16 of
+0.87 MB for the phone's 1280x464 HEVC with its 12 pictures. LIVI copies every frame into its own
+scanout buffer and hands the decoder's back at once, one buffer beyond the DPB is enough.
+
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech265dec.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech265dec.c
+@@ -512,7 +512,7 @@
+ {
+   GstV4l2CodecH265Dec *self = GST_V4L2_CODEC_H265_DEC (decoder);
+   GstCaps *caps = NULL;
+-  guint min = 0, num_bitstream;
++  guint num_bitstream;
+   gboolean has_videometa;
+ 
+   if (self->streaming)
+@@ -567,11 +567,6 @@
+     self->copy_frames = self->need_crop;
+   }
+ 
+-  if (gst_query_get_n_allocation_pools (query) > 0)
+-    gst_query_parse_nth_allocation_pool (query, 0, NULL, NULL, &min, NULL);
+-
+-  min = MAX (2, min);
+-
+   num_bitstream = 1 +
+       MAX (1, gst_v4l2_decoder_get_render_delay (self->decoder));
+ 
+@@ -584,7 +579,7 @@
+   }
+ 
+   self->src_allocator = gst_v4l2_codec_allocator_new (self->decoder,
+-      GST_PAD_SRC, self->min_pool_size + min);
++      GST_PAD_SRC, self->min_pool_size + 1);
+   if (!self->src_allocator) {
+     GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT,
+         ("Not enough memory to allocate source buffers."), (NULL));

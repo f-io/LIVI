@@ -88,7 +88,7 @@ jobs:
             build/${{ matrix.target }}/sha256sums.asc
             build/${{ matrix.target }}/radxa-aic8800
             build/${{ matrix.target }}/radxa-allwinner-bsp
-          key: livi-os-dl-${{ matrix.target }}-${{ hashFiles('scripts/livi-os/**', 'scripts/livi-link/common/**') }}
+          key: livi-os-dl-${{ matrix.target }}-${{ hashFiles('scripts/livi-os/riscv/**', 'scripts/livi-link/common/**') }}
           restore-keys: livi-os-dl-${{ matrix.target }}-
 
       # gst.sh rebuilds the prefix when its stamp does not match.

@@ -74,14 +74,27 @@ fn flash_body(
     let Some(data) = body else {
         return (S_400, T_JSON, err_json("empty body"));
     };
-    if data.starts_with(livi_base::lfwb::MAGIC) {
-        return flash_bundle(&c.flash, body, clen);
+    if !data.starts_with(livi_base::lfwb::MAGIC) {
+        return (
+            S_400,
+            T_JSON,
+            err_json("not a LIVI firmware bundle (.lfwb)"),
+        );
     }
-    (
-        S_400,
-        T_JSON,
-        err_json("not a LIVI Link firmware bundle (.lfwb)"),
-    )
+    // Bundles from before the target trailer carry none and are taken as they are.
+    if let Some(built) = livi_base::lfwb::target(data)
+        && built != c.target
+    {
+        return (
+            S_400,
+            T_JSON,
+            err_json(&format!(
+                "the bundle is for {built}, this is {}, nothing written",
+                c.target
+            )),
+        );
+    }
+    flash_bundle(&c.flash, body, clen)
 }
 
 pub(crate) fn flash_bundle(

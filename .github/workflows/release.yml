@@ -127,7 +127,7 @@ jobs:
 
           gh release create "${args[@]}"
 
-      - name: Refresh the website and the dongle firmware
+      - name: Refresh the website and the firmware
         if: ${{ github.event.inputs.draft != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

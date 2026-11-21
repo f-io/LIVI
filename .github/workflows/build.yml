@@ -331,7 +331,7 @@ jobs:
           gh release delete nightly --repo "$REPO" --yes --cleanup-tag || true
           gh release create "${args[@]}"
 
-      - name: Refresh the website and the dongle firmware
+      - name: Refresh the website and the firmware
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

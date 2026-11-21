@@ -1,0 +1,24 @@
+sun6i-dma takes its descriptors from GFP_NOWAIT pools, so under memory pressure preparing the DMA
+fails and the NOR read with it: squashfs returns EIO and programs die on a page fault. The
+transfer has not started then, the SPI core unmaps it and runs it again by PIO.
+
+diff -ru a/drivers/spi/spi-sun6i.c b/drivers/spi/spi-sun6i.c
+--- a/drivers/spi/spi-sun6i.c
++++ b/drivers/spi/spi-sun6i.c
+@@ -294,7 +294,7 @@
+ 	sspi->tx_buf = tfr->tx_buf;
+ 	sspi->rx_buf = tfr->rx_buf;
+ 	sspi->len = tfr->len;
+-	use_dma = host->can_dma ? host->can_dma(host, spi, tfr) : false;
++	use_dma = tfr->tx_sg_mapped || tfr->rx_sg_mapped;
+ 
+ 	/* Clear pending interrupts */
+ 	sun6i_spi_write(sspi, SUN6I_INT_STA_REG, ~0);
+@@ -467,6 +467,7 @@
+ 			dev_warn(&host->dev,
+ 				 "%s: prepare DMA failed, ret=%d",
+ 				 dev_name(&spi->dev), ret);
++			tfr->error |= SPI_TRANS_FAIL_NO_START;
+ 			return ret;
+ 		}
+ 	}

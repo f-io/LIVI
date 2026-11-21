@@ -1,0 +1,25 @@
+With phy0_dual_route the HCI side of PHY0 has its own SIDDQ in pmu0. phy_init clears it once,
+while EHCI0 can still be in reset; the reset sets it again and a device on the port never
+enumerates (descriptor reads time out). Clear it whenever PHY0 is routed to EHCI/OHCI.
+
+--- a/drivers/phy/allwinner/phy-sun4i-usb.c	2026-11-18 16:30:36.528539479 +0100
++++ b/drivers/phy/allwinner/phy-sun4i-usb.c	2026-11-18 16:30:36.536545189 +0100
+@@ -570,8 +570,18 @@
+ 
+ 	regval = readl(data->base + REG_PHY_OTGCTL);
+ 	if (id_det == 0) {
++		struct sun4i_usb_phy *phy0 = &data->phys[0];
++
+ 		/* Host mode. Route phy0 to EHCI/OHCI */
+ 		regval &= ~OTGCTL_ROUTE_MUSB;
++		/*
++		 * phy_init cleared SIDDQ for the musb, before EHCI0 left reset.
++		 * That reset set it again and nothing would clear it.
++		 */
++		if (phy0->pmu && data->cfg->hci_phy_ctl_clear)
++			writel(readl(phy0->pmu + REG_HCI_PHY_CTL) &
++			       ~data->cfg->hci_phy_ctl_clear,
++			       phy0->pmu + REG_HCI_PHY_CTL);
+ 	} else {
+ 		/* Peripheral mode. Route phy0 to MUSB */
+ 		regval |= OTGCTL_ROUTE_MUSB;

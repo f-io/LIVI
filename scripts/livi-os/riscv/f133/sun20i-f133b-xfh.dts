@@ -1,0 +1,388 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+#include <dt-bindings/gpio/gpio.h>
+
+/dts-v1/;
+
+#include "sun20i-d1s.dtsi"
+#include "sun20i-common-regulators.dtsi"
+
+/ {
+	model = "XFH F133-B head unit";
+	compatible = "livi,f133b-xfh", "allwinner,sun20i-d1s", "allwinner,sun20i-d1";
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 quiet";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x40000000 0x4000000>;
+	};
+
+	reg_lcd_power: lcd-power {
+		compatible = "regulator-fixed";
+		regulator-name = "lcd-power";
+		gpio = <&pio 6 15 GPIO_ACTIVE_HIGH>; /* PG15 */
+		enable-active-high;
+		vin-supply = <&reg_vcc>;
+	};
+
+	reg_lcd_avdd: lcd-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "lcd-avdd";
+		gpio = <&pio 3 20 GPIO_ACTIVE_HIGH>; /* PD20 */
+		enable-active-high;
+		startup-delay-us = <30000>;
+		vin-supply = <&reg_lcd_power>;
+	};
+
+	/* AIC8800 reset. Found by pulsing free pins. Melis never drives it, a pull-up holds it high. */
+	wlan_pwrseq: wlan-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&pio 6 10 GPIO_ACTIVE_LOW>; /* PG10 */
+		post-power-on-delay-ms = <100>;
+	};
+};
+
+/* The D1 dtsi does not describe the video engine and its SRAM C1 yet. */
+&syscon {
+	sram@1d00000 {
+		compatible = "mmio-sram";
+		reg = <0x1d00000 0x40000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 0x1d00000 0x40000>;
+
+		ve_sram: sram-section@0 {
+			compatible = "allwinner,sun20i-d1-sram-c1", "allwinner,sun4i-a10-sram-c1";
+			reg = <0 0x40000>;
+		};
+	};
+};
+
+&{/soc} {
+	video-codec@1c0e000 {
+		compatible = "allwinner,sun20i-d1-video-engine";
+		reg = <0x1c0e000 0x2000>;
+		interrupts = <SOC_PERIPHERAL_IRQ(66) IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&ccu CLK_BUS_VE>, <&ccu CLK_VE>, <&ccu CLK_MBUS_VE>;
+		clock-names = "ahb", "mod", "ram";
+		resets = <&ccu RST_BUS_VE>;
+		allwinner,sram = <&ve_sram 1>;
+		interconnects = <&mbus 4>;
+		interconnect-names = "dma-mem";
+	};
+
+	/*
+	 * Internal codec, as smaeul's d1/all sun20i-d1.dtsi, IRQ and DRQ as Allwinner's sun8iw20 BSP.
+	 * HPOUT goes to the AB5301B AUX in. Of the inputs the LQFP128 F133 brings out MICIN3, which
+	 * mic bias it is wired to is unknown, both are routed.
+	 */
+	codec: audio-codec@2030000 {
+		compatible = "allwinner,sun20i-d1-codec", "simple-mfd", "syscon";
+		reg = <0x2030000 0x1000>;
+		interrupts = <SOC_PERIPHERAL_IRQ(25) IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&ccu CLK_BUS_AUDIO>, <&ccu CLK_AUDIO_ADC>, <&ccu CLK_AUDIO_DAC>;
+		clock-names = "bus", "adc", "dac";
+		resets = <&ccu RST_BUS_AUDIO>;
+		dmas = <&dma 7>, <&dma 7>;
+		dma-names = "rx", "tx";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		#sound-dai-cells = <0>;
+		avcc-supply = <&reg_aldo>;
+		hpvcc-supply = <&reg_hpldo>;
+		vdd33-supply = <&reg_vcc_3v3>;
+		routing = "AUX Out", "HPOUTL",
+			  "AUX Out", "HPOUTR",
+			  "MICIN3", "Mic",
+			  "Mic", "MBIAS";
+		widgets = "Line", "AUX Out",
+			  "Microphone", "Mic";
+
+		regulators@2030348 {
+			compatible = "allwinner,sun20i-d1-analog-ldos";
+			reg = <0x2030348 0x4>;
+			nvmem-cells = <&bg_trim>;
+			nvmem-cell-names = "bg_trim";
+
+			/* AVCC feeds more of the SoC's analog side than the codec, switched off the
+			 * board dies. The BSP keeps it on too. */
+			reg_aldo: aldo {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-always-on;
+				vdd33-supply = <&reg_vcc_3v3>;
+			};
+
+			reg_hpldo: hpldo {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				hpldoin-supply = <&reg_vcc_3v3>;
+			};
+		};
+	};
+
+	g2d@5410000 {
+		compatible = "allwinner,sunxi-g2d";
+		reg = <0x5410000 0x40000>;
+		interrupts = <SOC_PERIPHERAL_IRQ(89) IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&ccu CLK_BUS_G2D>, <&ccu CLK_G2D>, <&ccu CLK_MBUS_G2D>;
+		clock-names = "bus", "g2d", "mbus_g2d";
+		resets = <&ccu RST_BUS_G2D>;
+		assigned-clocks = <&ccu CLK_G2D>;
+		assigned-clock-rates = <300000000>;
+	};
+};
+
+&sid {
+	bg_trim: bg-trim@28 {
+		reg = <0x28 0x4>;
+		bits = <16 8>;
+	};
+};
+
+/*
+ * No driver binds the D1 mbus, so fw_devlink would hold the video engine back forever. Disabled, it is
+ * no supplier, while its dma-ranges still give the video engine its DRAM offset.
+ */
+&mbus {
+	status = "disabled";
+};
+
+&de {
+	status = "okay";
+};
+
+&dphy {
+	status = "okay";
+};
+
+&dsi {
+	pinctrl-0 = <&dsi_4lane_pins>;
+	pinctrl-names = "default";
+	vcc-dsi-supply = <&reg_vcc_3v3>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	panel@0 {
+		compatible = "livi,he0801a068";
+		reg = <0>;
+		power-supply = <&reg_lcd_avdd>;
+		reset-gpios = <&pio 3 21 GPIO_ACTIVE_LOW>; /* PD21 */
+		/* PD22 is pwm7. 20 kHz, the LED driver dims it without an audible whine. */
+		pwms = <&pwm 7 50000 0>;
+	};
+};
+
+&mmc0 {
+	pinctrl-0 = <&mmc0_pins>;
+	pinctrl-names = "default";
+	vmmc-supply = <&reg_vcc_3v3>;
+	/* The vendor sys_config runs the slot 1-bit, 4-bit transfers fail with data errors. */
+	bus-width = <1>;
+	cd-gpios = <&pio 5 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; /* PF6 */
+	cap-sd-highspeed;
+	no-mmc;
+	no-sdio;
+	status = "okay";
+};
+
+&mmc1 {
+	pinctrl-0 = <&mmc1_pins>;
+	pinctrl-names = "default";
+	vmmc-supply = <&reg_vcc_3v3>;
+	bus-width = <4>;
+	max-frequency = <50000000>;
+	non-removable;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	no-mmc;
+	no-sd;
+	mmc-pwrseq = <&wlan_pwrseq>;
+	status = "okay";
+};
+
+&spi0 {
+	pinctrl-0 = <&spi0_pins>, <&spi0_wp_hold_pins>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		/* The EN25QH128A runs four data bits at up to 80 MHz. */
+		spi-max-frequency = <80000000>;
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		/* boot0 (sun20i_d1_spl) reads the sunxi-package at 0x10000. */
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "boot0";
+				reg = <0x000000 0x010000>;
+			};
+
+			partition@10000 {
+				label = "boot";
+				reg = <0x010000 0x410000>;
+			};
+
+			partition@420000 {
+				label = "rootfs";
+				reg = <0x420000 0xb40000>;
+			};
+
+			partition@f60000 {
+				label = "data";
+				reg = <0xf60000 0x080000>;
+			};
+
+			partition@fe0000 {
+				label = "customer";
+				reg = <0xfe0000 0x010000>;
+			};
+
+			partition@ff0000 {
+				label = "bootstate";
+				reg = <0xff0000 0x010000>;
+			};
+		};
+	};
+};
+
+/* boot0 starts it, the kernel keeps it fed until userspace takes over. */
+&wdt {
+	status = "okay";
+};
+
+&tcon_lcd0 {
+	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&reg_vcc>;
+};
+
+&dcxo {
+	clock-frequency = <24000000>;
+};
+
+/* As Allwinner's D1 boards: DAT1 carries the AIC8800's SDIO interrupt. */
+&mmc1_pins {
+	drive-strength = <30>;
+	bias-pull-up;
+};
+
+&pio {
+	/* WP#/HOLD# stay high outside quad transfers. */
+	spi0_wp_hold_pins: spi0-wp-hold-pins {
+		pins = "PC6", "PC7";
+		function = "spi0";
+		bias-pull-up;
+	};
+
+	pwm7_pd22_pin: pwm7-pd22-pin {
+		pins = "PD22";
+		function = "pwm7";
+	};
+
+	uart0_pe2_pins: uart0-pe2-pins {
+		pins = "PE2", "PE3";
+		function = "uart0";
+	};
+
+	uart4_pe4_pins: uart4-pe4-pins {
+		pins = "PE4", "PE5";
+		function = "uart4";
+	};
+
+	i2c1_pe0_pins: i2c1-pe0-pins {
+		pins = "PE0", "PE1";
+		function = "i2c1";
+	};
+
+	i2c2_pe12_pins: i2c2-pe12-pins {
+		pins = "PE12", "PE13";
+		function = "i2c2";
+	};
+};
+
+&uart4 {
+	pinctrl-0 = <&uart4_pe4_pins>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&i2c1 {
+	pinctrl-0 = <&i2c1_pe0_pins>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	touchscreen@3b {
+		compatible = "livi,he0801a068-ts";
+		reg = <0x3b>;
+		interrupts-extended = <&pio 4 10 IRQ_TYPE_EDGE_FALLING>; /* PE10 */
+		reset-gpios = <&pio 4 11 GPIO_ACTIVE_LOW>; /* PE11 */
+	};
+};
+
+&i2c2 {
+	pinctrl-0 = <&i2c2_pe12_pins>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&uart0 {
+	pinctrl-0 = <&uart0_pe2_pins>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/*
+ * The USB-A port. EHCI0 sets it to host when it probes, the initramfs switches it to peripheral for
+ * NCM and board_start back to host for wired phones.
+ */
+&usb_otg {
+	dr_mode = "otg";
+	status = "okay";
+};
+
+&usbphy {
+	status = "okay";
+};
+
+/* In host mode the PHY routes the USB-A port to EHCI0/OHCI0, not to musb. */
+&ehci0 {
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&ehci1 {
+	status = "okay";
+};
+
+&ohci1 {
+	status = "okay";
+};
+
+&pwm {
+	pinctrl-0 = <&pwm7_pd22_pin>;
+	pinctrl-names = "default";
+	status = "okay";
+};

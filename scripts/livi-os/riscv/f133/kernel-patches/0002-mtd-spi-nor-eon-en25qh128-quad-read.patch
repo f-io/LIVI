@@ -1,0 +1,37 @@
+--- a/drivers/mtd/spi-nor/eon.c	2026-11-18 13:44:13.234766538 +0100
++++ b/drivers/mtd/spi-nor/eon.c	2026-11-18 13:44:13.243884951 +0100
+@@ -8,6 +8,25 @@
+ 
+ #include "core.h"
+ 
++/*
++ * Quad I/O Read (EBh) needs no QE bit on the EN25QH128A, and its SFDP gives a wrong dummy count.
++ * It has no Quad Output Read (6Bh).
++ */
++static int en25qh128_late_init(struct spi_nor *nor)
++{
++	struct spi_nor_flash_parameter *params = nor->params;
++
++	params->hwcaps.mask |= SNOR_HWCAPS_READ_1_4_4;
++	spi_nor_set_read_settings(&params->reads[SNOR_CMD_READ_1_4_4],
++				  0, 6, SPINOR_OP_READ_1_4_4, SNOR_PROTO_1_4_4);
++	params->quad_enable = NULL;
++	return 0;
++}
++
++static const struct spi_nor_fixups en25qh128_fixups = {
++	.late_init = en25qh128_late_init,
++};
++
+ static const struct flash_info eon_nor_parts[] = {
+ 	{
+ 		.id = SNOR_ID(0x1c, 0x20, 0x16),
+@@ -59,6 +78,8 @@
+ 		.id = SNOR_ID(0x1c, 0x70, 0x18),
+ 		.name = "en25qh128",
+ 		.size = SZ_16M,
++		.no_sfdp_flags = SPI_NOR_SKIP_SFDP | SPI_NOR_DUAL_READ,
++		.fixups = &en25qh128_fixups,
+ 	}, {
+ 		.id = SNOR_ID(0x1c, 0x70, 0x19),
+ 		.name = "en25qh256",

@@ -1,0 +1,29 @@
+--- a/drivers/gpu/drm/sun4i/sun6i_mipi_dsi.c	2026-11-14 21:54:39.924207899 +0100
++++ b/drivers/gpu/drm/sun4i/sun6i_mipi_dsi.c	2026-11-14 21:54:39.937948581 +0100
+@@ -1062,6 +1062,13 @@
+ 	struct sun6i_dsi *dsi = dev_get_drvdata(dev);
+ 	int ret;
+ 
++	if (dsi->variant->has_mod_clk && !dsi->variant->set_mod_clk) {
++		dsi->mod_clk = devm_clk_get(dev, "mod");
++		if (IS_ERR(dsi->mod_clk))
++			return dev_err_probe(dev, PTR_ERR(dsi->mod_clk),
++					     "Couldn't get the DSI mod clock\n");
++	}
++
+ 	drm_encoder_helper_add(&dsi->encoder,
+ 			       &sun6i_dsi_enc_helper_funcs);
+ 	ret = drm_encoder_init(drm, &dsi->encoder, &sun6i_dsi_enc_funcs,
+@@ -1160,7 +1167,11 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	if (variant->has_mod_clk) {
++	/*
++	 * Without set_mod_clk the module clock comes from the TCON TOP, which
++	 * only registers it once the display pipeline binds, so bind takes it.
++	 */
++	if (variant->has_mod_clk && variant->set_mod_clk) {
+ 		dsi->mod_clk = devm_clk_get(dev, "mod");
+ 		if (IS_ERR(dsi->mod_clk)) {
+ 			dev_err(dev, "Couldn't get the DSI mod clock\n");

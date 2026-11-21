@@ -9,6 +9,7 @@ pub const HOLD: &str = "/tmp/livi/flashing";
 const VERSION: u8 = 1;
 const HEADER_LEN: usize = 8;
 const DESC_LEN: usize = 12;
+const TARGET: &[u8; 4] = b"LFWT";
 
 pub fn pack(images: &[(u8, &[u8])]) -> Vec<u8> {
     let payload: usize = images.iter().map(|(_, data)| data.len()).sum();
@@ -31,6 +32,21 @@ pub fn pack(images: &[(u8, &[u8])]) -> Vec<u8> {
 }
 
 pub fn unpack(bytes: &[u8]) -> Result<Vec<(u8, &[u8])>, String> {
+    split(bytes).map(|(images, _)| images)
+}
+
+/// The target the bundle was built for, from the trailer after the images: "LFWT" | length:u8 | name.
+/// Readers from before the trailer stop at the last image and never see it.
+pub fn target(bytes: &[u8]) -> Option<&str> {
+    let (_, tail) = split(bytes).ok()?;
+    let name = tail.strip_prefix(TARGET)?;
+    let (&len, name) = name.split_first()?;
+    std::str::from_utf8(name.get(..usize::from(len))?).ok()
+}
+
+type Split<'a> = (Vec<(u8, &'a [u8])>, &'a [u8]);
+
+fn split(bytes: &[u8]) -> Result<Split<'_>, String> {
     if bytes.len() < HEADER_LEN || &bytes[..4] != MAGIC {
         return Err("not an LFWB bundle".into());
     }
@@ -56,7 +72,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<(u8, &[u8])>, String> {
         images.push((typ, data));
         rest = tail;
     }
-    Ok(images)
+    Ok((images, rest))
 }
 
 pub fn image<'a>(images: &[(u8, &'a [u8])], typ: u8) -> Option<&'a [u8]> {
@@ -91,5 +107,17 @@ mod tests {
         let mut huge = pack(&[(3, &[1, 2, 3, 4])]);
         huge[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(unpack(&huge).is_err(), "length past the end");
+    }
+
+    #[test]
+    fn the_target_trailer_is_read_and_ignored_by_unpack() {
+        let plain = pack(&[(3, &[1, 2, 3, 4])]);
+        assert_eq!(target(&plain), None);
+        let mut tagged = plain.clone();
+        tagged.extend_from_slice(b"LFWT\x09f133b_xfh");
+        assert_eq!(target(&tagged), Some("f133b_xfh"));
+        assert_eq!(unpack(&tagged).unwrap(), unpack(&plain).unwrap());
+        tagged.pop();
+        assert_eq!(target(&tagged), None, "cut short");
     }
 }

@@ -1,0 +1,19 @@
+The iPhone's carplay NCM function (configuration 6, interface 3) never sends NETWORK_CONNECTION,
+so the generic NCM entry keeps the carrier off and IPv6 never gets a link-local address. Apple's
+own NCM functions get the private entry, which has no link interrupt, like the known ones.
+
+--- a/drivers/net/usb/cdc_ncm.c
++++ b/drivers/net/usb/cdc_ncm.c
+@@ -2026,6 +2026,12 @@
+ 		.driver_info = (unsigned long)&apple_private_interface_info,
+ 	},
+ 
++	/* Any other Apple NCM, like the iPhone's carplay function, never reports a connection */
++	{ USB_VENDOR_AND_INTERFACE_INFO(0x05ac, USB_CLASS_COMM,
++		USB_CDC_SUBCLASS_NCM, USB_CDC_PROTO_NONE),
++		.driver_info = (unsigned long)&apple_private_interface_info,
++	},
++
+ 	/* Ericsson MBM devices like F5521gw */
+ 	{ .match_flags = USB_DEVICE_ID_MATCH_INT_INFO
+ 		| USB_DEVICE_ID_MATCH_VENDOR,

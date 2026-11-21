@@ -1,0 +1,36 @@
+D1 and T113s contain a pwm controller with 8 channels.
+This controller is supported by the sun8i-pwm driver.
+
+Add a device tree node for it.
+
+Signed-off-by: Aleksandr Shubin <privatesub2@gmail.com>
+---
+ arch/riscv/boot/dts/allwinner/sunxi-d1s-t113.dtsi | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/allwinner/sunxi-d1s-t113.dtsi b/arch/riscv/boot/dts/allwinner/sunxi-d1s-t113.dtsi
+index 63e252b44973..8e38a0d95f5a 100644
+--- a/arch/riscv/boot/dts/allwinner/sunxi-d1s-t113.dtsi
++++ b/arch/riscv/boot/dts/allwinner/sunxi-d1s-t113.dtsi
+@@ -193,6 +193,19 @@ uart3_pb_pins: uart3-pb-pins {
+ 			};
+ 		};
+ 
++		pwm: pwm@2000c00 {
++			compatible = "allwinner,sun20i-d1-pwm";
++			reg = <0x02000c00 0x400>;
++			clocks = <&ccu CLK_BUS_PWM>,
++				 <&dcxo>,
++				 <&ccu CLK_APB0>;
++			clock-names = "bus", "hosc", "apb";
++			resets = <&ccu RST_BUS_PWM>;
++			status = "disabled";
++			#pwm-cells = <0x3>;
++			allwinner,npwms = <8>;
++		};
++
+ 		ccu: clock-controller@2001000 {
+ 			compatible = "allwinner,sun20i-d1-ccu";
+ 			reg = <0x2001000 0x1000>;
+-- 
+2.25.1

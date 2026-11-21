@@ -27,6 +27,7 @@ ROOTFS_IMG=$OUT/livi-link-v821b-mtd3.bin
 ROOTFS_SIZE=$((0x480000))  # mtd3, 4.5 MiB
 # The MTD index: 1 = mtd1 (boot image), 3 = mtd3 (rootfs).
 BUNDLE=$OUT/livi-link-v821b.lfwb
+BUNDLE_TARGET=v821b_aic8800d80
 BUNDLE_IMAGES=("1:$OUT/livi-link-v821b-mtd1.bin" "3:$ROOTFS_IMG")
 
 # busybox and hostapd link musl and libnl dynamically here.

@@ -3,6 +3,7 @@
 #   Header (8 B):    magic "LFWB" | version:u8=1 | count:u8 | reserved:u16
 #   Desc (N*12 B):   type:u8 | flags:u8 | reserved:u16 | length:u32 | crc32:u32
 #   Payload:         images concatenated in descriptor order (no padding)
+#   Trailer:         "LFWT" | length:u8 | BUNDLE_TARGET, the device refuses a bundle for another target
 # The type is the MTD index the image goes to, BUNDLE_IMAGES in the board's board.sh lists them.
 #   pack-bundle.sh <board dir>
 set -euo pipefail
@@ -10,6 +11,7 @@ set -euo pipefail
 LOG_TAG=bundle
 source "$(cd "${1:?usage: pack-bundle.sh <board dir>}" && pwd)/board.sh"
 
+[[ -n ${BUNDLE_TARGET:-} ]] || { log "BUNDLE_TARGET is not set in board.sh"; exit 1; }
 for entry in "${BUNDLE_IMAGES[@]}"; do
   [[ -f ${entry#*:} ]] || { log "missing ${entry#*:}"; exit 1; }
 done
@@ -39,9 +41,11 @@ mkdir -p "$(dirname "$BUNDLE")"
     crc32le "$img" | tee "$WORK/crc$typ"
   done
   for entry in "${BUNDLE_IMAGES[@]}"; do cat "${entry#*:}"; done
+  # shellcheck disable=SC2059
+  printf "LFWT$(printf '\\x%02x' "${#BUNDLE_TARGET}")%s" "$BUNDLE_TARGET"
 } > "$BUNDLE"
 
-log "wrote $BUNDLE: $(wc -c < "$BUNDLE" | tr -d ' ') B"
+log "wrote $BUNDLE for $BUNDLE_TARGET: $(wc -c < "$BUNDLE" | tr -d ' ') B"
 for entry in "${BUNDLE_IMAGES[@]}"; do
   typ=${entry%%:*} img=${entry#*:}
   crc=$(od -An -tx1 "$WORK/crc$typ" | awk '{ print $4 $3 $2 $1 }')

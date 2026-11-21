@@ -41,6 +41,7 @@ ROOTFS_IMG=$OUT/$NAME-rootfs.bin
 ROOTFS_SIZE=$((0xc60000))  # "rootfs" partition in imx6ull.dts
 # The MTD index in imx6ull.dts: 2 = kernel (the provisioner stages it for the vendor U-Boot), 3 = rootfs.
 BUNDLE=$OUT/$NAME.lfwb
+BUNDLE_TARGET=imx6ul_$RADIO
 BUNDLE_IMAGES=("2:$KERNEL_IMG" "3:$ROOTFS_IMG")
 
 # Firmware as "<path in linux-firmware or URL> <sha256> [<tag> [<path under /lib/firmware>]]", tag "-"

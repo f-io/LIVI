@@ -1,0 +1,59 @@
+mtdblock reads its 512-byte sectors one by one, and on SPI NOR every read is a command, address and
+dummy phase of its own. A whole page of squashfs is eight of those. mtdblock reads the run of
+sectors of one segment at once now.
+
+diff -ru a/drivers/mtd/mtd_blkdevs.c b/drivers/mtd/mtd_blkdevs.c
+--- a/drivers/mtd/mtd_blkdevs.c
++++ b/drivers/mtd/mtd_blkdevs.c
+@@ -65,6 +65,13 @@
+ 		return BLK_STS_OK;
+ 	case REQ_OP_READ:
+ 		buf = kmap(bio_page(req->bio)) + bio_offset(req->bio);
++		if (tr->readsects) {
++			if (tr->readsects(dev, block, nsect, buf)) {
++				kunmap(bio_page(req->bio));
++				return BLK_STS_IOERR;
++			}
++			nsect = 0;
++		}
+ 		for (; nsect > 0; nsect--, block++, buf += tr->blksize) {
+ 			if (tr->readsect(dev, block, buf)) {
+ 				kunmap(bio_page(req->bio));
+diff -ru a/drivers/mtd/mtdblock.c b/drivers/mtd/mtdblock.c
+--- a/drivers/mtd/mtdblock.c
++++ b/drivers/mtd/mtdblock.c
+@@ -234,6 +234,13 @@
+ 	return do_cached_read(mtdblk, block<<9, 512, buf);
+ }
+ 
++static int mtdblock_readsects(struct mtd_blktrans_dev *dev,
++			       unsigned long block, unsigned long nsect, char *buf)
++{
++	struct mtdblk_dev *mtdblk = container_of(dev, struct mtdblk_dev, mbd);
++	return do_cached_read(mtdblk, block<<9, nsect<<9, buf);
++}
++
+ static int mtdblock_writesect(struct mtd_blktrans_dev *dev,
+ 			      unsigned long block, char *buf)
+ {
+@@ -348,6 +355,7 @@
+ 	.flush		= mtdblock_flush,
+ 	.release	= mtdblock_release,
+ 	.readsect	= mtdblock_readsect,
++	.readsects	= mtdblock_readsects,
+ 	.writesect	= mtdblock_writesect,
+ 	.add_mtd	= mtdblock_add_mtd,
+ 	.remove_dev	= mtdblock_remove_dev,
+diff -ru a/include/linux/mtd/blktrans.h b/include/linux/mtd/blktrans.h
+--- a/include/linux/mtd/blktrans.h
++++ b/include/linux/mtd/blktrans.h
+@@ -47,6 +47,9 @@
+ 	/* Access functions */
+ 	int (*readsect)(struct mtd_blktrans_dev *dev,
+ 		    unsigned long block, char *buffer);
++	/* Optional: nsect sectors at once, one read instead of one per sector. */
++	int (*readsects)(struct mtd_blktrans_dev *dev, unsigned long block,
++			 unsigned long nsect, char *buffer);
+ 	int (*writesect)(struct mtd_blktrans_dev *dev,
+ 		     unsigned long block, char *buffer);
+ 	int (*discard)(struct mtd_blktrans_dev *dev,

@@ -1,0 +1,94 @@
+The DE2 mixer scans out buffers the CPU fills with a software renderer, which reads back every pixel
+it blends. Mapped write-combined, each of those reads and stores goes to DRAM one by one. Cached and
+written back once per commit, as ingenic-drm does, they cost no more than any other memory.
+Only the sun8i mixer layers write back, which is all the F133 has.
+
+diff -ru a/drivers/gpu/drm/sun4i/sun4i_drv.c b/drivers/gpu/drm/sun4i/sun4i_drv.c
+--- a/drivers/gpu/drm/sun4i/sun4i_drv.c
++++ b/drivers/gpu/drm/sun4i/sun4i_drv.c
+@@ -42,6 +42,23 @@
+ 	return drm_gem_dma_dumb_create_internal(file_priv, drm, args);
+ }
+ 
++/*
++ * Buffers the CPU draws into are mapped cached and written back on commit: a software renderer
++ * reads back what it blends, which is slow through an uncached mapping.
++ */
++static struct drm_gem_object *sun4i_drv_gem_create_object(struct drm_device *drm, size_t size)
++{
++	struct drm_gem_dma_object *obj;
++
++	obj = kzalloc_obj(*obj);
++	if (!obj)
++		return ERR_PTR(-ENOMEM);
++
++	obj->map_noncoherent = true;
++
++	return &obj->base;
++}
++
+ DEFINE_DRM_GEM_DMA_FOPS(sun4i_drv_fops);
+ 
+ static const struct drm_driver sun4i_drv_driver = {
+@@ -56,6 +73,7 @@
+ 
+ 	/* GEM Operations */
+ 	DRM_GEM_DMA_DRIVER_OPS_WITH_DUMB_CREATE(drm_sun4i_gem_dumb_create),
++	.gem_create_object	= sun4i_drv_gem_create_object,
+ 	DRM_FBDEV_DMA_DRIVER_OPS,
+ };
+ 
+diff -ru a/drivers/gpu/drm/sun4i/sun4i_framebuffer.c b/drivers/gpu/drm/sun4i/sun4i_framebuffer.c
+--- a/drivers/gpu/drm/sun4i/sun4i_framebuffer.c
++++ b/drivers/gpu/drm/sun4i/sun4i_framebuffer.c
+@@ -17,7 +17,7 @@
+ static const struct drm_mode_config_funcs sun4i_de_mode_config_funcs = {
+ 	.atomic_check		= drm_atomic_helper_check,
+ 	.atomic_commit		= drm_atomic_helper_commit,
+-	.fb_create		= drm_gem_fb_create,
++	.fb_create		= drm_gem_fb_create_with_dirty,
+ };
+ 
+ static const struct drm_mode_config_helper_funcs sun4i_de_mode_config_helpers = {
+diff -ru a/drivers/gpu/drm/sun4i/sun8i_ui_layer.c b/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
+--- a/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
+@@ -189,6 +189,8 @@
+ static void sun8i_ui_layer_atomic_update(struct drm_plane *plane,
+ 					 struct drm_atomic_commit *state)
+ {
++	struct drm_plane_state *old_state = drm_atomic_get_old_plane_state(state,
++									   plane);
+ 	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
+ 									   plane);
+ 	struct sun8i_layer *layer = plane_to_sun8i_layer(plane);
+@@ -198,6 +200,8 @@
+ 		return;
+ 	}
+ 
++	drm_fb_dma_sync_non_coherent(plane->dev, old_state, new_state);
++
+ 	sun8i_ui_layer_update_attributes(layer, plane);
+ 	sun8i_ui_layer_update_coord(layer, plane);
+ 	sun8i_ui_layer_update_buffer(layer, plane);
+diff -ru a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+--- a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+@@ -268,6 +268,8 @@
+ static void sun8i_vi_layer_atomic_update(struct drm_plane *plane,
+ 					 struct drm_atomic_commit *state)
+ {
++	struct drm_plane_state *old_state = drm_atomic_get_old_plane_state(state,
++									   plane);
+ 	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
+ 									   plane);
+ 	struct sun8i_layer *layer = plane_to_sun8i_layer(plane);
+@@ -277,6 +279,8 @@
+ 		return;
+ 	}
+ 
++	drm_fb_dma_sync_non_coherent(plane->dev, old_state, new_state);
++
+ 	sun8i_vi_layer_update_attributes(layer, plane);
+ 	sun8i_vi_layer_update_coord(layer, plane);
+ 	sun8i_csc_config(layer, new_state);

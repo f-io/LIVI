@@ -1,0 +1,157 @@
+LIVI OS runs without udev. v4l2codecs finds the media controllers and their video nodes in /dev
+itself, matching the video node by its device number as gudev would.
+
+diff --git a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codecdevice.c b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codecdevice.c
+index 9be940e..a5f0a1c 100644
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codecdevice.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codecdevice.c
+@@ -26,7 +26,8 @@
+ #include "linux/media.h"
+ 
+ #include <fcntl.h>
+-#include <gudev/gudev.h>
++#include <dirent.h>
++#include <stdio.h>
+ #include <sys/ioctl.h>
+ #include <sys/stat.h>
+ 
+@@ -306,10 +307,50 @@ function_to_string (guint32 function)
+   return "unknown";
+ }
+ 
++/* Without udev the media and video nodes are found by name in /dev. */
++static GList *
++find_media_nodes (void)
++{
++  GList *paths = NULL;
++  DIR *dir = opendir ("/dev");
++  struct dirent *e;
++
++  if (!dir)
++    return NULL;
++  while ((e = readdir (dir)))
++    if (g_str_has_prefix (e->d_name, "media"))
++      paths = g_list_prepend (paths, g_strconcat ("/dev/", e->d_name, NULL));
++  closedir (dir);
++  return paths;
++}
++
++static gchar *
++find_char_node (dev_t devnum)
++{
++  gchar *found = NULL;
++  DIR *dir = opendir ("/dev");
++  struct dirent *e;
++  struct stat st;
++
++  if (!dir)
++    return NULL;
++  while (!found && (e = readdir (dir))) {
++    gchar *path;
++    if (!g_str_has_prefix (e->d_name, "video"))
++      continue;
++    path = g_strconcat ("/dev/", e->d_name, NULL);
++    if (stat (path, &st) == 0 && S_ISCHR (st.st_mode) && st.st_rdev == devnum)
++      found = path;
++    else
++      g_free (path);
++  }
++  closedir (dir);
++  return found;
++}
++
+ GList *
+ gst_v4l2_codec_find_devices (void)
+ {
+-  GUdevClient *client;
+   GList *udev_devices, *d;
+   GQueue devices = G_QUEUE_INIT;
+ 
+@@ -321,15 +362,13 @@ gst_v4l2_codec_find_devices (void)
+     return devices.head;
+   }
+ 
+-  client = g_udev_client_new (NULL);
+-  udev_devices = g_udev_client_query_by_subsystem (client, "media");
++  udev_devices = find_media_nodes ();
+ 
+   if (!udev_devices)
+     GST_DEBUG ("Found no media devices");
+ 
+   for (d = udev_devices; d; d = g_list_next (d)) {
+-    GUdevDevice *udev = (GUdevDevice *) d->data;
+-    const gchar *path = g_udev_device_get_device_file (udev);
++    const gchar *path = d->data;
+     gint fd;
+     struct media_v2_topology topology;
+     GList *codec_entities, *c;
+@@ -363,7 +402,7 @@ gst_v4l2_codec_find_devices (void)
+       struct media_v2_pad *sink_pad;
+       struct media_v2_entity *source_entity, *sink_entity;
+       struct media_v2_intf_devnode *source_dev, *sink_dev;
+-      GUdevDevice *v4l2_udev;
++      gchar *v4l2_path;
+ 
+       GST_DEBUG ("Analysing entity %s", entity->name);
+ 
+@@ -390,26 +429,24 @@ gst_v4l2_codec_find_devices (void)
+           || source_dev->minor != sink_dev->minor)
+         continue;
+ 
+-      v4l2_udev = g_udev_client_query_by_device_number (client,
+-          G_UDEV_DEVICE_TYPE_CHAR,
+-          makedev (source_dev->major, source_dev->minor));
+-      if (!v4l2_udev)
++      v4l2_path = find_char_node (makedev (source_dev->major,
++              source_dev->minor));
++      if (!v4l2_path)
+         continue;
+ 
+       GST_INFO ("Found %s device %s", function_to_string (entity->function),
+           entity->name);
+       g_queue_push_tail (&devices,
+           gst_v4l2_codec_device_new (entity->name, entity->function, path,
+-              g_udev_device_get_device_file (v4l2_udev)));
+-      g_object_unref (v4l2_udev);
++              v4l2_path));
++      g_free (v4l2_path);
+     }
+ 
+     clear_topology (&topology);
+     g_list_free (codec_entities);
+   }
+ 
+-  g_list_free_full (udev_devices, g_object_unref);
+-  g_object_unref (client);
++  g_list_free_full (udev_devices, g_free);
+ 
+   return devices.head;
+ }
+diff --git a/subprojects/gst-plugins-bad/sys/v4l2codecs/meson.build b/subprojects/gst-plugins-bad/sys/v4l2codecs/meson.build
+index cf65579..c419718 100644
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/meson.build
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/meson.build
+@@ -38,7 +38,5 @@ plugin_sources += {
+   'v4l2codecs': pathsep.join(doc_sources)
+ }
+ 
+-libgudev_dep = dependency('gudev-1.0', required: get_option('v4l2codecs'), allow_fallback: true)
+-
+ if get_option('v4l2codecs').disabled()
+   have_v4l2 = false
+@@ -60,13 +59,13 @@ else
+ endif
+ 
+ 
+-if have_v4l2 and libgudev_dep.found()
++if have_v4l2
+   gstv4l2codecs = library('gstv4l2codecs',
+     v4l2codecs_sources,
+     c_args : gst_plugins_bad_args,
+     cpp_args: gst_plugins_bad_args,
+     include_directories : [configinc],
+-    dependencies : [gstbase_dep, gstcodecs_dep, gstallocators_dep, libgudev_dep,
++    dependencies : [gstbase_dep, gstcodecs_dep, gstallocators_dep,
+                    gstpbutils_dep,],
+     install : true,
+     install_dir : plugins_install_dir,

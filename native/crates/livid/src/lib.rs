@@ -35,7 +35,7 @@ fn board() -> (&'static str, &'static str) {
         return ("AX520 + AIC8800D80", "ax520_aic8800d80");
     }
     if has(b"livi,f133b-xfh") {
-        return ("F133-B + AIC8800D40L", "f133_aic8800d40l");
+        return ("F133-XFH", "f133b_xfh");
     }
     #[cfg(not(target_arch = "riscv32"))]
     if has(b"livi,link-imx6ull") {
@@ -48,7 +48,7 @@ fn board() -> (&'static str, &'static str) {
 fn wifi_standards(target: &str) -> livi_link_ap::server::Standards {
     use livi_link_ap::server::Standards;
     match target {
-        "v821b_aic8800d80" | "ax520_aic8800d80" | "f133_aic8800d40l" => Standards {
+        "v821b_aic8800d80" | "ax520_aic8800d80" | "f133b_xfh" => Standards {
             vht: true,
             he: true,
         },
@@ -72,7 +72,7 @@ fn web_caps(args: &[String]) -> livi_web::WebCaps {
         before_write: None,
     };
     let (led, flash) = match target {
-        "f133_aic8800d40l" => (
+        "f133b_xfh" => (
             false,
             livi_web::Flash {
                 mtd: vec![

@@ -1,0 +1,193 @@
+diff --git a/arch/riscv/cpu/riscv64/mmu.c b/arch/riscv/cpu/riscv64/mmu.c
+index 8b3d05d..246954c 100644
+--- a/arch/riscv/cpu/riscv64/mmu.c
++++ b/arch/riscv/cpu/riscv64/mmu.c
+@@ -75,9 +75,15 @@ __weak void mmu_enable(u32 dram_size)
+ #endif
+ }
+ 
++/* The images were written through the write-back D-cache, the next stage fetches them from DRAM. */
+ __weak void mmu_disable(void)
+ {
+-
++#ifdef CFG_USE_DCACHE
++	asm volatile(".long 0x0030000b\n"	/* dcache.ciall */
++		     ".long 0x0100000b\n"	/* icache.iall */
++		     ".long 0x01b0000b\n"	/* sync.is */
++		     "fence.i" ::: "memory");
++#endif
+ }
+ 
+ void data_sync_barrier(void)
+diff --git a/board/sun20iw1p1/spinor.mk b/board/sun20iw1p1/spinor.mk
+index 0d307ef..2e2aacd 100644
+--- a/board/sun20iw1p1/spinor.mk
++++ b/board/sun20iw1p1/spinor.mk
+@@ -9,3 +9,4 @@ CFG_SUNXI_DMA =y
+ CFG_SPI_USE_DMA =y
+ CFG_SUNXI_SPINOR =y
+ CFG_SPINOR_UBOOT_OFFSET=128
++CFG_SUNXI_LZ4=y
+diff --git a/common/lz4/lz4_wrapper.c b/common/lz4/lz4_wrapper.c
+index 7171fad..fcdc2ef 100644
+--- a/common/lz4/lz4_wrapper.c
++++ b/common/lz4/lz4_wrapper.c
+@@ -27,6 +27,8 @@ typedef uint64_t U64;
+ #define FORCE_INLINE static inline __attribute__((always_inline))
+ 
+ /* Unaltered (except removing unrelated code) from github.com/Cyan4973/lz4. */
++/* memcpy_sunxi.c has it. */
++#define __HAVE_ARCH_MEMMOVE
+ #include "lz4.c" /* #include for inlining, do not link! */
+ 
+ #define LZ4F_MAGIC 0x184D2204
+diff --git a/drivers/dram/sun20iw1p1/lib-dram/Makefile b/drivers/dram/sun20iw1p1/lib-dram/Makefile
+index c8e1c7e..f3797dc 100644
+--- a/drivers/dram/sun20iw1p1/lib-dram/Makefile
++++ b/drivers/dram/sun20iw1p1/lib-dram/Makefile
+@@ -45,6 +45,15 @@ $(LIB):	$(obj).depend $(OBJS)
+ #########################################################################
+ 
+ # defines $(obj).depend target
++# The decompiled mctl_hal.c waits through sdelay(), an empty stub here. The shipped compiler output is
++# the vendor HAL with real delays, the same xfel uses for its F133 DRAM init.
++# t-head-compat.inc turns the register names into numbers, current gas then makes "or a5,a5,a3" an
++# "ori a5,a5,13". Binutils knows these T-Head instructions as th.*, with the same operands.
++$(obj)mctl_hal.o: mctl_hal.S_shipped
++	sed -E -e "/t-head-compat.inc/d" \
++	  -e "s/^(\s+)(extu|ldd|lrbu|lrw|lurw|lwd|sdd|srb|srw|swia)(\s)/\1th.\2\3/" $< > $(obj)mctl_hal_th.S
++	$(Q)$(CC) $(ALL_AFLAGS) -march=rv64gc_xtheadbb_xtheadmemidx_xtheadmempair -o $@ $(obj)mctl_hal_th.S -c
++
+ include $(TOPDIR)/mk/rules.mk
+ 
+ sinclude $(obj).depend
+diff --git a/mk/config.mk b/mk/config.mk
+index 3782a84..e6a20d0 100644
+--- a/mk/config.mk
++++ b/mk/config.mk
+@@ -38,7 +38,7 @@ SPLINCLUDE    := \
+ 	-mabi=$(MABI)\
+ 	-fno-stack-protector \
+ 	-Wall \
+-	-Werror \
++	-std=gnu11 -Wno-error \
+ 	-Wstrict-prototypes \
+ 	-Wno-format-security \
+ 	-Wno-format-nonliteral \
+diff --git a/nboot/main/boot0_main.c b/nboot/main/boot0_main.c
+index 2fb411a..6adc03e 100644
+--- a/nboot/main/boot0_main.c
++++ b/nboot/main/boot0_main.c
+@@ -18,7 +18,10 @@
+ #include <arch/efuse.h>
+ #endif
+ 
+-static int boot0_clear_env(void);
++#define RTC_FEL 2
++#define EFEX 0x5AA5A55A
++#define RTC_TRYING 3
++#define TRYING 0x4c495659
+ 
+ void main(void)
+ {
+@@ -27,6 +30,18 @@ void main(void)
+ 	phys_addr_t  uboot_base = 0, optee_base = 0, monitor_base = 0, \
+ 				rtos_base = 0, opensbi_base = 0, dtb_base = 0;
+ 
++	/*
++	 * FEL is entered here, before the PLLs and caches are set up: the BROM USB code and the xfel
++	 * payloads expect that state, with CPU, AHB and APB on OSC24M. An error later on comes back
++	 * through a watchdog reset.
++	 */
++	if (rtc_read_data(RTC_FEL) == EFEX || rtc_read_data(RTC_TRYING) == TRYING) {
++		rtc_write_data(RTC_FEL, 0);
++		rtc_write_data(RTC_TRYING, 0);
++		sunxi_board_clock_reset();
++		boot0_jmp(FEL_BASE);
++	}
++
+ 	sunxi_serial_init(BT0_head.prvt_head.uart_port, (void *)BT0_head.prvt_head.uart_ctrl, 6);
+ 	printf("HELLO! BOOT0 is starting!\n");
+ 	printf("BOOT0 commit : %s\n", BT0_head.hash);
+@@ -36,18 +51,23 @@ void main(void)
+ 	if(status)
+ 		goto _BOOT_ERROR;
+ 
+-	if (rtc_probe_fel_flag()) {
+-		rtc_clear_fel_flag();
+-		goto _BOOT_ERROR;
+ #ifdef CFG_SUNXI_PHY_KEY
+-	} else if (check_update_key(&key_input)) {
++	if (check_update_key(&key_input))
+ 		goto _BOOT_ERROR;
+ #endif
+-	} else if (BT0_head.prvt_head.enable_jtag) {
++	if (BT0_head.prvt_head.enable_jtag) {
+ 		printf("enable_jtag\n");
+ 		boot_set_gpio((normal_gpio_cfg *)BT0_head.prvt_head.jtag_gpio, 5, 1);
+ 	}
+ 
++	/*
++	 * A boot that does not reach the rootfs ends in FEL: the rootfs clears rtc[3], the watchdog resets
++	 * after 16 s unless the kernel has taken it over.
++	 */
++	rtc_write_data(RTC_TRYING, TRYING);
++	writel(0x16aa0001, (void *)0x020500b4);
++	writel(0x16aa0000 | 0xb << 4 | 1, (void *)0x020500b8);
++
+ #ifdef FPGA_PLATFORM
+ 	dram_size = mctl_init((void *)BT0_head.prvt_head.dram_para);
+ #else
+@@ -81,9 +101,7 @@ void main(void)
+ 		goto _BOOT_ERROR;
+ 
+ 	status = load_package();
+-	if(status == 0 )
+-		load_image(&uboot_base, &optee_base, &monitor_base, &rtos_base, &opensbi_base, &dtb_base);
+-	else
++	if (status || load_image(&uboot_base, &optee_base, &monitor_base, &rtos_base, &opensbi_base, &dtb_base))
+ 		goto _BOOT_ERROR;
+ 
+ 	if (dtb_base) {
+@@ -138,17 +156,9 @@ void main(void)
+ 
+ 	while(1);
+ _BOOT_ERROR:
+-	boot0_clear_env();
+-	boot0_jmp(FEL_BASE);
+-
+-}
+-
+-static int boot0_clear_env(void)
+-{
+-	sunxi_board_exit();
+-	sunxi_board_clock_reset();
+-	mmu_disable();
+-	mdelay(10);
+-
+-	return 0;
++	rtc_write_data(RTC_FEL, EFEX);
++	writel(0x16aa0001, (void *)0x020500b4);
++	writel(0x16aa0000 | 0 << 4 | 1, (void *)0x020500b8);
++	for (;;)
++		;
+ }
+diff --git a/nboot/main/load_image.c b/nboot/main/load_image.c
+index 759a36f..c588bbd 100644
+--- a/nboot/main/load_image.c
++++ b/nboot/main/load_image.c
+@@ -93,7 +93,13 @@ int load_image(phys_addr_t *uboot_base, phys_addr_t *optee_base, \
+ 		} else if (strncmp(toc1_item->name, ITEM_DTB_NAME, sizeof(ITEM_DTB_NAME)) == 0) {
+ 			*dtb_base = image_base;
+ 		}
+-		toc1_flash_read(toc1_item->data_offset/512, (toc1_item->data_len+511)/512, (void *)image_base);
++		/* An LZ4 frame item is unpacked straight from the package buffer to its run address. */
++		if (*(u32 *)(bootpkg_base + toc1_item->data_offset) == 0x184D2204) {
++			size_t n = SZ_32M;
++			if (ulz4fn(bootpkg_base + toc1_item->data_offset, toc1_item->data_len, (void *)image_base, &n))
++				return -1;
++		} else
++			toc1_flash_read(toc1_item->data_offset/512, (toc1_item->data_len+511)/512, (void *)image_base);
+ 	}
+ 
+ 	return 0;

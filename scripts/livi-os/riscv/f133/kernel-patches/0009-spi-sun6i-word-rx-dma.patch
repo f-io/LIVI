@@ -1,0 +1,33 @@
+The RX DMA read the FIFO one byte at a time, which held NOR reads at about 20 MB/s whatever the
+bus width. Word reads keep up with Quad I/O at 75 MHz.
+
+--- a/drivers/spi/spi-sun6i.c	2026-11-18 13:52:50.897947524 +0100
++++ b/drivers/spi/spi-sun6i.c	2026-11-18 13:52:50.907083560 +0100
+@@ -208,6 +208,18 @@
+ 	complete(&sspi->dma_rx_done);
+ }
+ 
++/* Word reads empty the RX FIFO four times faster, if every segment holds whole bursts. */
++static enum dma_slave_buswidth sun6i_spi_rx_width(struct sg_table *sgt)
++{
++	struct scatterlist *sg;
++	int i;
++
++	for_each_sg(sgt->sgl, sg, sgt->nents, i)
++		if ((sg_dma_address(sg) & 3) || (sg_dma_len(sg) & 31))
++			return DMA_SLAVE_BUSWIDTH_1_BYTE;
++	return DMA_SLAVE_BUSWIDTH_4_BYTES;
++}
++
+ static int sun6i_spi_prepare_dma(struct sun6i_spi *sspi,
+ 				 struct spi_transfer *tfr)
+ {
+@@ -219,7 +231,7 @@
+ 		struct dma_slave_config rxconf = {
+ 			.direction = DMA_DEV_TO_MEM,
+ 			.src_addr = sspi->dma_addr_rx,
+-			.src_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE,
++			.src_addr_width = sun6i_spi_rx_width(&tfr->rx_sg),
+ 			.src_maxburst = 8,
+ 		};
+ 

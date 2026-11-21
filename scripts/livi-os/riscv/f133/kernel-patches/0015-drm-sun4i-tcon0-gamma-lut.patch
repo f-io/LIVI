@@ -1,0 +1,88 @@
+TCON0 of sun4i/D1 has its own 256 entry gamma table (0x400, enabled by GCTL bit 30) before the
+panel, but the CRTC offered no colour management. Expose it as GAMMA_LUT: the legacy gamma
+ioctl and atomic commits then set gamma, contrast and per-channel gains for UI and video alike.
+
+--- a/drivers/gpu/drm/sun4i/sun4i_crtc.c
++++ b/drivers/gpu/drm/sun4i/sun4i_crtc.c
+@@ -17,6 +17,7 @@
+ 
+ #include <drm/drm_atomic.h>
+ #include <drm/drm_atomic_helper.h>
++#include <drm/drm_color_mgmt.h>
+ #include <drm/drm_crtc.h>
+ #include <drm/drm_modes.h>
+ #include <drm/drm_print.h>
+@@ -45,6 +46,10 @@
+ 	return NULL;
+ }
+ 
++#define SUN4I_TCON_GCTL_GAMMA_ENABLE	BIT(30)
++#define SUN4I_TCON_GAMMA_TABLE_REG	0x400
++#define SUN4I_TCON_GAMMA_SIZE		256
++
+ static int sun4i_crtc_atomic_check(struct drm_crtc *crtc,
+ 				    struct drm_atomic_commit *state)
+ {
+@@ -54,6 +59,10 @@
+ 	struct sunxi_engine *engine = scrtc->engine;
+ 	int ret = 0;
+ 
++	if (crtc_state->gamma_lut &&
++	    drm_color_lut_size(crtc_state->gamma_lut) != SUN4I_TCON_GAMMA_SIZE)
++		return -EINVAL;
++
+ 	if (engine && engine->ops && engine->ops->atomic_check)
+ 		ret = engine->ops->atomic_check(engine, crtc_state);
+ 
+@@ -83,6 +92,27 @@
+ 		engine->ops->atomic_begin(engine, old_state);
+ }
+ 
++/* The table is written with the gamma stage off, the TCON reads it while it is on. */
++static void sun4i_crtc_set_gamma(struct sun4i_crtc *scrtc,
++				 struct drm_property_blob *blob)
++{
++	struct regmap *regs = scrtc->tcon->regs;
++	const struct drm_color_lut *lut;
++	int i;
++
++	regmap_clear_bits(regs, SUN4I_TCON_GCTL_REG, SUN4I_TCON_GCTL_GAMMA_ENABLE);
++	if (!blob)
++		return;
++
++	lut = blob->data;
++	for (i = 0; i < SUN4I_TCON_GAMMA_SIZE; i++)
++		regmap_write(regs, SUN4I_TCON_GAMMA_TABLE_REG + i * 4,
++			     drm_color_lut_extract(lut[i].red, 8) << 16 |
++			     drm_color_lut_extract(lut[i].green, 8) << 8 |
++			     drm_color_lut_extract(lut[i].blue, 8));
++	regmap_set_bits(regs, SUN4I_TCON_GCTL_REG, SUN4I_TCON_GCTL_GAMMA_ENABLE);
++}
++
+ static void sun4i_crtc_atomic_flush(struct drm_crtc *crtc,
+ 				    struct drm_atomic_commit *state)
+ {
+@@ -91,6 +121,9 @@
+ 
+ 	DRM_DEBUG_DRIVER("Committing plane changes\n");
+ 
++	if (crtc->state->color_mgmt_changed && crtc->gamma_size)
++		sun4i_crtc_set_gamma(scrtc, crtc->state->gamma_lut);
++
+ 	sunxi_engine_commit(scrtc->engine, crtc, state);
+ 
+ 	if (event) {
+@@ -239,6 +272,13 @@
+ 
+ 	drm_crtc_helper_add(&scrtc->crtc, &sun4i_crtc_helper_funcs);
+ 
++	/* TCON0 runs every pixel through its own 256 entry table before the panel */
++	if (tcon->quirks->has_channel_0) {
++		drm_mode_crtc_set_gamma_size(&scrtc->crtc, SUN4I_TCON_GAMMA_SIZE);
++		drm_crtc_enable_color_mgmt(&scrtc->crtc, 0, false,
++					   SUN4I_TCON_GAMMA_SIZE);
++	}
++
+ 	/* Set crtc.port to output port node of the tcon */
+ 	scrtc->crtc.port = of_graph_get_port_by_id(scrtc->tcon->dev->of_node,
+ 						   1);

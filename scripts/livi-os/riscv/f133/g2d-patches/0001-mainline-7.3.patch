@@ -1,0 +1,156 @@
+The radxa BSP G2D (RCQ) driver on mainline 7.3: no AW_BSP menu, printk instead of sunxi-log, the
+7.x class, ida, remove and namespace APIs, 64-bit RCQ addresses on any 64-bit arch, and no runtime PM.
+
+diff -ruN a/Kconfig b/Kconfig
+--- a/Kconfig
++++ b/Kconfig
+@@ -1,7 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0
+ 
+ menu "G2D Drivers"
+-	depends on AW_BSP
+ 
+ config AW_G2D
+ 	tristate "G2D Support for Allwinner SoCs"
+diff -ruN a/g2d_rcq/g2d.c b/g2d_rcq/g2d.c
+--- a/g2d_rcq/g2d.c
++++ b/g2d_rcq/g2d.c
+@@ -29,6 +29,12 @@
+ #include "linux/hwspinlock.h"
+ #include "../g2d_buf_cache.h"
+ 
++/*
++ * The F133 G2D sits in no power domain. Runtime PM would gate its clocks and reinitialise the engine
++ * around every ioctl, open and release do it once instead.
++ */
++#undef CONFIG_PM_GENERIC_DOMAINS
++
+ #if IS_ENABLED(CONFIG_PM_GENERIC_DOMAINS)
+ #define PM_ARRAY_SIZE  8
+ #endif
+@@ -1575,7 +1581,7 @@
+ 	.mmap = g2d_mmap,
+ };
+ 
+-static int g2d_remove(struct platform_device *pdev)
++static void g2d_remove(struct platform_device *pdev)
+ {
+ #if (IS_ENABLED(CONFIG_G2D_USE_HWSPINLOCK) && !IS_ENABLED(CONFIG_PM_GENERIC_DOMAINS))
+ 	pm_runtime_put_sync(para.dev);
+@@ -1599,7 +1605,6 @@
+ 	sysfs_remove_group(&g2d_dev->kobj, &g2d_attribute_group);
+ 
+ 	G2D_INFO("Driver unloaded succesfully\n");
+-	return 0;
+ }
+ 
+ static int g2d_suspend(struct device *dev)
+@@ -1692,11 +1697,7 @@
+ 		G2D_ERR("I was assigned major number %d\n", MAJOR(devid));
+ 		return -1;
+ 	}
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+ 	g2d_class = class_create("g2d");
+-#else
+-	g2d_class = class_create(THIS_MODULE, "g2d");
+-#endif
+ 	if (IS_ERR(g2d_class)) {
+ 		G2D_ERR("create class error\n");
+ 		return -1;
+@@ -1738,4 +1739,4 @@
+ MODULE_DESCRIPTION("g2d(rcq) driver");
+ MODULE_VERSION("1.0.2");
+ MODULE_LICENSE("GPL");
+-MODULE_IMPORT_NS(DMA_BUF);
++MODULE_IMPORT_NS("DMA_BUF");
+diff -ruN a/g2d_rcq/g2d_driver_i.h b/g2d_rcq/g2d_driver_i.h
+--- a/g2d_rcq/g2d_driver_i.h
++++ b/g2d_rcq/g2d_driver_i.h
+@@ -17,7 +17,7 @@
+ #ifndef __G2D_DRIVER_I_H
+ #define __G2D_DRIVER_I_H
+ 
+-#include <sunxi-log.h>
++#include <linux/printk.h>
+ #include "g2d_bsp.h"
+ 
+ /* #include "g2d_bsp_v2.h" */
+@@ -26,17 +26,17 @@
+ #define G2D_DBG(format, args...) \
+ 	do { \
+ 		if (dbg_info == 1) { \
+-			sunxi_info(NULL, "[G2D]: " format, ## args); \
++			pr_info("[G2D]: " format, ## args); \
+ 		} else { \
+-			sunxi_debug(NULL, "[G2D]: " format, ## args); \
++			pr_debug("[G2D]: " format, ## args); \
+ 		} \
+ 	} while (0)
+ #define G2D_ERR(format, args...) \
+-	sunxi_err(NULL, "[G2D]: " format, ## args)
++	pr_err("[G2D]: " format, ## args)
+ #define G2D_WARN(format, args...) \
+-	sunxi_warn(NULL, "[G2D]: " format, ## args)
++	pr_warn("[G2D]: " format, ## args)
+ #define G2D_INFO(format, args...) \
+-	sunxi_info(NULL, "[G2D]: " format, ## args)
++	pr_info("[G2D]: " format, ## args)
+ 
+ #if IS_ENABLED(CONFIG_AW_FPGA_S4) || defined(CONFIG_AW_FPGA_V7)
+ #define WAIT_CMD_TIME_MS 500
+diff -ruN a/g2d_rcq/g2d_mixer.c b/g2d_rcq/g2d_mixer.c
+--- a/g2d_rcq/g2d_mixer.c
++++ b/g2d_rcq/g2d_mixer.c
+@@ -17,7 +17,6 @@
+ #include "g2d_mixer.h"
+ #include <linux/idr.h>
+ #include <linux/version.h>
+-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+ 
+ static LIST_HEAD(g2d_task_list);
+ static DEFINE_IDA(g2d_task_ida);
+@@ -656,7 +655,7 @@
+ 			} else {
+ 				rcq_hd->low_addr =
+ 				    (__u32)((uintptr_t)(reg_blk->phy_addr) & 0xffffffff);
+-#if IS_ENABLED(CONFIG_ARM64)
++#if IS_ENABLED(CONFIG_64BIT)
+ 				rcq_hd->dw0.bits.high_addr =
+ 				    (u8)((__u64)(reg_blk->phy_addr) >> 32);
+ #else
+@@ -1002,7 +1001,7 @@
+ #if G2D_MIXER_RCQ_USED == 1
+ 	g2d_top_rcq_update_en(0);
+ 	g2d_top_rcq_irq_en(0);
+-#if IS_ENABLED(CONFIG_ARM64)
++#if IS_ENABLED(CONFIG_64BIT)
+ 	g2d_top_set_rcq_head((__u64)p_task->p_rcq_info->phy_addr,
+ 			     p_task->p_rcq_info->rcq_header_len);
+ #else
+@@ -1049,7 +1048,7 @@
+ 	kfree(p_task->p_para);
+ 
+ 	list_del(&p_task->list);
+-	ida_simple_remove(&g2d_task_ida, p_task->task_id);
++	ida_free(&g2d_task_ida, p_task->task_id);
+ 	kfree(p_task->frame);
+ 	kfree(p_task);
+ 
+@@ -1097,7 +1096,7 @@
+ 	task->apply = g2d_mixer_apply;
+ 	task->mixer_mem_setup = g2d_mixer_mem_setup;
+ 	task->p_g2d_info = p_g2d_info;
+-	task->task_id = ida_simple_get(&g2d_task_ida, 1, 0, GFP_KERNEL);
++	task->task_id = ida_alloc_min(&g2d_task_ida, 1, GFP_KERNEL);
+ 	if (task->task_id < 0) {
+ 		goto FREE;
+ 	}
+@@ -1133,7 +1132,7 @@
+ 
+ 	return task->task_id;
+ IDA_REMOVE:
+-	ida_simple_remove(&g2d_task_ida, task->task_id);
++	ida_free(&g2d_task_ida, task->task_id);
+ FREE:
+ 	kfree(task->frame);
+ 	kfree(task->p_rcq_info);

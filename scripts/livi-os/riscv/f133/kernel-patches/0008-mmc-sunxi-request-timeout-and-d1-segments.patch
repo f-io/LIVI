@@ -1,0 +1,141 @@
+Mainline ends a request only from its interrupt and keeps the controller's own timeout off, so a
+lost interrupt held the SDIO host forever: the aic8800 hung with ksdioirqd in mmc_wait_for_req_done.
+Allwinner's driver ends such a request after 5 s, this one now too, and reports its registers.
+D1 DMA segments stay at 4 KiB as in Allwinner's driver, a full 8 KiB one went out as size 0.
+Controller errors print, the kernel has no dynamic debug.
+
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -13,6 +13,7 @@
+ #include <linux/clk/sunxi-ng.h>
+ #include <linux/delay.h>
+ #include <linux/device.h>
++#include <linux/devm-helpers.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/err.h>
+ #include <linux/interrupt.h>
+@@ -244,6 +245,8 @@
+ 
+ struct sunxi_mmc_cfg {
+ 	u32 idma_des_size_bits;
++	/* largest DMA segment when below the descriptor's size field, 0 for its full range */
++	u32 idma_seg_size;
+ 	u32 idma_des_shift;
+ 	const struct sunxi_mmc_clk_delay *clk_delays;
+ 
+@@ -295,6 +298,9 @@
+ 	struct mmc_request *manual_stop_mrq;
+ 	int		ferror;
+ 
++	/* completes a request whose interrupt never comes */
++	struct delayed_work timeout_work;
++
+ 	/* vqmmc */
+ 	bool		vqmmc_enabled;
+ 
+@@ -490,7 +496,7 @@
+ 				      cmd->opcode == SD_IO_RW_DIRECT))
+ 		return;
+ 
+-	dev_dbg(mmc_dev(host->mmc),
++	dev_err_ratelimited(mmc_dev(host->mmc),
+ 		"smc %d err, cmd %d,%s%s%s%s%s%s%s%s%s%s !!\n",
+ 		host->mmc->index, cmd->opcode,
+ 		data ? (data->flags & MMC_DATA_WRITE ? " WR" : " RD") : "",
+@@ -607,8 +613,10 @@
+ 	mmc_writel(host, REG_RINTR, msk_int);
+ 	mmc_writel(host, REG_IDST, idma_int);
+ 
+-	if (finalize)
++	if (finalize) {
++		cancel_delayed_work(&host->timeout_work);
+ 		ret = sunxi_mmc_finalize_request(host);
++	}
+ 
+ 	spin_unlock(&host->lock);
+ 
+@@ -657,6 +665,45 @@
+ 	return IRQ_HANDLED;
+ }
+ 
++/*
++ * The controller's own timeout is off (REG_TMOUT all ones), so a request whose done or error
++ * interrupt is lost would hold the host forever. Allwinner's driver ends such a request after 5 s
++ * as well (SUNXI_SC_EN_TIMEOUT_DETECT).
++ */
++#define SUNXI_MMC_REQUEST_TIMEOUT_MS	5000
++
++static void sunxi_mmc_timeout(struct work_struct *work)
++{
++	struct sunxi_mmc_host *host = container_of(to_delayed_work(work),
++						   struct sunxi_mmc_host, timeout_work);
++	struct mmc_request *mrq;
++	unsigned long iflags;
++	bool stop;
++
++	spin_lock_irqsave(&host->lock, iflags);
++	mrq = host->mrq;
++	if (!mrq) {
++		spin_unlock_irqrestore(&host->lock, iflags);
++		return;
++	}
++	dev_err(mmc_dev(host->mmc),
++		"cmd %d arg %x got no interrupt: int_sum %08x mista %08x idst %08x status %08x\n",
++		mrq->cmd->opcode, mrq->cmd->arg, host->int_sum,
++		mmc_readl(host, REG_MISTA), mmc_readl(host, REG_IDST),
++		mmc_readl(host, REG_STAS));
++	host->int_sum |= SDXC_DATA_TIMEOUT;
++	stop = sunxi_mmc_finalize_request(host) == IRQ_WAKE_THREAD;
++	spin_unlock_irqrestore(&host->lock, iflags);
++
++	if (stop) {
++		sunxi_mmc_send_manual_stop(host, mrq);
++		spin_lock_irqsave(&host->lock, iflags);
++		host->manual_stop_mrq = NULL;
++		spin_unlock_irqrestore(&host->lock, iflags);
++	}
++	mmc_request_done(host->mmc, mrq);
++}
++
+ static int sunxi_mmc_oclk_onoff(struct sunxi_mmc_host *host, u32 oclk_en)
+ {
+ 	unsigned long expire = jiffies + msecs_to_jiffies(750);
+@@ -1097,6 +1144,8 @@
+ 	mmc_writel(host, REG_IMASK, host->sdio_imask | imask);
+ 	mmc_writel(host, REG_CARG, cmd->arg);
+ 	mmc_writel(host, REG_CMDR, cmd_val);
++	schedule_delayed_work(&host->timeout_work,
++			      msecs_to_jiffies(SUNXI_MMC_REQUEST_TIMEOUT_MS + cmd->busy_timeout));
+ 
+ 	spin_unlock_irqrestore(&host->lock, iflags);
+ }
+@@ -1169,6 +1218,8 @@
+ 
+ static const struct sunxi_mmc_cfg sun20i_d1_cfg = {
+ 	.idma_des_size_bits = 13,
++	/* as Allwinner's driver: a full 8 KiB segment would be written as size 0 */
++	.idma_seg_size = SZ_4K,
+ 	.idma_des_shift = 2,
+ 	.can_calibrate = true,
+ 	.mask_data0 = true,
+@@ -1378,6 +1429,10 @@
+ 	host->dev = &pdev->dev;
+ 	host->mmc = mmc;
+ 	spin_lock_init(&host->lock);
++	ret = devm_delayed_work_autocancel(&pdev->dev, &host->timeout_work,
++					   sunxi_mmc_timeout);
++	if (ret)
++		return ret;
+ 
+ 	ret = sunxi_mmc_resource_request(host, pdev);
+ 	if (ret)
+@@ -1417,7 +1472,8 @@
+ 	mmc->max_blk_count	= 8192;
+ 	mmc->max_blk_size	= 4096;
+ 	mmc->max_segs		= PAGE_SIZE / sizeof(struct sunxi_idma_des);
+-	mmc->max_seg_size	= (1 << host->cfg->idma_des_size_bits);
++	mmc->max_seg_size	= host->cfg->idma_seg_size ?:
++				  (1 << host->cfg->idma_des_size_bits);
+ 	mmc->max_req_size	= mmc->max_seg_size * mmc->max_segs;
+ 	/* 400kHz ~ 52MHz */
+ 	mmc->f_min		=   400000;

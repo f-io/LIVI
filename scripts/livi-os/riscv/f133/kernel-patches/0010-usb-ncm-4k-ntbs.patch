@@ -1,0 +1,17 @@
+u_ether keeps an RX skb of dwNtbOutMaxSize per request and refills them with GFP_KERNEL: 16 KiB
+NTBs are 32 KiB order-3 allocations, which OOM-kill LIVI on a fragmented 64 MB F133 while
+MBs are free. 4 KiB NTBs fit an order-1 page, NCM allows down to 2048.
+
+--- a/drivers/usb/gadget/function/f_ncm.c
++++ b/drivers/usb/gadget/function/f_ncm.c
+@@ -91,8 +91,8 @@
+  * If the host can group frames, allow it to do that, 16K is selected,
+  * because it's used by default by the current linux host driver
+  */
+-#define NTB_DEFAULT_IN_SIZE	16384
+-#define NTB_OUT_SIZE		16384
++#define NTB_DEFAULT_IN_SIZE	4096
++#define NTB_OUT_SIZE		4096
+ 
+ /* Allocation for storing the NDP, 32 should suffice for a
+  * 16k packet. This allows a maximum of 32 * 507 Byte packets to
