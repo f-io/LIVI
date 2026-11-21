@@ -1,0 +1,22 @@
+[package]
+name = "livi-os"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "livi"
+path = "src/main.rs"
+
+[target.'cfg(target_env = "musl")'.dependencies]
+livi-core = { path = "../livi-core", default-features = false }
+livi-helperd.workspace = true
+livi-output.workspace = true
+livi-ui.workspace = true
+livid = { workspace = true, features = ["screen"] }
+
+[features]
+ab5301 = ["livi-core/ab5301", "livi-helperd/ab5301"]
+
+[lints]
+workspace = true

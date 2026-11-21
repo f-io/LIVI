@@ -1,0 +1,87 @@
+#!/bin/sh
+# Per board in /etc/livi/board.sh: board_start mounts the storage into $home and exports the board's
+# facts, board_wifi loads the WiFi driver.
+mkdir -p /tmp/livi /tmp/run
+exec >/tmp/livi/rcS.log 2>&1
+echo '[livi] rcS'
+. /etc/livi/board.sh
+
+hostname LIVI
+ifconfig lo up
+home=/tmp/home
+board_start
+/usr/bin/livid splash &
+mkdir -p $home/.config/LIVI
+
+# A driver may make up part of wlan0's address on every boot, and the phone knows the car by it:
+# the first one is kept and set before wlan0 comes up. The hostname ends in it, so names never clash.
+mac=$home/.config/LIVI/wlan-mac
+named() {
+    hostname LIVI-$(cut -c13-14,16-17 $mac | tr a-f A-F)
+}
+wifi() {
+    board_wifi
+    for i in $(seq 1 20); do
+        [ -e /sys/class/net/wlan0 ] && break
+        sleep 0.5
+    done
+    [ -e /sys/class/net/wlan0 ] || { echo '[livi] wlan0 did not appear within 10s'; return; }
+    now=$(cat /sys/class/net/wlan0/address)
+    if [ -s $mac ]; then
+        [ "$(cat $mac)" = "$now" ] || ifconfig wlan0 hw ether "$(cat $mac)"
+    else
+        echo "$now" >$mac
+        named
+    fi
+    echo "[livi] wlan0 $(cat /sys/class/net/wlan0/address), $(hostname)"
+}
+# The first boot waits for the address, LIVI takes its name from the hostname.
+if [ -s $mac ]; then
+    named
+    wifi &
+else
+    wifi
+fi
+
+(
+    export HOME=$home XDG_RUNTIME_DIR=/tmp/run
+    export LIVI_UI_CMD=/usr/bin/LIVI LIVI_HELPER_BIN=/usr/bin/livi-helperd
+    export LIVI_OUTPUT_BIN=/usr/bin/livi-output LIVI_UI_PLANES=/tmp/run/livi/ui-planes.sock
+    cd /tmp
+    while :; do
+        /usr/bin/livi-core >/tmp/livi/core.log 2>&1
+        sleep 2
+    done
+) &
+echo "[livi] LIVI pid=$!"
+
+/usr/bin/livi-httpd "LIVI OS" livi-os.local >/tmp/livi/httpd.log 2>&1 &
+echo "[livi] httpd pid=$! :80"
+/usr/bin/livi-mdnsd livi-os wlan0 >/tmp/livi/mdnsd.log 2>&1 &
+echo "[livi] mdnsd pid=$! livi-os.local"
+# The initramfs telnetds do not survive the switch_root.
+killall telnetd 2>/dev/null
+telnetd -l /bin/sh -p 23 && echo "[livi] telnetd :23"
+
+# Retries in the background until the board's I2C nodes are there, mfid finds the chip on them.
+if [ -n "$LIVI_MFI_ON_BOARD" ]; then
+    (
+        for i in $(seq 1 20); do
+            if ls /dev/i2c-* >/dev/null 2>&1; then
+                /usr/bin/livi-mfid >/tmp/livi/mfid.log 2>&1 &
+                echo "[livi] mfid pid=$! :5000"
+                break
+            fi
+            sleep 0.5
+        done
+    ) &
+fi
+
+# The ways in are up: clear the mark the initramfs set for this boot, the next one takes this rootfs again.
+for n in /sys/class/mtd/mtd[0-9]*; do
+    [ "$(cat $n/name 2>/dev/null)" = bootstate ] && flash_eraseall -q /dev/mtd${n##*mtd} \
+        && echo '[livi] bootstate cleared'
+done
+
+echo 4 > /proc/sys/kernel/printk
+echo '[livi] rcS done'

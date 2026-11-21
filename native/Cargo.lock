@@ -4559,6 +4559,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "livi-os"
+version = "10.6.0"
+dependencies = [
+ "livi-core",
+ "livi-helperd",
+ "livi-output",
+ "livi-ui",
+ "livid",
+]
+
+[[package]]
 name = "livi-output"
 version = "10.6.0"
 dependencies = [

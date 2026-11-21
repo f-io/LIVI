@@ -260,12 +260,14 @@ mod tests {
 
     #[test]
     fn a_chosen_adapter_that_is_gone_stays_listed_offline() {
-        let state = json!({ "config": { "btAdapter": "livi-link" }, "system": { "btAdapters": ["hci0"] } });
+        let state =
+            json!({ "config": { "btAdapter": "livi-link" }, "system": { "btAdapters": ["hci0"] } });
         let list = offers(OptionSource::BtAdapters, &state);
         assert_eq!(list.len(), 2);
         assert_eq!(list[1].label, "LIVI Link");
         assert!(list[1].offline);
-        let state = json!({ "config": { "btAdapter": "hci0" }, "system": { "btAdapters": ["hci0"] } });
+        let state =
+            json!({ "config": { "btAdapter": "hci0" }, "system": { "btAdapters": ["hci0"] } });
         assert_eq!(offers(OptionSource::BtAdapters, &state).len(), 1);
     }
 

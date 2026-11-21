@@ -98,7 +98,9 @@ boot() {
         echo '[livi] wifi switched off'
     fi
 
-    if enabled bt; then
+    if [ -n "$NO_HCI" ]; then
+        :
+    elif enabled bt; then
         bt &
     else
         echo '[livi] bluetooth switched off'
