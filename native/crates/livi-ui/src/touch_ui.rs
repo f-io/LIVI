@@ -10,7 +10,7 @@ use livi_core_proto::input::{Input, Point};
 use livi_core_proto::state::Screen;
 use livi_ui_model::touch::{Change, Fingers};
 use slint::ComponentHandle;
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 use slint::winit_030::winit;
 
 use crate::{AppWindow, Page, PhoneState};
@@ -50,7 +50,7 @@ fn send(client: &Client, points: Vec<Point>) {
     });
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 pub fn winit(ui: &AppWindow, client: &Client, touch: &winit::event::Touch) -> bool {
     let change = match touch.phase {
         winit::event::TouchPhase::Started => Change::Down,
@@ -64,6 +64,83 @@ pub fn winit(ui: &AppWindow, client: &Client, touch: &winit::event::Touch) -> bo
         (touch.location.x, touch.location.y),
         change,
     )
+}
+
+#[cfg(kms)]
+thread_local! {
+    static POINTER: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+#[cfg(kms)]
+pub fn wire(ui: &AppWindow, client: &Client) {
+    let rotation: u32 = std::env::var("SLINT_KMS_ROTATION")
+        .ok()
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(0);
+    let weak = ui.as_weak();
+    let client = client.clone();
+    crate::evdev::touches(move |touch| {
+        let (weak, client) = (weak.clone(), client.clone());
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = weak.upgrade() {
+                kms_touch(&ui, &client, rotation, touch);
+            }
+        });
+    });
+}
+
+/// Rotates the way linuxkms turns the picture. Only the first finger is Slint's pointer.
+#[cfg(kms)]
+fn kms_touch(ui: &AppWindow, client: &Client, rotation: u32, touch: crate::evdev::Touch) {
+    use crate::evdev::Phase;
+    use slint::platform::{PointerEventButton, WindowEvent};
+
+    let size = ui.window().size();
+    let (w, h) = (f64::from(size.width), f64::from(size.height));
+    let (u, v) = (touch.x, touch.y);
+    let (x, y) = match rotation {
+        90 => (v * w, (1.0 - u) * h),
+        180 => ((1.0 - u) * w, (1.0 - v) * h),
+        270 => ((1.0 - v) * w, u * h),
+        _ => (u * w, v * h),
+    };
+    if touch.phase == Phase::Down {
+        crate::keys_ui::touched(ui);
+    }
+    let change = match touch.phase {
+        Phase::Down => Change::Down,
+        Phase::Move => Change::Move,
+        Phase::Up => Change::Up,
+    };
+    if handle(ui, client, touch.id, (x, y), change) {
+        return;
+    }
+    let pointer = POINTER.get();
+    if pointer.is_some_and(|p| p != touch.id) || (pointer.is_none() && touch.phase != Phase::Down) {
+        return;
+    }
+    let scale = f64::from(ui.window().scale_factor());
+    let position = slint::LogicalPosition::new((x / scale) as f32, (y / scale) as f32);
+    let window = ui.window();
+    match touch.phase {
+        Phase::Down => {
+            POINTER.set(Some(touch.id));
+            window.dispatch_event(WindowEvent::PointerMoved { position });
+            window.dispatch_event(WindowEvent::PointerPressed {
+                position,
+                button: PointerEventButton::Left,
+            });
+        }
+        Phase::Move => window.dispatch_event(WindowEvent::PointerMoved { position }),
+        Phase::Up => {
+            POINTER.set(None);
+            window.dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: PointerEventButton::Left,
+            });
+            window.dispatch_event(WindowEvent::PointerExited);
+        }
+    }
 }
 
 #[cfg(target_os = "android")]

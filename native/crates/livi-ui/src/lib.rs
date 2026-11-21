@@ -9,11 +9,13 @@ mod bundle;
 pub mod clock;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod core_process;
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 mod cursor_ui;
 mod dashboard_ui;
 #[cfg(target_os = "macos")]
 mod dock_ui;
+#[cfg(kms)]
+mod evdev;
 mod files_ui;
 mod follow;
 mod fonts;
@@ -98,7 +100,24 @@ pub(crate) fn apply_zoom(ui: &AppWindow) {
     });
 }
 
-#[cfg(not(target_os = "android"))]
+fn rendering_set_up(ui: &AppWindow) {
+    if !attach_video(ui.window(), "main") {
+        eprintln!("[ui] the window has no native handle for the video");
+    }
+    #[cfg(winit)]
+    cursor_ui::start(ui);
+    if BASE_SCALE.get().is_none() {
+        BASE_SCALE.set(Some(ui.window().scale_factor()));
+        let weak = ui.as_weak();
+        Timer::single_shot(Duration::ZERO, move || {
+            if let Some(ui) = weak.upgrade() {
+                apply_zoom(&ui);
+            }
+        });
+    }
+}
+
+#[cfg(winit)]
 pub(crate) fn system_scale_changed(ui: &AppWindow, scale: f32) {
     BASE_SCALE.set(Some(scale));
     let weak = ui.as_weak();
@@ -358,7 +377,17 @@ pub(crate) fn attach_video(window: &slint::Window, screen: &str) -> bool {
         }
         false
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(kms)]
+    {
+        use std::os::fd::AsRawFd;
+        let _ = window;
+        let Some(fd) = i_slint_backend_linuxkms::drm_device() else {
+            return false;
+        };
+        livi_video_view::set_window(screen, fd.as_raw_fd() as usize);
+        true
+    }
+    #[cfg(not(any(target_os = "macos", kms)))]
     {
         let _ = (window, screen);
         true
@@ -366,9 +395,9 @@ pub(crate) fn attach_video(window: &slint::Window, screen: &str) -> bool {
 }
 
 pub(crate) fn detach_video(screen: &str) {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", kms))]
     livi_video_view::set_window(screen, 0);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", kms)))]
     let _ = screen;
 }
 
@@ -494,6 +523,8 @@ pub fn run(
     KIOSK.with_borrow_mut(|k| *k = Some(Box::new(kiosk)));
     PICK.with_borrow_mut(|p| *p = pick);
     let ui = AppWindow::new()?;
+    #[cfg(kms)]
+    fonts::stand_in_generics();
     slint::set_xdg_app_id(
         std::env::var("LIVI_OUTPUT_APP_ID").unwrap_or_else(|_| "dev.f-io.livi".into()),
     )?;
@@ -518,9 +549,9 @@ pub fn run(
     if full_panel {
         own_panel(&ui);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(winit)]
     keys_ui::wire(&ui, &client);
-    #[cfg(target_os = "android")]
+    #[cfg(not(winit))]
     touch_ui::wire(&ui, &client);
     video_ui::wire(&ui, &client);
     wire(&ui, &client);
@@ -556,28 +587,25 @@ pub fn run(
         }
     });
 
-    ui.window().set_rendering_notifier({
+    let notified = ui.window().set_rendering_notifier({
         let weak = weak.clone();
         move |state, _| {
-            let (slint::RenderingState::RenderingSetup, Some(ui)) = (state, weak.upgrade()) else {
-                return;
-            };
-            if !attach_video(ui.window(), "main") {
-                eprintln!("[ui] the window has no native handle for the video");
-            }
-            #[cfg(not(target_os = "android"))]
-            cursor_ui::start(&ui);
-            if BASE_SCALE.get().is_none() {
-                BASE_SCALE.set(Some(ui.window().scale_factor()));
-                let weak = weak.clone();
-                Timer::single_shot(Duration::ZERO, move || {
-                    if let Some(ui) = weak.upgrade() {
-                        apply_zoom(&ui);
-                    }
-                });
+            if let (slint::RenderingState::RenderingSetup, Some(ui)) = (state, weak.upgrade()) {
+                rendering_set_up(&ui);
             }
         }
-    })?;
+    });
+    // The software renderer has no notifier, its window is set up once the event loop runs.
+    if let Err(slint::SetRenderingNotifierError::Unsupported) = notified {
+        let weak = weak.clone();
+        Timer::single_shot(Duration::ZERO, move || {
+            if let Some(ui) = weak.upgrade() {
+                rendering_set_up(&ui);
+            }
+        });
+    } else {
+        notified?;
+    }
     if let Some((w, h)) = std::env::var("LIVI_UI_SIZE")
         .ok()
         .and_then(|s| {

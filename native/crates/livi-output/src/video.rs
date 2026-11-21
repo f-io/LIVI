@@ -53,6 +53,10 @@ impl<O: Outside> Host<O> {
             return;
         };
         player.start();
+        self.url_muted.remove(&id);
+        if self.muted {
+            player.set_muted(true);
+        }
         self.url_players.insert(id, player);
     }
 

@@ -133,9 +133,22 @@ static CRASH_PATH: AtomicPtr<c_char> = AtomicPtr::new(core::ptr::null_mut());
 
 const SIG_DFL: usize = 0;
 
+#[cfg(not(target_env = "musl"))]
 unsafe extern "C" {
     fn backtrace(buffer: *mut *mut c_void, size: c_int) -> c_int;
     fn backtrace_symbols_fd(buffer: *const *mut c_void, size: c_int, fd: c_int);
+}
+
+// musl has no execinfo, a crash is reported without its frames.
+#[cfg(target_env = "musl")]
+unsafe fn backtrace(_buffer: *mut *mut c_void, _size: c_int) -> c_int {
+    0
+}
+
+#[cfg(target_env = "musl")]
+unsafe fn backtrace_symbols_fd(_buffer: *const *mut c_void, _size: c_int, _fd: c_int) {}
+
+unsafe extern "C" {
     fn signal(sig: c_int, handler: usize) -> usize;
 }
 

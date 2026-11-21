@@ -84,6 +84,25 @@ pub fn shown() -> Vec<[u8; 4]> {
     shown
 }
 
+/// Without system fonts the generic families (monospace...) find no font, Roboto stands in for them.
+#[cfg(kms)]
+pub fn stand_in_generics() {
+    use slint::fontique_012::fontique::GenericFamily;
+    let mut collection = slint::fontique_012::shared_collection();
+    let Some(roboto) = collection.family_id("Roboto") else {
+        return;
+    };
+    for generic in [
+        GenericFamily::SansSerif,
+        GenericFamily::SystemUi,
+        GenericFamily::Monospace,
+    ] {
+        if collection.generic_families(generic).next().is_none() {
+            collection.set_generic_families(generic, std::iter::once(roboto));
+        }
+    }
+}
+
 pub fn register(paths: &[String]) -> bool {
     let new: Vec<String> = REGISTERED.with_borrow(|done| {
         paths

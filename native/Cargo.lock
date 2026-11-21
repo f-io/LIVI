@@ -3049,8 +3049,6 @@ dependencies = [
 [[package]]
 name = "i-slint-backend-linuxkms"
 version = "1.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c37b8172486f2c8afc5c98305b66a8b4ac3612bcec2343db556497ae3652727"
 dependencies = [
  "bytemuck",
  "calloop 0.14.5",
@@ -3064,14 +3062,10 @@ dependencies = [
  "i-slint-renderer-femtovg",
  "i-slint-renderer-skia",
  "i-slint-renderer-software",
- "input 0.10.0",
- "libseat",
- "libudev-sys",
  "memmap2",
  "nix 0.31.4",
  "pkg-config",
  "raw-window-handle",
- "xkbcommon 0.9.0",
 ]
 
 [[package]]
@@ -3333,8 +3327,6 @@ dependencies = [
 [[package]]
 name = "i-slint-renderer-software"
 version = "1.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe9a36048b8873b672454eb0b32b904472561bcbca6648ffaa908ed7d38e0111"
 dependencies = [
  "bytemuck",
  "clru",
@@ -3757,19 +3749,6 @@ dependencies = [
  "bitflags 2.13.2",
  "input-sys",
  "libc 0.2.191",
- "udev",
-]
-
-[[package]]
-name = "input"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9793345a65d71317763a33066b5d8351f8760dde8d4930fe9e39b5f14a7959d"
-dependencies = [
- "bitflags 2.13.2",
- "input-sys",
- "libc 0.2.191",
- "log",
  "udev",
 ]
 
@@ -4642,7 +4621,9 @@ name = "livi-ui"
 version = "10.6.0"
 dependencies = [
  "base64 0.23.1",
+ "fontique",
  "i-slint-backend-android-activity",
+ "i-slint-backend-linuxkms",
  "image",
  "libc 1.0.0-alpha.5",
  "livi-core-client",
@@ -4679,10 +4660,12 @@ dependencies = [
 name = "livi-video-player"
 version = "10.6.0"
 dependencies = [
+ "drm",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-base",
  "gstreamer-video",
+ "libc 1.0.0-alpha.5",
  "livi-cfg",
  "livi-output-proto",
  "livi-video",
@@ -5873,8 +5856,6 @@ checksum = "9c4482d912d7671a7cd2089794f90ef3bb5f5f8c738230fb0fcd50fa020f0ed3"
 [[package]]
 name = "parley_engine"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b74c0d373e462e504ad4436710a39f099e18e848e1ee711f70cd2dcd5a69b290"
 dependencies = [
  "fontique",
  "harfrust",
@@ -7570,7 +7551,7 @@ dependencies = [
  "gbm",
  "gl_generator",
  "indexmap",
- "input 0.9.1",
+ "input",
  "libc 0.2.191",
  "libloading",
  "libseat",
@@ -7590,7 +7571,7 @@ dependencies = [
  "wayland-protocols-wlr",
  "wayland-server",
  "wayland-sys",
- "xkbcommon 0.8.0",
+ "xkbcommon",
 ]
 
 [[package]]
@@ -7669,7 +7650,7 @@ dependencies = [
  "wayland-protocols-misc",
  "wayland-protocols-wlr",
  "wayland-scanner",
- "xkbcommon 0.8.0",
+ "xkbcommon",
  "xkeysym",
 ]
 
@@ -9815,17 +9796,6 @@ name = "xkbcommon"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d66ca9352cbd4eecbbc40871d8a11b4ac8107cfc528a6e14d7c19c69d0e1ac9"
-dependencies = [
- "libc 0.2.191",
- "memmap2",
- "xkeysym",
-]
-
-[[package]]
-name = "xkbcommon"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7a974f48060a14e95705c01f24ad9c3345022f4d97441b8a36beb7ed5c4a02d"
 dependencies = [
  "libc 0.2.191",
  "memmap2",

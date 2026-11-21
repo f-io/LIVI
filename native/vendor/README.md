@@ -14,3 +14,22 @@
 - The winit backend hands LIVI the raw touches through its window event hook, the Android backend has no such hook.
 - Mouse wheel scrolls become `PointerScrolled` (60 px per notch, like winit).
 - Drop the copy once upstream exposes the raw pointers and handles scrolling.
+
+## i-slint-backend-linuxkms 1.19.0
+
+- RGB565 comes first, the F133 has no GPU and half the bytes to blend and to scan out.
+- The dumb buffers rotate through three, so a back buffer is three frames old. Upstream redraws it whole, LIVI redraws what changed in the two frames since (see the software renderer below).
+- Its Cargo.toml allows `dead_code`: upstream leaves `is_write_combined_memory` unused, the registry copy would hide that.
+- Drop the copy once upstream renders three buffers partially.
+
+## i-slint-renderer-software 1.19.0
+
+- Rasterised SVGs are cached by image and size. Upstream runs resvg for every icon in every frame, a quarter of the frame time when scrolling the settings on the F133.
+- `set_swapped_buffer_count`: `SwappedBuffers` for more than two buffers, each redrawn wherever a frame since it was last drawn into changed.
+- Drop the copy once upstream caches SVGs and knows more than two buffers.
+
+## parley_engine 0.12.0
+
+- On musl (LIVI OS) words and lines break without ICU's dictionaries, which are 3 MB of the UI binary. Slint asks for `complex-scripts` on every native target.
+- Only Thai, Lao, Khmer, Burmese and CJK text loses dictionary word breaks; line breaks follow UAX #14 as before.
+- Drop the copy once Slint lets the dictionaries go.

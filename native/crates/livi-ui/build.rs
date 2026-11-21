@@ -5,6 +5,16 @@
 use std::fmt::Write;
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(winit)");
+    println!("cargo::rustc-check-cfg=cfg(kms)");
+    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if env == "musl" {
+        println!("cargo::rustc-cfg=kms");
+    } else if os != "android" {
+        println!("cargo::rustc-cfg=winit");
+    }
+
     slint_build::compile("ui/app.slint").unwrap();
 
     let dir = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("ui/icons");

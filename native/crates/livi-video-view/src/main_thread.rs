@@ -25,7 +25,7 @@ extern "C" fn run<F: FnOnce() -> R, R>(context: *mut c_void) {
     }
 }
 
-#[cfg(in_process)]
+#[cfg(not(target_os = "macos"))]
 pub fn on_main<F: FnOnce() -> R + Send, R: Send>(f: F) -> R {
     f()
 }

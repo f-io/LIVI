@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use livi_output_proto::{
     AIRPLAY_TAG, CAMERA_TAG, CLUSTER_PLANE_MIN, CameraOrder, MAIN_TAG, PLANE_AIRPLAY, PLANE_CAMERA,
@@ -57,9 +57,17 @@ fn same_stream(codec: Option<VideoCodec>, data: &[u8], next: VideoCodec, atom: &
     codec == Some(next) && data == atom
 }
 
+/// One decoder: the main player stops while the cluster stream has the main screen.
+fn single_decoder() -> bool {
+    static ONE: OnceLock<bool> = OnceLock::new();
+    *ONE.get_or_init(|| std::env::var("LIVI_VIDEO_DECODERS").is_ok_and(|v| v.trim() == "1"))
+}
+
 #[derive(Default)]
 struct State {
     started: bool,
+    give_way: bool,
+    gave_way: bool,
     claiming: bool,
     codec: Option<VideoCodec>,
     codec_data: Vec<u8>,
@@ -133,6 +141,10 @@ impl MainPlane {
                 st.claiming = false;
                 st.started = true;
                 st.codec = Some(codec);
+                if single_decoder() && st.give_way {
+                    st.gave_way = true;
+                    return;
+                }
                 st.codec_data.clone()
             };
             plane.gst.create_player(plane.id, codec, &data);
@@ -158,12 +170,36 @@ impl MainPlane {
         self.comp.videoshow(self.tag, visible);
     }
 
+    pub fn give_way(&self, give: bool) {
+        if !single_decoder() {
+            return;
+        }
+        let create = {
+            let mut st = self.state();
+            st.give_way = give;
+            if !st.started || st.gave_way == give {
+                return;
+            }
+            st.gave_way = give;
+            (!give).then(|| (st.codec, st.codec_data.clone()))
+        };
+        match create {
+            Some((Some(codec), data)) => {
+                self.gst.create_player(self.id, codec, &data);
+                let _ = self.created.send(());
+            }
+            Some((None, _)) => {}
+            None => self.gst.stop(self.id),
+        }
+    }
+
     pub fn dispose(&self) {
         let started = {
             let mut st = self.state();
             st.claiming = false;
             st.generation += 1;
             st.codec = None;
+            st.gave_way = false;
             std::mem::take(&mut st.started)
         };
         self.comp.release(self.tag);

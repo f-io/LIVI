@@ -22,19 +22,26 @@ raw-window-handle = "0.6.2"
 serde_json.workspace = true
 slint = { workspace = true, features = [
   "std",
-  "compat-1-2",
+  "compat-1-18",
   "renderer-software",
   "raw-window-handle-06",
   "unstable-fontique-012",
 ] }
 
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+[target.'cfg(not(any(target_os = "android", target_os = "ios", target_env = "musl")))'.dependencies]
 slint = { workspace = true, features = [
   "backend-winit",
   "backend-winit-wayland",
   "renderer-femtovg",
   "unstable-winit-030",
 ] }
+
+[target.'cfg(target_env = "musl")'.dependencies]
+slint = { workspace = true, features = ["backend-linuxkms"] }
+i-slint-backend-linuxkms = { version = "=1.19.0", default-features = false }
+livi-video-view.workspace = true
+# A static binary links no fontconfig, LIVI brings its own fonts.
+fontique = { version = "0.12.0", features = ["fontconfig-dlopen"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 slint = { workspace = true, features = ["backend-winit", "renderer-skia", "unstable-winit-030"] }

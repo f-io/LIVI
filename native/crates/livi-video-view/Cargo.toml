@@ -8,7 +8,7 @@ license.workspace = true
 livi-output-proto.workspace = true
 livi-video-player = { workspace = true, features = ["window-view"] }
 
-[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+[target.'cfg(any(target_os = "android", target_os = "ios", all(target_os = "linux", target_env = "musl")))'.dependencies]
 livi-output-proto.workspace = true
 livi-video-player.workspace = true
 

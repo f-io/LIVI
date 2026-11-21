@@ -12,7 +12,7 @@ use livi_ui_model::keys::{
     Context, Focused, HELD_GAP, MirrorKey, Outcome, Zone, bound_to, decide, held_factor, released,
 };
 use livi_ui_model::media::pressed;
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model};
 
@@ -491,7 +491,7 @@ pub fn touched(ui: &AppWindow) {
     });
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 pub fn wire(ui: &AppWindow, client: &Client) {
     let weak = ui.as_weak();
     let client = client.clone();

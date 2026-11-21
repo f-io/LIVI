@@ -135,7 +135,17 @@ pub fn sink_chain(sink_override: Option<&str>) -> String {
         let _ = sink_override;
         "glimagesink name=sink sync=false qos=false".to_owned()
     }
-    #[cfg(not(any(target_vendor = "apple", target_os = "android")))]
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    {
+        let _ = sink_override;
+        "appsink name=sink sync=false max-buffers=1 drop=true caps=video/x-raw,format=NV12"
+            .to_owned()
+    }
+    #[cfg(not(any(
+        target_vendor = "apple",
+        target_os = "android",
+        all(target_os = "linux", target_env = "musl")
+    )))]
     {
         format!("{} name=sink sync=false", desktop_sink(sink_override))
     }

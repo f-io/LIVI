@@ -11,10 +11,10 @@ use livi_screen_stream::ScreenSink;
 use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig, VideoCodec};
 
 #[cfg_attr(in_process, path = "gst/in_process.rs")]
-#[cfg_attr(target_os = "macos", path = "gst/mac.rs")]
-#[cfg_attr(not(any(target_os = "macos", in_process)), path = "gst/linux.rs")]
+#[cfg_attr(ui_video, path = "gst/ui.rs")]
+#[cfg_attr(not(any(ui_video, in_process)), path = "gst/linux.rs")]
 mod platform;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(ui_video))]
 mod players;
 
 pub struct Tap(#[allow(dead_code)] SocketTap);

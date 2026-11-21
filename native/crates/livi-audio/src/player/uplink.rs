@@ -58,6 +58,8 @@ const fn source_element() -> &'static str {
         "osxaudiosrc"
     } else if cfg!(target_os = "android") {
         "aaudiosrc"
+    } else if cfg!(target_env = "musl") {
+        "alsasrc"
     } else {
         "pulsesrc"
     }

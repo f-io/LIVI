@@ -652,14 +652,21 @@ async fn follow_state(
                 s.sessions.held,
             )
         };
+        if last.as_ref().is_none_or(|l| l.front != now.front) {
+            let f = &now.front;
+            let cluster_on_main = f.main == Front::Cluster;
+            if cluster_on_main {
+                plane.give_way(true);
+            }
+            clusters.show_on([f.main, f.cluster, f.aux].map(|f| f == Front::Cluster));
+            if !cluster_on_main {
+                plane.give_way(false);
+            }
+        }
         if last.as_ref().is_none_or(|l| shown(l) != shown(&now)) {
             let (projection, mirrored, held) = shown(&now);
             plane.set_visible(projection && !mirrored);
             airplay.set_visible(projection && mirrored && !held);
-        }
-        if last.as_ref().is_none_or(|l| l.front != now.front) {
-            let f = &now.front;
-            clusters.show_on([f.main, f.cluster, f.aux].map(|f| f == Front::Cluster));
         }
         last = Some(now);
         if state.changed().await.is_err() {

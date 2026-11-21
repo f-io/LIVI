@@ -103,11 +103,10 @@ fn nav(rows: &mut Rows, nav: &Navigation, language: Language) {
 }
 
 fn clock(epoch: f64) -> Option<String> {
-    let t = epoch as libc::time_t;
     // SAFETY: an all-zero tm is valid, localtime_r only writes into it.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: both pointers are valid for the call.
-    if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
+    if unsafe { libc::localtime_r(&(epoch as _), &mut tm) }.is_null() {
         return None;
     }
     Some(format!("{:02}:{:02}", tm.tm_hour, tm.tm_min))

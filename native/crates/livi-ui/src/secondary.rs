@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use livi_core_client::Client;
 use livi_core_proto::state::{Front, Screen};
 use livi_ui_model::dashboard::screens::{Secondary, name};
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, LogicalPosition, LogicalSize};
 
@@ -83,7 +83,7 @@ fn open(main: &AppWindow, client: &Client, spec: &Secondary) -> Option<Secondary
     Some(w)
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(winit)]
 fn forward_keys(window: &slint::Window) {
     window.on_winit_window_event(|_, event| {
         let winit::event::WindowEvent::KeyboardInput { event, .. } = event else {
@@ -98,7 +98,7 @@ fn forward_keys(window: &slint::Window) {
     });
 }
 
-#[cfg(target_os = "android")]
+#[cfg(not(winit))]
 fn forward_keys(_: &slint::Window) {}
 
 pub fn follow(main: &AppWindow, client: &Client, wanted: Vec<Secondary>) {

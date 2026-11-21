@@ -6,6 +6,9 @@ exclude = ["vendor"]
 [patch.crates-io]
 femtovg = { path = "vendor/femtovg" }
 i-slint-backend-android-activity = { path = "vendor/i-slint-backend-android-activity" }
+i-slint-backend-linuxkms = { path = "vendor/i-slint-backend-linuxkms" }
+i-slint-renderer-software = { path = "vendor/i-slint-renderer-software" }
+parley_engine = { path = "vendor/parley_engine" }
 
 [workspace.package]
 version = "10.6.0"

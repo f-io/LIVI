@@ -7,7 +7,9 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_base as gst_base;
 use livi_output_proto::VideoCodec;
-use std::sync::{Arc, Once};
+use livi_video::nal::{CpCodec, CpNalKind};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, Once, OnceLock};
 
 mod camera;
 #[cfg(in_process)]
@@ -18,8 +20,13 @@ mod url_player;
     path = "view/mac.rs"
 )]
 #[cfg_attr(in_process, path = "view/in_process.rs")]
+#[cfg_attr(all(target_os = "linux", target_env = "musl"), path = "view/kms.rs")]
 #[cfg_attr(
-    not(any(all(target_os = "macos", feature = "window-view"), in_process)),
+    not(any(
+        all(target_os = "macos", feature = "window-view"),
+        in_process,
+        all(target_os = "linux", target_env = "musl")
+    )),
     path = "view/none.rs"
 )]
 mod view;
@@ -227,10 +234,91 @@ const RANK_URL: i32 = 1;
 const RANK_CAMERA: i32 = 2;
 
 pub struct Player {
+    id: usize,
+    codec: VideoCodec,
+    decoder: String,
+    handle: usize,
+    codec_data: Vec<u8>,
+    decoding: Mutex<Option<Decoding>>,
+    to_keyframe: AtomicBool,
+    started: AtomicBool,
+    stopped: AtomicBool,
+    gamma: Mutex<Option<[f64; 5]>>,
+    view: WindowView,
+    spare: Spare,
+    /// The sender gives the next keyframe only with the next format.
+    held: Mutex<Vec<Vec<u8>>>,
+}
+
+struct Decoding {
     pipeline: gst::Pipeline,
     appsrc: Option<gst_app::AppSrc>,
     glshader: Option<gst::Element>,
-    view: WindowView,
+}
+
+impl Decoding {
+    fn flush(&self) {
+        let Some(src) = &self.appsrc else { return };
+        let _ = src.send_event(gst::event::FlushStart::new());
+        let _ = src.send_event(gst::event::FlushStop::new(true));
+    }
+
+    fn close(self) {
+        let _ = self.pipeline.set_state(gst::State::Null);
+        PIPELINES.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+type Parked = (VideoCodec, String, Vec<u8>, Decoding);
+
+/// `LIVI_VIDEO_DECODERS` caps the pipelines, parked ones included. Unset or 0 parks none.
+static PARKED: Mutex<Vec<Parked>> = Mutex::new(Vec::new());
+static PIPELINES: AtomicUsize = AtomicUsize::new(0);
+const HELD_MAX: usize = 300;
+static PLAYERS: AtomicUsize = AtomicUsize::new(0);
+
+fn decoders_cap() -> usize {
+    static CAP: OnceLock<usize> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("LIVI_VIDEO_DECODERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    })
+}
+
+fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn cp_codec(codec: VideoCodec) -> Option<CpCodec> {
+    match codec {
+        VideoCodec::H264 => Some(CpCodec::H264),
+        VideoCodec::H265 => Some(CpCodec::H265),
+        VideoCodec::Vp9 | VideoCodec::Av1 => None,
+    }
+}
+
+/// Reused: musl hands freed memory back to the kernel, new frames would cost fresh zeroed pages.
+type Spare = std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>;
+/// About what the queues in front of the decoder hold.
+const SPARE: usize = 6;
+
+struct Pooled(Vec<u8>, Spare);
+
+impl AsRef<[u8]> for Pooled {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Drop for Pooled {
+    fn drop(&mut self) {
+        let mut spare = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        if spare.len() < SPARE {
+            spare.push(std::mem::take(&mut self.0));
+        }
+    }
 }
 
 impl Player {
@@ -241,7 +329,7 @@ impl Player {
         let decoder = candidates(codec, sw_only)
             .into_iter()
             .find(|name| usable(name));
-        let Some(decoder) = decoder.as_deref() else {
+        let Some(decoder) = decoder else {
             eprintln!(
                 "[gst_video] no decoder registered for {codec}. Install the GStreamer plugin \
                  providing it, software decoding needs gstreamer1.0-libav ({}).",
@@ -252,44 +340,150 @@ impl Player {
             return None;
         };
 
-        let with_cal = !livi_video::codec::calibration().is_empty();
-        let pipeline = Self::parse(codec, decoder, with_cal, handle)?;
+        let player = Self {
+            id: PLAYERS.fetch_add(1, Ordering::Relaxed),
+            codec,
+            decoder,
+            handle,
+            codec_data: codec_data.to_vec(),
+            decoding: Mutex::new(None),
+            to_keyframe: AtomicBool::new(false),
+            started: AtomicBool::new(false),
+            stopped: AtomicBool::new(false),
+            gamma: Mutex::new(None),
+            view: WindowView::new(),
+            spare: Spare::default(),
+            held: Mutex::new(Vec::new()),
+        };
+        if !player.acquire()? {
+            eprintln!(
+                "[gst_video] player {} waits for a {codec} decoder to be handed back",
+                player.id
+            );
+        }
+        Some(player)
+    }
 
-        let appsrc = pipeline
-            .by_name("src")
-            .and_then(|e| e.downcast::<gst_app::AppSrc>().ok());
-        if let Some(src) = &appsrc
-            && !codec_data.is_empty()
-            && matches!(codec, VideoCodec::H264 | VideoCodec::H265)
+    /// Some(false): every decoder the cap allows is in use. None: no pipeline could be built.
+    fn acquire(&self) -> Option<bool> {
+        let mut decoding = locked(&self.decoding);
+        if decoding.is_some() {
+            return Some(true);
+        }
+        let parked = {
+            let mut parked = locked(&PARKED);
+            match parked.iter().position(|(c, d, data, _)| {
+                *c == self.codec && *d == self.decoder && *data == self.codec_data
+            }) {
+                Some(i) => Some(parked.remove(i).3),
+                None => {
+                    // Its buffers have another format's size, the new ones need their room.
+                    while let Some(i) = parked
+                        .iter()
+                        .position(|(c, d, _, _)| *c == self.codec && *d == self.decoder)
+                    {
+                        parked.remove(i).3.close();
+                    }
+                    let cap = decoders_cap();
+                    while cap > 0 && PIPELINES.load(Ordering::Relaxed) >= cap && !parked.is_empty()
+                    {
+                        parked.remove(0).3.close();
+                    }
+                    None
+                }
+            }
+        };
+        let reused = parked.is_some();
+        let d = match parked {
+            Some(d) => d,
+            None => {
+                let cap = decoders_cap();
+                if cap > 0 && PIPELINES.load(Ordering::Relaxed) >= cap {
+                    return Some(false);
+                }
+                let d = self.build()?;
+                PIPELINES.fetch_add(1, Ordering::Relaxed);
+                d
+            }
+        };
+        if let Some(src) = &d.appsrc
+            && !self.codec_data.is_empty()
+            && matches!(self.codec, VideoCodec::H264 | VideoCodec::H265)
         {
-            src.set_caps(Some(&length_prefixed_caps(codec, codec_data)));
+            src.set_caps(Some(&length_prefixed_caps(self.codec, &self.codec_data)));
         }
         #[cfg(target_os = "android")]
-        if let Some(src) = &appsrc
+        if let Some(src) = &d.appsrc
             && let Some(caps) = src.caps()
         {
             src.set_caps(Some(&with_variable_rate(caps)));
         }
+        if let Some(g) = *locked(&self.gamma) {
+            apply_gamma(&d, g);
+        }
+        if reused {
+            eprintln!(
+                "[gst_video] player {} takes over the parked {} pipeline",
+                self.id, self.decoder
+            );
+        }
+        self.view.attach(
+            self.handle,
+            RANK_FRAMES,
+            d.pipeline.by_name("sink").as_ref(),
+        );
+        if self.started.load(Ordering::Relaxed) {
+            let _ = d.pipeline.set_state(gst::State::Playing);
+        }
+        self.to_keyframe.store(true, Ordering::Relaxed);
+        *decoding = Some(d);
+        Some(true)
+    }
 
-        let player = Self {
+    fn park(&self) {
+        let Some(d) = locked(&self.decoding).take() else {
+            return;
+        };
+        self.view.remove();
+        if decoders_cap() == 0 {
+            d.close();
+            return;
+        }
+        d.flush();
+        let mut parked = locked(&PARKED);
+        if parked
+            .iter()
+            .any(|(c, n, _, _)| *c == self.codec && *n == self.decoder)
+        {
+            drop(parked);
+            d.close();
+        } else {
+            parked.push((self.codec, self.decoder.clone(), self.codec_data.clone(), d));
+        }
+    }
+
+    fn build(&self) -> Option<Decoding> {
+        let with_cal = !livi_video::codec::calibration().is_empty();
+        let pipeline = Self::parse(self.codec, &self.decoder, with_cal, self.handle)?;
+        let d = Decoding {
+            appsrc: pipeline
+                .by_name("src")
+                .and_then(|e| e.downcast::<gst_app::AppSrc>().ok()),
             glshader: pipeline.by_name("cal"),
-            view: WindowView::new(),
-            appsrc,
             pipeline,
         };
-
-        if let Some(shader) = &player.glshader {
+        if let Some(shader) = &d.glshader {
             shader.set_property("fragment", CAL_FRAGMENT);
-            player.set_gamma(1.0, 1.0, 1.0, 1.0, 1.0);
+            apply_gamma(&d, [1.0; 5]);
         }
-
-        force_sinks_realtime(&player.pipeline);
-        if let Some(dec) = player.pipeline.by_name("dec") {
-            if cfg!(target_vendor = "apple") && decoder == "avdec_h265" {
+        force_sinks_realtime(&d.pipeline);
+        if let Some(dec) = d.pipeline.by_name("dec") {
+            if cfg!(target_vendor = "apple") && self.decoder == "avdec_h265" {
                 dec.set_property_from_str("thread-type", "frame");
                 dec.set_property("max-threads", 1i32);
                 eprintln!(
-                    "[gst_video] {decoder} thread-type={} max-threads={}",
+                    "[gst_video] {} thread-type={} max-threads={}",
+                    self.decoder,
                     dec.property_value("thread-type")
                         .serialize()
                         .map(|s| s.to_string())
@@ -297,16 +491,10 @@ impl Player {
                     dec.property::<i32>("max-threads")
                 );
             }
-            install_decoder_probes(&dec, decoder, &to_stderr());
+            install_decoder_probes(&dec, &self.decoder, &to_stderr());
         }
-        log_bus_messages(&player.pipeline);
-        player.view.attach(
-            handle,
-            RANK_FRAMES,
-            player.pipeline.by_name("sink").as_ref(),
-        );
-
-        Some(player)
+        log_bus_messages(&d.pipeline);
+        Some(d)
     }
 
     fn parse(
@@ -357,23 +545,100 @@ impl Player {
     }
 
     pub fn start(&self) {
-        let _ = self.pipeline.set_state(gst::State::Playing);
+        self.started.store(true, Ordering::Relaxed);
+        if let Some(d) = &*locked(&self.decoding) {
+            let _ = d.pipeline.set_state(gst::State::Playing);
+        }
     }
 
     pub fn stop(&self) {
-        let _ = self.pipeline.set_state(gst::State::Null);
-        self.view.remove();
+        self.stopped.store(true, Ordering::Relaxed);
+        self.park();
     }
 
     pub fn push(&self, data: &[u8]) -> bool {
-        let Some(src) = &self.appsrc else {
-            return false;
-        };
-        if data.is_empty() {
+        if data.is_empty() || self.stopped.load(Ordering::Relaxed) {
             return false;
         }
-        src.push_buffer(gst::Buffer::from_slice(data.to_vec()))
+        if locked(&self.decoding).is_none() {
+            if self.acquire() != Some(true) {
+                self.hold(data);
+                return true;
+            }
+            self.replay();
+        }
+        if self.to_keyframe.load(Ordering::Relaxed)
+            && let Some(cp) = cp_codec(self.codec)
+        {
+            match livi_video::nal::classify_nal(data, cp) {
+                CpNalKind::Keyframe => self.to_keyframe.store(false, Ordering::Relaxed),
+                CpNalKind::Delta => return true,
+                CpNalKind::Params => {}
+            }
+        }
+        match &*locked(&self.decoding) {
+            Some(d) => self.feed(d, data),
+            None => false,
+        }
+    }
+
+    fn hold(&self, data: &[u8]) {
+        let Some(cp) = cp_codec(self.codec) else {
+            return;
+        };
+        let kind = |d: &[u8]| livi_video::nal::classify_nal(d, cp);
+        let mut held = locked(&self.held);
+        let keyed = held.iter().any(|h| kind(h) == CpNalKind::Keyframe);
+        match kind(data) {
+            CpNalKind::Params if keyed => held.clear(),
+            CpNalKind::Params => {}
+            CpNalKind::Keyframe => {
+                let params = held.iter().rposition(|h| kind(h) != CpNalKind::Params);
+                held.drain(..params.map_or(0, |i| i + 1));
+            }
+            CpNalKind::Delta if keyed && held.len() < HELD_MAX => {}
+            CpNalKind::Delta => return,
+        }
+        held.push(data.to_vec());
+    }
+
+    fn replay(&self) {
+        let held = std::mem::take(&mut *locked(&self.held));
+        let Some(cp) = cp_codec(self.codec) else {
+            return;
+        };
+        if !held
+            .iter()
+            .any(|h| livi_video::nal::classify_nal(h, cp) == CpNalKind::Keyframe)
+        {
+            return;
+        }
+        if let Some(d) = &*locked(&self.decoding) {
+            self.to_keyframe.store(false, Ordering::Relaxed);
+            held.iter().for_each(|h| {
+                self.feed(d, h);
+            });
+        }
+    }
+
+    fn feed(&self, d: &Decoding, data: &[u8]) -> bool {
+        let Some(src) = &d.appsrc else {
+            return false;
+        };
+        let mut bytes = self
+            .spare
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop()
+            .unwrap_or_default();
+        bytes.clear();
+        bytes.extend_from_slice(data);
+        src.push_buffer(gst::Buffer::from_slice(Pooled(bytes, self.spare.clone())))
             .is_ok()
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -394,28 +659,36 @@ impl Player {
     }
 
     pub fn flush(&self) {
-        let Some(src) = &self.appsrc else { return };
-        let _ = src.send_event(gst::event::FlushStart::new());
-        let _ = src.send_event(gst::event::FlushStop::new(true));
+        if let Some(d) = &*locked(&self.decoding) {
+            d.flush();
+            self.to_keyframe.store(true, Ordering::Relaxed);
+        }
     }
 
     pub fn set_gamma(&self, gamma: f64, contrast: f64, gain_r: f64, gain_g: f64, gain_b: f64) {
-        let Some(shader) = &self.glshader else { return };
-        let uniforms = gst::Structure::builder("uniforms")
-            .field("u_gamma", if gamma > 0.0 { gamma as f32 } else { 1.0 })
-            .field("u_contrast", contrast as f32)
-            .field("u_gain_r", gain_r as f32)
-            .field("u_gain_g", gain_g as f32)
-            .field("u_gain_b", gain_b as f32)
-            .build();
-        shader.set_property("uniforms", uniforms);
+        let g = [gamma, contrast, gain_r, gain_g, gain_b];
+        *locked(&self.gamma) = Some(g);
+        if let Some(d) = &*locked(&self.decoding) {
+            apply_gamma(d, g);
+        }
     }
+}
+
+fn apply_gamma(d: &Decoding, [gamma, contrast, gain_r, gain_g, gain_b]: [f64; 5]) {
+    let Some(shader) = &d.glshader else { return };
+    let uniforms = gst::Structure::builder("uniforms")
+        .field("u_gamma", if gamma > 0.0 { gamma as f32 } else { 1.0 })
+        .field("u_contrast", contrast as f32)
+        .field("u_gain_r", gain_r as f32)
+        .field("u_gain_g", gain_g as f32)
+        .field("u_gain_b", gain_b as f32)
+        .build();
+    shader.set_property("uniforms", uniforms);
 }
 
 impl Drop for Player {
     fn drop(&mut self) {
-        let _ = self.pipeline.set_state(gst::State::Null);
-        self.view.remove();
+        self.stop();
     }
 }
 
@@ -518,6 +791,20 @@ fn usable(name: &str) -> bool {
     };
     dec.find_property("device-path").is_none()
         || dec.property::<Option<String>>("device-path").as_deref() == Some(node.as_str())
+}
+
+pub fn reserve_scanout(handle: usize) {
+    #[cfg(all(target_os = "linux", target_env = "musl", not(in_process)))]
+    view::reserve(handle);
+    #[cfg(not(all(target_os = "linux", target_env = "musl", not(in_process))))]
+    let _ = handle;
+}
+
+pub fn set_curves(handle: usize, rgb: &[f32]) {
+    #[cfg(all(target_os = "linux", target_env = "musl", not(in_process)))]
+    view::curves(handle, rgb);
+    #[cfg(not(all(target_os = "linux", target_env = "musl", not(in_process))))]
+    let _ = (handle, rgb);
 }
 
 pub fn plays_urls() -> bool {

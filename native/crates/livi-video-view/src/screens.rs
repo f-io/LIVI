@@ -43,13 +43,15 @@ mod window {
     }
 }
 
-#[cfg(in_process)]
+#[cfg(not(target_os = "macos"))]
 mod window {
     pub fn backdrop(_window: usize, _rgb: [f64; 3]) {}
 
     pub fn prepare(_window: usize) {}
 
-    pub fn curves(_window: usize, _rgb: &[f32]) {}
+    pub fn curves(window: usize, rgb: &[f32]) {
+        livi_video_player::set_curves(window, rgb);
+    }
 }
 
 const CURVE_POINTS: usize = 256;
@@ -195,7 +197,10 @@ pub fn apply(cmd: Command) -> Option<String> {
         }),
         Command::Gamma(v) => on_main(|| {
             let mut s = screens();
-            s.gamma = Some(v);
+            // Every state change brings it again, the display only takes a new one.
+            if s.gamma.replace(v) == Some(v) {
+                return;
+            }
             s.windows.values().for_each(|&w| correct(w, v));
         }),
         _ => {}
@@ -208,7 +213,9 @@ pub fn create(
     codec: livi_output_proto::VideoCodec,
     codec_data: &[u8],
 ) -> Option<Arc<Player>> {
-    draw(id, |window| Player::new(codec, window, codec_data))
+    let player = draw(id, |window| Player::new(codec, window, codec_data))?;
+    eprintln!("[video] plane 0x{id:x} plays as player {}", player.id());
+    Some(player)
 }
 
 pub fn play(id: u32, url: &str, audio_device: &str, say: Say) -> Option<Arc<UrlPlayer>> {
@@ -297,6 +304,9 @@ pub fn set_window(screen: &str, window: usize) {
         gone.iter().for_each(|v| v.stop());
         if window != 0 {
             window::prepare(window);
+            if screen == "main" {
+                livi_video_player::reserve_scanout(window);
+            }
         }
         if let (true, Some(rgb)) = (window != 0, backdrop) {
             paint(window, rgb);
