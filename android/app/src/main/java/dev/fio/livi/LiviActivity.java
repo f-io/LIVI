@@ -298,11 +298,21 @@ public class LiviActivity extends NativeActivity {
     }
 
     private void pick() {
-        runOnUiThread(() -> startActivityForResult(
-                new Intent(Intent.ACTION_OPEN_DOCUMENT)
-                        .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("*/*"),
-                PICK_REQUEST));
+        runOnUiThread(() -> {
+            if (!open(Intent.ACTION_OPEN_DOCUMENT) && !open(Intent.ACTION_GET_CONTENT)) {
+                Log.w("livi", "[pick] no file picker installed");
+            }
+        });
+    }
+
+    private boolean open(String action) {
+        try {
+            startActivityForResult(
+                    new Intent(action).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), PICK_REQUEST);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            return false;
+        }
     }
 
     @Override
