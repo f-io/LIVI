@@ -29,7 +29,6 @@ component OptionRow inherits RowFrame {
 export component SelectBody inherits VerticalLayout {
     in property <int> base;
     in property <[PickData]> picks;
-    in property <bool> read-only;
     callback pick(int);
     for p[i] in root.picks: OptionRow {
         label: p.label;
@@ -37,7 +36,6 @@ export component SelectBody inherits VerticalLayout {
         focused: Focus.main(root.base + i);
         first: i == 0;
         last: i == root.picks.length - 1;
-        enabled: !root.read-only;
         clicked => { root.pick(i); }
     }
 }

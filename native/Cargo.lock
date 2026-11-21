@@ -4314,6 +4314,7 @@ dependencies = [
  "livi-output-proto",
  "livi-rtlsdr",
  "livi-session-io",
+ "livi-ui-model",
  "livi-wifi",
  "reqwest",
  "serde",

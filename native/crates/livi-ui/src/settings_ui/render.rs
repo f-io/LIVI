@@ -225,13 +225,8 @@ pub(super) fn render_screen(c: &mut Controller, s: &SettingsState, state: &Value
             c.rows = rows;
             s.set_kind(ScreenKind::List);
         }
-        Screen::Select {
-            title,
-            options,
-            read_only,
-        } => {
+        Screen::Select { title, options } => {
             s.set_title(title.into());
-            s.set_read_only(read_only);
             s.set_picks(ModelRc::from(Rc::new(VecModel::from(
                 options
                     .into_iter()

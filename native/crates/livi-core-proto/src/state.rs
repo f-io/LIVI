@@ -277,6 +277,7 @@ pub struct System {
     pub wifi_countries: Vec<String>,
     pub displays: Vec<Display>,
     pub displays_settable: bool,
+    pub mfi_on_board: bool,
     pub audio_sinks: Vec<AudioDevice>,
     pub audio_sources: Vec<AudioDevice>,
     pub start_page: String,

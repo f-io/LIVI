@@ -35,6 +35,7 @@ const MIRROR_PORT: &str = "LIVI_AIRPLAY_PORT";
 const MIRROR_TXT: &str = "LIVI_AIRPLAY_TXT";
 const MIRROR_NAME: &str = "LIVI_AIRPLAY_NAME";
 const UART_MODULE: &str = "LIVI_UART_MODULE";
+const MFI_ON_BOARD: &str = "LIVI_MFI_ON_BOARD";
 
 pub const MODULE: &str = "module";
 
@@ -52,6 +53,11 @@ pub fn module_bt_mac() -> Option<[u8; 6]> {
         *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
     }
     parts.next().is_none().then_some(out)
+}
+
+/// The board wires its own coprocessor, so its power pin is not the user's to set.
+pub fn board_mfi() -> bool {
+    std::env::var_os(MFI_ON_BOARD).is_some()
 }
 
 pub fn kernel_bluetooth() -> bool {

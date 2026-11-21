@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use livi_base::fs::{SHARED, write_atomic};
 use livi_core_proto::config::Config;
 pub use livi_core_proto::config::defaults;
+use livi_ui_model::settings::{mask, schema};
 use serde_json::{Map, Value};
 
 pub const CAR_NAME_MAX: usize = 20;
@@ -59,6 +60,7 @@ impl ConfigFile {
         }
 
         let mut config = merge(&current_names(&file), &defaults);
+        keep_known_hidden(&mut config);
         config.settle_night_modes(|_| false);
         if !WIFI_PASSWORD_LEN.contains(&config.wifi_password.chars().count()) {
             println!("[core] wifiPassword is no WPA passphrase, falling back to the default");
@@ -279,7 +281,23 @@ pub fn apply_patch(current: &Config, patch: &Value) -> Result<Config, String> {
     }
     let mut next = next;
     next.settle_night_modes(|key| patch.contains_key(key));
+    keep_known_hidden(&mut next);
     Ok(next)
+}
+
+fn keep_known_hidden(config: &mut Config) {
+    if config.hidden_settings.is_empty() {
+        return;
+    }
+    let root = schema();
+    let known = serde_json::to_value(defaults()).unwrap_or(Value::Null);
+    config.hidden_settings.retain(|entry| {
+        let keep = mask::known(entry, &root, &known);
+        if !keep {
+            println!("[core] hiddenSettings: {entry} is no setting, dropped");
+        }
+        keep
+    });
 }
 
 #[cfg(test)]
@@ -640,5 +658,22 @@ pub mod tests {
         let day = apply_patch(&light, &json!({ "appearanceMode": "day" })).unwrap();
         assert_eq!(day.night_modes(), [false; 4]);
         assert!(apply_patch(&current, &json!([1])).is_err());
+    }
+
+    #[test]
+    fn hidden_settings_keep_only_routes_and_keys() {
+        let next = apply_patch(
+            &defaults(),
+            &json!({ "hiddenSettings": ["gps", "mainScreen.viewArea", "dashboard.cluster", "nope"] }),
+        )
+        .unwrap();
+        assert_eq!(
+            next.hidden_settings,
+            ["gps", "mainScreen.viewArea", "dashboard.cluster"]
+        );
+        let file = json!({ "hiddenSettings": ["fm", "gone.away"] });
+        let mut loaded = merge(&file, &defaults());
+        keep_known_hidden(&mut loaded);
+        assert_eq!(loaded.hidden_settings, ["fm"]);
     }
 }

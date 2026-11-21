@@ -9,10 +9,12 @@ use crate::i18n::Strings;
 use crate::icons::settings_icon;
 use crate::settings::calibration;
 use crate::settings::custom::{self, rows as custom_rows};
+use crate::settings::mask;
 use crate::settings::node::{
-    Choice, CustomPage, Kind, Label, Node, OnPick, OptionValue, Radio, Shown,
+    Choice, CustomPage, Kind, Label, Node, OnPick, OptionSource, OptionValue, Radio,
+    Screen as Display, Shown,
 };
-use crate::settings::sources::{Offer, holds, is_dongle, offers, unit};
+use crate::settings::sources::{Offer, display_for, is_dongle, offers, unit};
 use crate::settings::value::{as_f64, get, patch, same};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -145,7 +147,6 @@ pub enum Screen {
     Select {
         title: String,
         options: Vec<Pick>,
-        read_only: bool,
     },
     Number {
         title: String,
@@ -254,6 +255,26 @@ pub fn default_color(path: &str) -> &'static str {
     }
 }
 
+fn resolved(node: &Node, source: OptionSource, state: &Value) -> Option<String> {
+    let (screen, field) = match source {
+        OptionSource::DisplayModes(screen) => (screen, "current"),
+        OptionSource::Connectors => {
+            let screen = match node.path.rsplit('.').next()? {
+                "main" => Display::Main,
+                "cluster" => Display::Cluster,
+                "aux" => Display::Aux,
+                _ => return None,
+            };
+            (screen, "connector")
+        }
+        _ => return None,
+    };
+    display_for(state, screen)?[field]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+}
+
 fn choices(node: &Node, state: &Value, t: &Strings) -> Vec<Offer> {
     let Kind::Select {
         options, source, ..
@@ -261,14 +282,21 @@ fn choices(node: &Node, state: &Value, t: &Strings) -> Vec<Offer> {
     else {
         return Vec::new();
     };
-    let fixed = options.iter().map(|c: &Choice| Offer {
-        label: label(t, &c.label),
-        value: option_value(&c.value),
-        offline: false,
+    let automatic = source.and_then(|src| resolved(node, src, state));
+    let fixed = options.iter().map(|c: &Choice| {
+        let name = label(t, &c.label);
+        Offer {
+            label: match (&c.value, &automatic) {
+                (OptionValue::Text(""), Some(now)) => format!("{now} ({name})"),
+                _ => name,
+            },
+            value: option_value(&c.value),
+            offline: false,
+        }
     });
     let mut out: Vec<Offer> = fixed.collect();
     if let Some(src) = source {
-        for o in offers(*src, state, t) {
+        for o in offers(*src, state) {
             if !out.iter().any(|x| same(&x.value, &o.value)) {
                 out.push(o);
             }
@@ -352,13 +380,13 @@ fn row(node: &Node, state: &Value, t: &Strings) -> Row {
         );
     }
     let raw = get(config, node.path);
-    let mut enabled = node.disabled.is_none_or(|c| !holds(c, &state["system"]));
-    if let Kind::Select {
-        read_only: Some(c), ..
-    } = &node.kind
-    {
-        enabled &= !holds(*c, &state["system"]);
-    }
+    let enabled = !matches!(
+        node.kind,
+        Kind::Select {
+            source: Some(_),
+            ..
+        }
+    ) || !choices(node, state, t).is_empty();
     let kind = match &node.kind {
         Kind::Route { .. } => RowKind::Route,
         Kind::Checkbox | Kind::Toggle => RowKind::Switch,
@@ -426,6 +454,19 @@ impl Settings {
             .unwrap_or_default()
     }
 
+    fn chain(&self, stack: &[usize]) -> Vec<&'static str> {
+        let mut node = &self.root;
+        let mut chain = Vec::new();
+        for &i in stack {
+            let Some(next) = node.children().get(i) else {
+                break;
+            };
+            chain.extend(next.route_key());
+            node = next;
+        }
+        chain
+    }
+
     pub fn node(&self, stack: &[usize]) -> Option<&Node> {
         stack
             .iter()
@@ -447,29 +488,33 @@ impl Settings {
             });
         }
         Some(match &node.kind {
-            Kind::Route { children, .. } => Screen::List {
-                title,
-                rows: children
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, c)| {
-                        let inline = match c.kind {
-                            Kind::Custom(page) => custom_rows(page, state, t, &self.facts),
-                            Kind::BtDeviceList => Some(custom::devices(state, t)),
-                            _ => None,
-                        };
-                        inline
-                            .unwrap_or_else(|| vec![row(c, state, t)])
-                            .into_iter()
-                            .map(move |r| Row { node: i, ..r })
-                    })
-                    .collect(),
-                dialog: children.iter().find_map(|c| match c.kind {
-                    Kind::Custom(page) => custom::dialog(page, state, t, &self.facts),
-                    _ => None,
-                }),
-            },
-            Kind::Select { read_only, .. } => Screen::Select {
+            Kind::Route { children, .. } => {
+                let chain = self.chain(stack);
+                Screen::List {
+                    title,
+                    rows: children
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, c)| mask::shows(c, &chain, state))
+                        .flat_map(|(i, c)| {
+                            let inline = match c.kind {
+                                Kind::Custom(page) => custom_rows(page, state, t, &self.facts),
+                                Kind::BtDeviceList => Some(custom::devices(state, t)),
+                                _ => None,
+                            };
+                            inline
+                                .unwrap_or_else(|| vec![row(c, state, t)])
+                                .into_iter()
+                                .map(move |r| Row { node: i, ..r })
+                        })
+                        .collect(),
+                    dialog: children.iter().find_map(|c| match c.kind {
+                        Kind::Custom(page) => custom::dialog(page, state, t, &self.facts),
+                        _ => None,
+                    }),
+                }
+            }
+            Kind::Select { .. } => Screen::Select {
                 title,
                 options: choices(node, state, t)
                     .into_iter()
@@ -479,7 +524,6 @@ impl Settings {
                         offline: o.offline,
                     })
                     .collect(),
-                read_only: read_only.is_some_and(|c| holds(c, &state["system"])),
             },
             Kind::Number {
                 min,
@@ -587,15 +631,11 @@ impl Settings {
         let Kind::Select {
             label_path,
             on_pick,
-            read_only,
             ..
         } = &node.kind
         else {
             return Vec::new();
         };
-        if read_only.is_some_and(|c| holds(c, &state["system"])) {
-            return Vec::new();
-        }
         let Some(o) = choices(node, state, t).into_iter().nth(option) else {
             return Vec::new();
         };
@@ -675,6 +715,51 @@ mod tests {
 
     use super::*;
     use crate::settings::schema;
+
+    fn list(keys: &[&str], state: &Value) -> Vec<Row> {
+        let s = Settings::new(schema());
+        let stack = s.find(keys).unwrap();
+        let Some(Screen::List { rows, .. }) = s.screen(&stack, state, &Strings::default()) else {
+            panic!("{keys:?} is a list");
+        };
+        rows
+    }
+
+    #[test]
+    fn hidden_settings_leave_rows_out_and_keep_their_nodes() {
+        let state = json!({ "config": { "hiddenSettings": ["dashboard.cluster"] } });
+        let rows = list(&["general", "tabSettings", "dashboard"], &state);
+        let labels: Vec<_> = rows.iter().map(|r| (r.label.as_str(), r.node)).collect();
+        assert_eq!(
+            &labels[..3],
+            [("Main Screen", 0), ("Aux Screen", 2), ("Dashboards", 3)]
+        );
+    }
+
+    #[test]
+    fn a_choice_with_nothing_to_choose_is_greyed_out() {
+        let rows = list(&["general", "tabSettings", "camera"], &json!({}));
+        let camera = rows.iter().find(|r| r.label == "Camera").unwrap();
+        assert!(!camera.enabled);
+        let state = json!({ "cameras": [{ "id": "/dev/video0", "label": "Cam" }] });
+        let rows = list(&["general", "tabSettings", "camera"], &state);
+        assert!(rows.iter().find(|r| r.label == "Camera").unwrap().enabled);
+    }
+
+    #[test]
+    fn the_display_defaults_name_what_they_resolve_to() {
+        let state = json!({
+            "system": {
+                "displaysSettable": true,
+                "displays": [{ "connector": "HDMI-A-1", "screen": "main", "current": "1280x720@60", "modes": ["1280x720@60"] }]
+            },
+            "config": { "displayConnector": { "main": "" }, "displayMode": { "main": "" } }
+        });
+        let rows = list(&["general", "screenSettings", "mainScreen"], &state);
+        let value = |l: &str| rows.iter().find(|r| r.label == l).unwrap().value.clone();
+        assert_eq!(value("Connector"), "HDMI-A-1 (Automatic)");
+        assert_eq!(value("Display Mode"), "1280x720@60 (Panel default)");
+    }
 
     #[test]
     fn whole_numbers_go_out_as_integers() {

@@ -23,7 +23,6 @@
     "wifiCountry": "Wi-Fi Country",
     "wifiInterface": "Wi-Fi Interface",
     "btAdapter": "Bluetooth Interface",
-    "dongleSwitchedOff": "LIVI Link (off)",
     "wifiDedicatedInterface": "Dedicated Interface",
     "wifiLinkSpeed": "Link Speed",
     "wifiLinkDown": "Link ↓",

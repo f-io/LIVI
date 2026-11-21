@@ -4,7 +4,6 @@
 
 use serde_json::Value;
 
-use crate::i18n::Strings;
 use crate::settings::node::{Condition, OptionSource, Radio, Screen, UnitSource};
 
 pub const KM_PER_MILE: f64 = 1.609344;
@@ -32,6 +31,7 @@ pub fn holds(when: Condition, system: &Value) -> bool {
         Condition::NotLinux => cfg!(not(target_os = "linux")),
         Condition::DisplaysSettable => system["displaysSettable"].as_bool() == Some(true),
         Condition::DisplaysNotSettable => system["displaysSettable"].as_bool() != Some(true),
+        Condition::MfiOnBoard => system["mfiOnBoard"].as_bool() == Some(true),
     }
 }
 
@@ -86,21 +86,13 @@ fn plain(label: impl Into<String>, value: Value) -> Offer {
     }
 }
 
-fn adapter(name: &str, switched_on: Option<bool>, model: Option<&str>, t: &Strings) -> Offer {
-    if name != DONGLE_LINK {
-        let label = match model {
-            Some(m) => format!("{name} ({m})"),
-            None => name.to_string(),
-        };
-        return plain(label, Value::from(name));
-    }
-    if switched_on == Some(false) {
-        return plain(
-            t.t("settings.dongleSwitchedOff", "LIVI Link (off)"),
-            Value::from(name),
-        );
-    }
-    plain("LIVI Link", Value::from(name))
+fn adapter(name: &str, model: Option<&str>) -> Offer {
+    let label = match (name, model) {
+        (DONGLE_LINK, _) => "LIVI Link".to_string(),
+        (_, Some(m)) => format!("{name} ({m})"),
+        (_, None) => name.to_string(),
+    };
+    plain(label, Value::from(name))
 }
 
 fn strings(v: &Value) -> Vec<String> {
@@ -113,7 +105,7 @@ fn strings(v: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-pub fn offers(source: OptionSource, state: &Value, t: &Strings) -> Vec<Offer> {
+pub fn offers(source: OptionSource, state: &Value) -> Vec<Offer> {
     let system = &state["system"];
     match source {
         OptionSource::AudioSinks | OptionSource::AudioSources => {
@@ -184,22 +176,26 @@ pub fn offers(source: OptionSource, state: &Value, t: &Strings) -> Vec<Offer> {
             .map(|c| plain(c.clone(), Value::from(c)))
             .collect(),
         OptionSource::WifiInterfaces | OptionSource::BtAdapters => {
-            let (list, radio) = if source == OptionSource::WifiInterfaces {
-                ("wifiInterfaces", "wifi")
+            let (list, chosen) = if source == OptionSource::WifiInterfaces {
+                ("wifiInterfaces", "wifiInterface")
             } else {
-                ("btAdapters", "bt")
+                ("btAdapters", "btAdapter")
             };
-            strings(&system[list])
+            let present = strings(&system[list]);
+            let mut out: Vec<Offer> = present
                 .iter()
-                .map(|i| {
-                    adapter(
-                        i,
-                        system["dongle"][radio].as_bool(),
-                        system["interfaceModels"][i.as_str()].as_str(),
-                        t,
-                    )
-                })
-                .collect()
+                .map(|i| adapter(i, system["interfaceModels"][i.as_str()].as_str()))
+                .collect();
+            if let Some(chosen) = state["config"][chosen].as_str()
+                && !chosen.is_empty()
+                && !present.iter().any(|i| i == chosen)
+            {
+                out.push(Offer {
+                    offline: true,
+                    ..adapter(chosen, None)
+                });
+            }
+            out
         }
         OptionSource::Cameras => state["cameras"]
             .as_array()
@@ -248,11 +244,7 @@ mod tests {
                 { "connector": "HDMI-A-2", "screen": null, "modes": ["1920x1080@60"] }
             ] }
         });
-        let modes = offers(
-            OptionSource::DisplayModes(Screen::Main),
-            &state,
-            &Strings::default(),
-        );
+        let modes = offers(OptionSource::DisplayModes(Screen::Main), &state);
         assert_eq!(modes.len(), 1);
         assert_eq!(modes[0].label, "1920x1080@60");
     }
@@ -260,9 +252,21 @@ mod tests {
     #[test]
     fn the_dongle_reads_as_livi_link() {
         let state = json!({ "system": { "wifiInterfaces": ["wlan0", "livi-link"], "dongle": { "wifi": false }, "interfaceModels": { "wlan0": "MT7925" } } });
-        let list = offers(OptionSource::WifiInterfaces, &state, &Strings::default());
+        let list = offers(OptionSource::WifiInterfaces, &state);
         assert_eq!(list[0].label, "wlan0 (MT7925)");
-        assert_eq!(list[1].label, "LIVI Link (off)");
+        assert_eq!(list[1].label, "LIVI Link");
+        assert!(!list[1].offline);
+    }
+
+    #[test]
+    fn a_chosen_adapter_that_is_gone_stays_listed_offline() {
+        let state = json!({ "config": { "btAdapter": "livi-link" }, "system": { "btAdapters": ["hci0"] } });
+        let list = offers(OptionSource::BtAdapters, &state);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[1].label, "LIVI Link");
+        assert!(list[1].offline);
+        let state = json!({ "config": { "btAdapter": "hci0" }, "system": { "btAdapters": ["hci0"] } });
+        assert_eq!(offers(OptionSource::BtAdapters, &state).len(), 1);
     }
 
     #[test]

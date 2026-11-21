@@ -202,6 +202,7 @@ pub struct Config {
 
     pub update_nightly: bool,
     pub dismissed_packages: Vec<String>,
+    pub hidden_settings: Vec<String>,
 
     pub bindings: KeyBindings,
 }
@@ -682,6 +683,7 @@ pub fn defaults() -> Config {
         carplay_icon256: empty(),
         update_nightly: false,
         dismissed_packages: Vec::new(),
+        hidden_settings: Vec::new(),
         bindings: default_bindings(),
     }
 }

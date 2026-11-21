@@ -23,7 +23,6 @@
     "wifiCountry": "Wi-Fi 国家/地区",
     "wifiInterface": "Wi-Fi 接口",
     "btAdapter": "蓝牙接口",
-    "dongleSwitchedOff": "LIVI Link（已关闭）",
     "wifiDedicatedInterface": "专用接口",
     "wifiLinkSpeed": "链路速率",
     "wifiLinkDown": "下行链路",

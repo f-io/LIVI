@@ -60,7 +60,7 @@ fn touch_page(screen: Screen) -> Node {
         )],
     )
     .icon("touch")
-    .disabled(Condition::DisplaysNotSettable)
+    .hidden(Condition::DisplaysNotSettable)
 }
 
 fn display_rows(screen: Screen) -> Vec<Node> {
@@ -90,7 +90,7 @@ fn display_rows(screen: Screen) -> Vec<Node> {
         .icon("displayConnector")
         .display_value()
         .options_from(OptionSource::Connectors)
-        .read_only(Condition::DisplaysNotSettable)
+        .hidden(Condition::DisplaysNotSettable)
         .page(Label::new("settings.displayConnector", "Connector")),
         Node::select(
             Label::new("settings.displayMode", "Display Mode"),
@@ -100,7 +100,7 @@ fn display_rows(screen: Screen) -> Vec<Node> {
         .icon("displayMode")
         .display_value()
         .options_from(OptionSource::DisplayModes(screen))
-        .read_only(Condition::DisplaysNotSettable)
+        .hidden(Condition::DisplaysNotSettable)
         .page(Label::new("settings.displayMode", "Display Mode")),
         Node::select(
             Label::new("settings.cameraRotation", "Rotation"),
@@ -109,7 +109,7 @@ fn display_rows(screen: Screen) -> Vec<Node> {
         )
         .icon("displayRotation")
         .display_value()
-        .read_only(Condition::DisplaysNotSettable)
+        .hidden(Condition::DisplaysNotSettable)
         .page(Label::new("settings.cameraRotation", "Rotation")),
     ]
 }
@@ -125,7 +125,7 @@ fn screen_size(
 ) -> Node {
     Node::number(Label::new(key, text), path)
         .icon(icon)
-        .disabled(Condition::DisplaysSettable)
+        .hidden(Condition::DisplaysSettable)
         .range(Some(min), Some(max), Some(1.0))
         .display_value()
         .page(Label::new(key, title))
@@ -157,7 +157,7 @@ fn window_size_page(width: Node, height: Node) -> Node {
         vec![width, height],
     )
     .icon("windowSize")
-    .disabled(Condition::DisplaysSettable)
+    .hidden(Condition::DisplaysSettable)
 }
 
 fn view_area_page(screen: Screen) -> Node {
@@ -291,7 +291,7 @@ fn connections() -> Node {
                         "wifiDedicatedInterface",
                     )
                     .icon("dedicatedInterface")
-                    .disabled(Condition::NotLinux),
+                    .hidden(Condition::NotLinux),
                     Node::custom(
                         Label::new("settings.wifiLinkSpeed", "Link Speed"),
                         "wifiInterface",
@@ -611,6 +611,7 @@ fn mfi() -> Node {
             .default_number(-1.0)
             .display_value()
             .shown(Shown::DashIfNegative)
+            .hidden(Condition::MfiOnBoard)
             .page(Label::new("settings.mfiPowerGpio", "Power Pin")),
             Node::route(
                 "mfi-certificate",

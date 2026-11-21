@@ -31,6 +31,7 @@ livi-media.workspace = true
 livi-dab = { workspace = true, optional = true }
 livi-fm = { workspace = true, optional = true }
 livi-session-io.workspace = true
+livi-ui-model.workspace = true
 livi-wifi.workspace = true
 axum = "0.8.9"
 base64.workspace = true

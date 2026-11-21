@@ -48,6 +48,7 @@ pub enum Condition {
     NotLinux,
     DisplaysSettable,
     DisplaysNotSettable,
+    MfiOnBoard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,7 +148,6 @@ pub enum Kind {
         options: Vec<Choice>,
         source: Option<OptionSource>,
         label_path: Option<&'static str>,
-        read_only: Option<Condition>,
         on_pick: Option<OnPick>,
     },
     Slider,
@@ -167,7 +167,7 @@ pub struct Node {
     pub page_title: Option<Label>,
     pub display_value: bool,
     pub shown: Shown,
-    pub disabled: Option<Condition>,
+    pub hidden: Option<Condition>,
 }
 
 impl Node {
@@ -180,7 +180,7 @@ impl Node {
             page_title: None,
             display_value: false,
             shown: Shown::Plain,
-            disabled: None,
+            hidden: None,
         }
     }
 
@@ -236,7 +236,6 @@ impl Node {
                 options,
                 source: None,
                 label_path: None,
-                read_only: None,
                 on_pick: None,
             },
             label,
@@ -276,8 +275,8 @@ impl Node {
         self
     }
 
-    pub fn disabled(mut self, when: Condition) -> Self {
-        self.disabled = Some(when);
+    pub fn hidden(mut self, when: Condition) -> Self {
+        self.hidden = Some(when);
         self
     }
 
@@ -332,13 +331,6 @@ impl Node {
     pub fn label_path(mut self, path: &'static str) -> Self {
         if let Kind::Select { label_path, .. } = &mut self.kind {
             *label_path = Some(path);
-        }
-        self
-    }
-
-    pub fn read_only(mut self, when: Condition) -> Self {
-        if let Kind::Select { read_only, .. } = &mut self.kind {
-            *read_only = Some(when);
         }
         self
     }

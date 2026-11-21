@@ -101,7 +101,11 @@ fn settings(cfg: &Config) -> HelperSettings {
         channel: cfg.wifi_channel,
         country: cfg.country.clone(),
         source_version: cfg.car_play_source_version.clone(),
-        mfi_power_gpio: cfg.car_play_mfi_power_gpio,
+        mfi_power_gpio: if livi_core_proto::helper::board_mfi() {
+            -1
+        } else {
+            cfg.car_play_mfi_power_gpio
+        },
     }
 }
 

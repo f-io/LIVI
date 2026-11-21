@@ -307,6 +307,7 @@ impl Link {
             bt_adapters.push(CHOICE.into());
         }
         hub.update(|s| {
+            s.system.mfi_on_board = livi_core_proto::helper::board_mfi();
             s.system.wifi_interfaces = wifi_interfaces;
             s.system.bt_adapters = bt_adapters;
             s.system.interface_models = models;

@@ -23,7 +23,6 @@ export global SettingsState {
     in property <string> apply-text: "Apply";
     in property <[RowData]> rows;
     in property <[PickData]> picks;
-    in property <bool> read-only;
     in property <float> number-value;
     in property <float> number-min;
     in property <float> number-max;
@@ -194,7 +193,6 @@ export component SettingsView inherits Rectangle {
                     if SettingsState.kind == ScreenKind.select: SelectBody {
                         base: SettingsState.focus-base;
                         picks: SettingsState.picks;
-                        read-only: SettingsState.read-only;
                         pick(i) => { SettingsState.pick(i); }
                     }
                     if SettingsState.kind == ScreenKind.number: NumberBody {
