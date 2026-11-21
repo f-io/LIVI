@@ -281,6 +281,7 @@ pub struct System {
     pub audio_sources: Vec<AudioDevice>,
     pub start_page: String,
     pub fonts: Vec<String>,
+    pub utc_offset_minutes: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

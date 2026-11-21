@@ -159,7 +159,12 @@ impl Projection {
             }
             CpEvent::VideoCodec { .. } => {}
             CpEvent::PhoneUtcOffset { minutes } => {
-                tokio::spawn(crate::gnss::timezone::apply_phone_offset(minutes));
+                if crate::gnss::timezone::settable() {
+                    tokio::spawn(crate::gnss::timezone::apply_phone_offset(minutes));
+                } else {
+                    self.hub
+                        .update(|s| s.system.utc_offset_minutes = Some(minutes));
+                }
             }
         }
     }

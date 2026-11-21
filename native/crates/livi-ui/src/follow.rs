@@ -194,6 +194,7 @@ impl Follow {
             }
         }
         if hit("system") {
+            crate::clock::set_offset(state.system.utc_offset_minutes);
             let fonts = state.system.fonts.clone();
             if self.fonts.as_ref() != Some(&fonts) {
                 self.fonts = Some(fonts.clone());

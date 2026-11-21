@@ -79,6 +79,10 @@ fn known(zone: &str) -> bool {
         && Path::new(ZONEINFO).join(zone).is_file()
 }
 
+pub fn settable() -> bool {
+    !cfg!(target_os = "linux") || Path::new(SET_TIME_HELPER).exists()
+}
+
 pub async fn apply(zone: String) {
     if current_zone().as_deref() == Some(zone.as_str()) {
         return;

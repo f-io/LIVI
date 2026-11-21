@@ -42,20 +42,20 @@ pub fn step_to(secs: i64) {
         println!("[cp] device time: offset {offset}s, keeping the system clock");
         return;
     }
-    match Command::new(livi_base::sys::tool("date"))
-        .args(["-u", "-s", &format!("@{secs}")])
-        .output()
-    {
-        Ok(out) if out.status.success() => {
-            let _ = Command::new(livi_base::sys::tool("fake-hwclock"))
-                .arg("save")
-                .output();
-            println!("[cp] device time: system clock stepped by {offset}s");
-        }
-        Ok(out) => eprintln!(
+    let at = libc::timespec {
+        tv_sec: secs as _,
+        tv_nsec: 0,
+    };
+    // SAFETY: at is a valid timespec for the call.
+    if unsafe { libc::clock_settime(libc::CLOCK_REALTIME, &at) } != 0 {
+        eprintln!(
             "[cp] device time: setting the clock failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ),
-        Err(e) => eprintln!("[cp] device time: setting the clock failed: {e}"),
+            std::io::Error::last_os_error()
+        );
+        return;
     }
+    let _ = Command::new(livi_base::sys::tool("fake-hwclock"))
+        .arg("save")
+        .output();
+    println!("[cp] device time: system clock stepped by {offset}s");
 }
