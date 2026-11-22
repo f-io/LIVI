@@ -5,6 +5,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpStream};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use livi_link_ap::radio::{self, Radio};
@@ -124,7 +125,12 @@ pub(crate) fn wifi_json() -> String {
 pub(crate) fn status_json() -> String {
     let kernel = read_trim("/proc/sys/kernel/osrelease");
     let uptime = fmt_uptime(&read_trim("/proc/uptime"));
-    let load = read_trim("/proc/loadavg");
+    let load = read_trim("/proc/loadavg")
+        .split_whitespace()
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let cpu = cpu_percent();
     let mem = fmt_meminfo();
     let mac = read_trim(&format!("/sys/class/net/{}/address", caps().host_iface));
     let mut cp = read_trim(&caps().mfi);
@@ -132,18 +138,56 @@ pub(crate) fn status_json() -> String {
         cp = "not found".into();
     }
     format!(
-        r#"{{"model":"{}","target":"{}","version":"{}","build":"{}","kernel":"{}","uptime":"{}","load":"{}","mem":"{}","mac":"{}","cp":"{}"}}"#,
+        r#"{{"model":"{}","target":"{}","version":"{}","build":"{}","kernel":"{}","uptime":"{}","cpu":"{}","load":"{}","mem":"{}","mac":"{}","cp":"{}"}}"#,
         js(&caps().model),
         js(&caps().target),
         js(VERSION),
         js(BUILD),
         js(&kernel),
         js(&uptime),
+        js(&cpu),
         js(&load),
         js(&mem),
         js(&mac),
         js(&cp)
     )
+}
+
+/// How busy the CPU was since the previous status request, empty on the first. The load average
+/// counts threads that wait as well, so it reads above 1 on a single core that is not full.
+fn cpu_percent() -> String {
+    static PREV: Mutex<Option<(u64, u64)>> = Mutex::new(None);
+    let Some(now) = fs::read_to_string("/proc/stat")
+        .ok()
+        .and_then(|s| cpu_times(&s))
+    else {
+        return String::new();
+    };
+    match PREV.lock().unwrap().replace(now) {
+        Some(prev) => busy_percent(prev, now).map_or(String::new(), |p| format!("{p} %")),
+        None => String::new(),
+    }
+}
+
+/// Busy and total jiffies of all CPUs from /proc/stat, idle and iowait are the idle part.
+fn cpu_times(stat: &str) -> Option<(u64, u64)> {
+    let fields: Vec<u64> = stat
+        .lines()
+        .next()?
+        .strip_prefix("cpu ")?
+        .split_whitespace()
+        .take(8)
+        .map_while(|f| f.parse().ok())
+        .collect();
+    let total: u64 = fields.iter().sum();
+    let idle = fields.get(3)? + fields.get(4).copied().unwrap_or(0);
+    Some((total - idle, total))
+}
+
+fn busy_percent((busy0, total0): (u64, u64), (busy1, total1): (u64, u64)) -> Option<u64> {
+    let total = total1.checked_sub(total0).filter(|&t| t > 0)?;
+    let busy = busy1.saturating_sub(busy0).min(total);
+    Some((busy * 100 + total / 2) / total)
 }
 
 pub(crate) fn switch_radio(
@@ -262,8 +306,19 @@ pub(crate) fn mem_text(total_kb: u64, avail_kb: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::mem_text;
+    use super::{busy_percent, cpu_times, mem_text};
     use crate::flash::raw_mtd;
+
+    #[test]
+    fn the_cpu_share_comes_from_two_samples_of_proc_stat() {
+        let a =
+            cpu_times("cpu  969 0 4050 63337 24 0 54 0 0 0\ncpu0 969 0 4050 63337 24 0 54 0 0 0\n");
+        let b = cpu_times("cpu  998 0 4147 65214 24 0 55 0 0 0\n");
+        assert_eq!(a, Some((5073, 68434)));
+        assert_eq!(busy_percent(a.unwrap(), b.unwrap()), Some(6));
+        assert_eq!(busy_percent(a.unwrap(), a.unwrap()), None, "no time passed");
+        assert_eq!(cpu_times("intr 1 2 3"), None);
+    }
 
     #[test]
     fn a_block_node_is_read_back_through_its_character_device() {
