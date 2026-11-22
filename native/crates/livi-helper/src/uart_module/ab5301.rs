@@ -47,9 +47,6 @@ const RETRY: Duration = Duration::from_secs(5);
 const IAP2_ANSWER: Duration = Duration::from_secs(8);
 const TICK: Duration = Duration::from_secs(1);
 const PAGE_WAIT: Duration = Duration::from_secs(8);
-/// One-minute load under which the single core takes a session's start.
-const CALM_LOAD: f32 = 1.5;
-const CALM_WAIT: Duration = Duration::from_secs(60);
 
 static PORT: Mutex<Option<Chip>> = Mutex::new(None);
 /// The bool: its iAP2 channel was asked for again since.
@@ -367,39 +364,19 @@ fn held(mac: &str) -> Option<bool> {
         .map(|(peer, _)| peer.eq_ignore_ascii_case(mac))
 }
 
-fn load() -> f32 {
-    std::fs::read_to_string("/proc/loadavg")
-        .ok()
-        .and_then(|s| s.split_whitespace().next()?.parse().ok())
-        .unwrap_or(0.0)
-}
-
 pub struct Pager {
     wifi: String,
-    ap_since: Mutex<Option<std::time::Instant>>,
 }
 
 impl Pager {
     pub fn new(wifi: String) -> Self {
-        Self {
-            wifi,
-            ap_since: Mutex::default(),
-        }
+        Self { wifi }
     }
 }
 
 impl Paging for Pager {
     fn ready(&self) -> bool {
-        if PORT.lock().unwrap().is_none() {
-            return false;
-        }
-        let mut since = self.ap_since.lock().unwrap();
-        if !crate::dongle::ap_on(&self.wifi) {
-            *since = None;
-            return false;
-        }
-        let since = *since.get_or_insert_with(std::time::Instant::now);
-        load() < CALM_LOAD || since.elapsed() >= CALM_WAIT
+        PORT.lock().unwrap().is_some() && crate::dongle::ap_on(&self.wifi)
     }
 
     async fn link(&self, mac: &str) -> Link {
