@@ -45,6 +45,7 @@ const KEY: u8 = 0xb2;
 const KEY_ACK: u8 = 0xb0;
 const ASKS_SOURCE: u8 = 0xc0;
 const ALIVE: u8 = 0xce;
+const LINE: u8 = 0xd4;
 const KNOB_DOWN: u8 = 0x05;
 const KNOB_UP: u8 = 0x04;
 const PRESS: u8 = 0x02;
@@ -65,6 +66,12 @@ struct Link {
 impl Link {
     fn send(&self, dir: u8, cmd: u8, data: &[u8]) {
         self.write(&frame(dir, cmd, data));
+    }
+
+    /// `AT#CD` drops the phone and stops the chip's own paging. After three connect attempts of over a
+    /// minute in one power cycle the chip wipes its pairings, and nothing answers it while the host is away.
+    fn leave(&self) {
+        self.send(HOST, LINE, b"AT#CD\r\n");
     }
 
     fn write(&self, f: &[u8]) {
@@ -223,11 +230,24 @@ fn started(reader: File) {
             std::thread::sleep(INIT_GAP);
         }
         println!("[ab5301] initialised");
+        let mut away = false;
         loop {
             link.send(HOST, 0xa5, &STATUS);
+            let flashing = std::path::Path::new(livi_base::lfwb::HOLD).exists();
+            if flashing && !away {
+                link.leave();
+            }
+            away = flashing;
             std::thread::sleep(STATUS_EVERY);
         }
     });
+}
+
+/// Before core ends: the host may reboot or power off next.
+pub fn leave() {
+    if let Ok(link) = link() {
+        link.leave();
+    }
 }
 
 pub async fn get(_device: &str) -> Result<f64, Fault> {

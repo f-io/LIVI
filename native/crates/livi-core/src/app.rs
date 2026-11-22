@@ -34,6 +34,8 @@ pub fn main() -> ExitCode {
     };
     let outcome = runtime.block_on(start());
     runtime.shutdown_timeout(Duration::from_secs(2));
+    #[cfg(feature = "uart-module")]
+    crate::uart_module::leave();
     let code = match outcome {
         Ok(Exit::Quit) => ExitCode::SUCCESS,
         Ok(Exit::PowerOff) => {

@@ -240,7 +240,7 @@ fn serve(
         chip.at("CD");
     }
     chip.at(&format!("MM{name}"));
-    for line in ["MY", "MZ", "CY", "CA"] {
+    for line in ["MY", "MZ", "CY"] {
         chip.at(line);
     }
     let mut session = Session {
@@ -341,8 +341,11 @@ impl Pager {
 }
 
 impl Paging for Pager {
+    /// Not while a flash holds the host: core has stopped the chip from paging until the reboot.
     fn ready(&self) -> bool {
-        PORT.lock().unwrap().is_some() && crate::dongle::ap_on(&self.wifi)
+        PORT.lock().unwrap().is_some()
+            && crate::dongle::ap_on(&self.wifi)
+            && !std::path::Path::new(livi_base::lfwb::HOLD).exists()
     }
 
     async fn link(&self, mac: &str) -> Link {

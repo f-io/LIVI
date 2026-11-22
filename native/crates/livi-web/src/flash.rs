@@ -375,8 +375,15 @@ pub(crate) fn verify_flash(path: &str, expected: &[u8]) -> std::io::Result<()> {
     }
 }
 
-pub(crate) fn reboot_soon() -> (&'static str, &'static str, Vec<u8>) {
-    reboot_after(Duration::from_millis(500), None);
+pub(crate) fn reboot_soon(f: &Flash) -> (&'static str, &'static str, Vec<u8>) {
+    let delay = match f.hand_over {
+        Some(hand) => {
+            let _ = (hand.take)();
+            Duration::from_millis(1500)
+        }
+        None => Duration::from_millis(500),
+    };
+    reboot_after(delay, None);
     (S_200, T_JSON, ok_json("rebooting"))
 }
 

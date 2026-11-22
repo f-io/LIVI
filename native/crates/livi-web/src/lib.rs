@@ -134,7 +134,7 @@ fn route(
         ("POST", "/api/flash/resume") => flash::hand_back(&c.flash),
         ("GET", "/api/update") => (S_200, T_JSON, update_json().into_bytes()),
         ("POST", "/api/update") => set_update(body),
-        ("POST", "/api/reboot") => reboot_soon(),
+        ("POST", "/api/reboot") => reboot_soon(&c.flash),
         _ => (S_404, T_TEXT, b"not found\n".to_vec()),
     }
 }
