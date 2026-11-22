@@ -163,7 +163,7 @@ mod kernel {
             sco_bdaddr: [0; 6],
         };
         let mut size = std::mem::size_of::<SockaddrSco>() as libc::socklen_t;
-        // SAFETY: listen is open for the call; addr and size are valid, size holds addr's size.
+        // SAFETY: listen is open for the call. Addr and size are valid, size holds addr's size.
         let raw = unsafe {
             libc::accept4(
                 listen.as_raw_fd(),

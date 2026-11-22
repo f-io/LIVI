@@ -137,7 +137,7 @@ pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
         fn CGDisplayModeRelease(mode: *mut c_void);
     }
 
-    // SAFETY: plain CoreGraphics queries; the copied mode is checked for null and released once.
+    // SAFETY: plain CoreGraphics queries. The copied mode is checked for null and released once.
     let (mm, px) = unsafe {
         let display = CGMainDisplayID();
         let mm = CGDisplayScreenSize(display);

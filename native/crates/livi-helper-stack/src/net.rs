@@ -172,7 +172,7 @@ fn first_ipv4(
 }
 
 /// getifaddrs names an address by its label ("tun0:1"), and bionic hands an
-/// interface's IPv6 entries the label of its IPv4 one; ':' is never part of a device name.
+/// interface's IPv6 entries the label of its IPv4 one. ':' is never part of a device name.
 fn device(label: &str) -> &str {
     label.split(':').next().unwrap_or(label)
 }

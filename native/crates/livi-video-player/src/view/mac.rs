@@ -61,7 +61,7 @@ impl WindowView {
     }
 
     pub fn set_visible(&self, visible: bool) {
-        // SAFETY: the view is null or one from livi_attach_view; null is ignored.
+        // SAFETY: the view is null or one from livi_attach_view. Null is ignored.
         unsafe { livi_set_view_hidden(self.view.load(Ordering::Acquire), !visible) };
     }
 

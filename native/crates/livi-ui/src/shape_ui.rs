@@ -69,7 +69,7 @@ fn hook(window: &NSWindow) {
     };
     let class = delegate.class() as *const AnyClass as *mut AnyClass;
     let resize: extern "C-unwind" fn(&AnyObject, Sel, &NSWindow, NSSize) -> NSSize = will_resize;
-    // SAFETY: Imp is the untyped form of a method implementation; the runtime calls it with this signature.
+    // SAFETY: Imp is the untyped form of a method implementation. The runtime calls it with this signature.
     let imp = unsafe {
         std::mem::transmute::<extern "C-unwind" fn(&AnyObject, Sel, &NSWindow, NSSize) -> NSSize, Imp>(
             resize,

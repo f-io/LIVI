@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 //! Per-receiver frame gating and GOP cache. The caller owns the planes and does
-//! the pushing; this decides what is worth pushing.
+//! the pushing. This decides what is worth pushing.
 
 use crate::nal::{CpCodec, CpNalKind, classify_nal};
 

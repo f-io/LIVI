@@ -60,7 +60,7 @@ fn psk_index() -> Result<Index<Ssl, Psk>, openssl::error::ErrorStack> {
 }
 
 unsafe fn psk_session(ssl: *mut ffi::SSL, psk: &Psk) -> *mut ffi::SSL_SESSION {
-    // SAFETY: ssl is live per the caller; session is freed on failure, else the caller owns it.
+    // SAFETY: ssl is live per the caller. Session is freed on failure, else the caller owns it.
     unsafe {
         let cipher = SSL_CIPHER_find(ssl, SUITE_ID.as_ptr());
         let session = SSL_SESSION_new();
@@ -86,7 +86,7 @@ unsafe extern "C" fn use_session(
     session: *mut *mut ffi::SSL_SESSION,
 ) -> c_int {
     let Ok(index) = psk_index() else { return 0 };
-    // SAFETY: OpenSSL passes a live ssl and writable out pointers; the Psk ex data lives with ssl.
+    // SAFETY: OpenSSL passes a live ssl and writable out pointers. The Psk ex data lives with ssl.
     unsafe {
         let psk = ffi::SSL_get_ex_data(ssl, index.as_raw()) as *const Psk;
         let cipher = SSL_CIPHER_find(ssl, SUITE_ID.as_ptr());

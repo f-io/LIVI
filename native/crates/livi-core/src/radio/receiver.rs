@@ -526,7 +526,7 @@ impl Out {
         }
     }
 
-    /// The name a scan heard first can be a scrolled title; the one RDS settles on replaces it.
+    /// The name a scan heard first can be a scrolled title. The one RDS settles on replaces it.
     /// Holds no borrow of the state: `keep` publishes into it.
     fn rename_fm(&mut self, tuned: Option<u32>, name: &str) {
         let name = name.trim();

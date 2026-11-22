@@ -46,7 +46,7 @@ pub(crate) struct Stream {
 
 // SAFETY: an AAudioStream is not tied to the thread that opened it.
 unsafe impl Send for Stream {}
-// SAFETY: AAudio allows control calls from any thread; the element reads or writes from one.
+// SAFETY: AAudio allows control calls from any thread. The element reads or writes from one.
 unsafe impl Sync for Stream {}
 
 impl Drop for Stream {

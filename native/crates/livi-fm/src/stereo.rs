@@ -62,7 +62,7 @@ impl Pilot {
             if self.theta > PI {
                 self.theta -= 2.0 * PI;
             }
-            // The pilot is cos θ here; the standard's pilot sin ψ puts the subcarrier sin 2ψ at
+            // The pilot is cos θ here. The standard's pilot sin ψ puts the subcarrier sin 2ψ at
             // −sin 2θ.
             out.push(-4.0 * x * s * c);
         }

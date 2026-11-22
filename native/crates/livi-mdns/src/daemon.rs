@@ -182,7 +182,7 @@ fn receive(fd: &OwnedFd, buf: &mut [u8]) -> Option<(usize, libc::sockaddr_in, li
         let header = unsafe { &*cmsg };
         if header.cmsg_level == libc::IPPROTO_IP && header.cmsg_type == libc::IP_PKTINFO {
             // SAFETY: cmsg is a non-null IP_PKTINFO header inside control, so its data holds an
-            // in_pktinfo; read_unaligned covers the data offset's alignment.
+            // in_pktinfo. read_unaligned covers the data offset's alignment.
             let info = unsafe {
                 std::ptr::read_unaligned(libc::CMSG_DATA(cmsg).cast::<libc::in_pktinfo>())
             };

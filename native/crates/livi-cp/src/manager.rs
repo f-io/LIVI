@@ -602,7 +602,7 @@ impl<M: Media> Manager<M> {
             return;
         }
         self.reset_once.insert(udid.to_string());
-        println!("[CpManager] {udid} never opened CarPlay after the start, resetting its USB");
+        println!("[CpManager] {udid} never opened carplay after the start, resetting its USB");
         let helper = self.ctx.helper.clone();
         let target = udid.to_string();
         tokio::spawn(async move {

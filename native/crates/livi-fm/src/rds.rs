@@ -519,8 +519,6 @@ impl Decoder {
         out.push(Rds::Text(title));
     }
 
-    /// Pieces come word by word or slide on a character at a time; a sliding one overlaps
-    /// what came before.
     fn title_piece_heard(&mut self, piece: &str) {
         let Some(title) = self.title.as_mut() else {
             return;

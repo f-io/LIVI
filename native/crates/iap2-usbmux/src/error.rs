@@ -17,7 +17,7 @@ pub enum Error {
     NotOnBus(String),
     #[error("iphone gone after {0}")]
     Gone(&'static str),
-    #[error("iphone {0} did not expose CarPlay configs")]
+    #[error("iphone {0} did not expose carplay configs")]
     NoCarplayConfigs(String),
     #[error("usb device {bus}/{address} not found")]
     NoUsbDevice { bus: u8, address: u8 },

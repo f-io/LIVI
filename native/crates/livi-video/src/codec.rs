@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 //! Which parser, decoder and caps a codec gets. The candidates come out best
-//! first; the caller takes the first one the GStreamer registry knows.
+//! first. The caller takes the first one the GStreamer registry knows.
 
 use core::ffi::CStr;
 
