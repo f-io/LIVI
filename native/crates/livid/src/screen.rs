@@ -45,10 +45,15 @@ struct Shown {
 }
 
 pub fn splash() -> i32 {
-    let Some(shown) = show() else {
+    let Some(shown) = logo().and_then(show) else {
         return 1;
     };
     let _ = drm::Device::release_master_lock(&shown.card);
+    // rcS waits for the parent: the UI opens the card after the master is free, a later opener never gets it.
+    // SAFETY: livid has no other threads at this point.
+    if unsafe { libc::fork() } != 0 {
+        return 0;
+    }
     let until = Instant::now() + SPLASH_MAX;
     while Instant::now() < until
         && shown
@@ -70,7 +75,7 @@ pub fn take() -> Result<(), String> {
     }
     let mut shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner());
     if shown.is_none() {
-        *shown = show();
+        *shown = logo().and_then(show);
     }
     Ok(())
 }
@@ -138,7 +143,7 @@ fn logo() -> Option<(Vec<[u8; 4]>, usize)> {
 }
 
 /// A plane of the logo's size in the middle, the mixer fills the rest black.
-fn show() -> Option<Shown> {
+fn show((px, side): (Vec<[u8; 4]>, usize)) -> Option<Shown> {
     let card = Card(
         OpenOptions::new()
             .read(true)
@@ -163,7 +168,6 @@ fn show() -> Option<Shown> {
             && prop(&card, p, "type").map(|(_, v)| v) == Some(PLANE_PRIMARY)
     })?;
 
-    let (px, side) = logo()?;
     let mut buf = card
         .create_dumb_buffer((side as u32, side as u32), DrmFourcc::Xrgb8888, 32)
         .inspect_err(|e| eprintln!("[screen] buffer: {e}"))

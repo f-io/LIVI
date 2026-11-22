@@ -10,7 +10,7 @@ hostname LIVI
 ifconfig lo up
 home=/tmp/home
 board_start
-/usr/bin/livid splash &
+/usr/bin/livid splash
 mkdir -p $home/.config/LIVI
 
 # A driver may make up part of wlan0's address on every boot, and the phone knows the car by it:
