@@ -138,11 +138,10 @@ impl Upstream {
         let blocking = waits_for
             .filter(|_| !path.contains("_HLS_"))
             .map(|(msn, part)| hls::with_query(&url, &format!("_HLS_msn={msn}&_HLS_part={part}")));
-        let mut client = self.client.lock().await;
         let mut failed = 0;
         loop {
             let ask = blocking.as_deref().filter(|_| failed == 0).unwrap_or(&url);
-            match client.get(ask).await {
+            match Client::get_shared(&self.client, ask).await {
                 Err(e) if failed + 1 < PLAYLIST_ATTEMPTS => {
                     failed += 1;
                     println!("[hlsGateway] {path}: {e}, trying again");
@@ -303,23 +302,7 @@ async fn ask_source(
     };
     conn.write_all(request.as_bytes()).await?;
     let mut all = Vec::new();
-    let head = async {
-        let mut chunk = [0u8; 4096];
-        loop {
-            if let Some(end) = all.windows(4).position(|w| w == b"\r\n\r\n") {
-                return Ok(end);
-            }
-            if all.len() > MAX_HEAD {
-                return Err(io::Error::other("an answer head without end"));
-            }
-            let n = conn.read(&mut chunk).await?;
-            if n == 0 {
-                return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
-            }
-            all.extend_from_slice(&chunk[..n]);
-        }
-    };
-    let end = tokio::time::timeout(FETCH_TIMEOUT, head)
+    let end = tokio::time::timeout(FETCH_TIMEOUT, read_head(&mut conn, &mut all))
         .await
         .map_err(|_| timed_out(format!("connected, no answer after {FETCH_TIMEOUT:?}")))??;
     let early = all.split_off(end + 4);
@@ -607,43 +590,47 @@ struct Request {
     range: String,
 }
 
-async fn read_request<S: AsyncRead + Unpin>(sock: &mut S, buf: &mut Vec<u8>) -> Option<Request> {
+async fn read_head<S: AsyncRead + Unpin>(sock: &mut S, buf: &mut Vec<u8>) -> io::Result<usize> {
+    let mut chunk = [0u8; 4096];
     loop {
         if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-            let head = String::from_utf8_lossy(&buf[..end]).into_owned();
-            buf.drain(..end + 4);
-            let mut lines = head.lines();
-            let mut words = lines.next()?.split(' ');
-            let (method, path) = (words.next()?, words.next()?);
-            let (mut close, mut range) = (false, String::new());
-            for line in lines.map(|l| l.trim_end_matches('\r')) {
-                let Some((name, value)) = line.split_once(':') else {
-                    continue;
-                };
-                match name.trim().to_ascii_lowercase().as_str() {
-                    "connection" => close |= value.to_ascii_lowercase().contains("close"),
-                    "range" | "if-range" => range.push_str(&format!("{line}\r\n")),
-                    _ => {}
-                }
-            }
-            let head_only = method == "HEAD";
-            return Some(Request {
-                path: path.to_string(),
-                head_only,
-                close,
-                range,
-            });
+            return Ok(end);
         }
         if buf.len() > MAX_HEAD {
-            return None;
+            return Err(io::Error::other("a head without end"));
         }
-        let mut chunk = [0u8; 4096];
-        let n = sock.read(&mut chunk).await.ok()?;
+        let n = sock.read(&mut chunk).await?;
         if n == 0 {
-            return None;
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
         }
         buf.extend_from_slice(&chunk[..n]);
     }
+}
+
+async fn read_request<S: AsyncRead + Unpin>(sock: &mut S, buf: &mut Vec<u8>) -> Option<Request> {
+    let end = read_head(sock, buf).await.ok()?;
+    let head = String::from_utf8_lossy(&buf[..end]).into_owned();
+    buf.drain(..end + 4);
+    let mut lines = head.lines();
+    let mut words = lines.next()?.split(' ');
+    let (method, path) = (words.next()?, words.next()?);
+    let (mut close, mut range) = (false, String::new());
+    for line in lines.map(|l| l.trim_end_matches('\r')) {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        match name.trim().to_ascii_lowercase().as_str() {
+            "connection" => close |= value.to_ascii_lowercase().contains("close"),
+            "range" | "if-range" => range.push_str(&format!("{line}\r\n")),
+            _ => {}
+        }
+    }
+    Some(Request {
+        path: path.to_string(),
+        head_only: method == "HEAD",
+        close,
+        range,
+    })
 }
 
 #[cfg(test)]

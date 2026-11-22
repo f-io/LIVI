@@ -128,16 +128,31 @@ impl Client {
         self
     }
 
-    pub async fn get(&mut self, url: &str) -> io::Result<Vec<u8>> {
+    #[cfg(test)]
+    pub(crate) async fn get(&mut self, url: &str) -> io::Result<Vec<u8>> {
         let target = Target::of(url)?;
         let open = self.take(&target.origin());
-        let reused = open.is_some();
-        match self.exchange(&target, open, url).await {
-            Err(e) if reused && e.kind() != io::ErrorKind::TimedOut => {
-                self.exchange(&target, None, url).await
-            }
-            other => other,
+        let (answer, sock) = self.dialer.get(&target, open, url).await;
+        if let Some(sock) = sock {
+            self.keep(target.origin(), sock);
         }
+        answer
+    }
+
+    pub(crate) async fn get_shared(
+        shared: &tokio::sync::Mutex<Self>,
+        url: &str,
+    ) -> io::Result<Vec<u8>> {
+        let target = Target::of(url)?;
+        let (open, dialer) = {
+            let mut client = shared.lock().await;
+            (client.take(&target.origin()), client.dialer())
+        };
+        let (answer, sock) = dialer.get(&target, open, url).await;
+        if let Some(sock) = sock {
+            shared.lock().await.keep(target.origin(), sock);
+        }
+        answer
     }
 
     pub(crate) fn take(&mut self, origin: &str) -> Option<Box<dyn Conn>> {
@@ -151,17 +166,44 @@ impl Client {
     pub(crate) fn dialer(&self) -> Dialer {
         self.dialer.clone()
     }
+}
 
-    async fn exchange(
-        &mut self,
+#[derive(Clone, Default)]
+pub(crate) struct Dialer {
+    phone: Option<Arc<ProxyOffer>>,
+    trust: Option<Arc<ClientConfig>>,
+}
+
+impl Dialer {
+    async fn get(
+        &self,
         target: &Target<'_>,
         open: Option<Box<dyn Conn>>,
         url: &str,
-    ) -> io::Result<Vec<u8>> {
+    ) -> (io::Result<Vec<u8>>, Option<Box<dyn Conn>>) {
+        let reused = open.is_some();
+        match self.exchange(target, open, url).await {
+            Err(e) if reused && e.kind() != io::ErrorKind::TimedOut => {
+                match self.exchange(target, None, url).await {
+                    Ok((answer, sock)) => (answer, sock),
+                    Err(e) => (Err(e), None),
+                }
+            }
+            Ok((answer, sock)) => (answer, sock),
+            Err(e) => (Err(e), None),
+        }
+    }
+
+    async fn exchange(
+        &self,
+        target: &Target<'_>,
+        open: Option<Box<dyn Conn>>,
+        url: &str,
+    ) -> io::Result<(io::Result<Vec<u8>>, Option<Box<dyn Conn>>)> {
         let fetch = async {
             let mut sock = match open {
                 Some(sock) => sock,
-                None => self.dialer.connect(target).await?,
+                None => self.connect(target).await?,
             };
             let ask = format!(
                 "GET {} HTTP/1.1\r\nHost: {}\r\n\r\n",
@@ -174,24 +216,15 @@ impl Client {
         let (head, body, sock) = tokio::time::timeout(FETCH_TIMEOUT, fetch)
             .await
             .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, format!("{url}: timed out")))??;
-        if let Some(sock) = sock {
-            self.keep(target.origin(), sock);
-        }
-        if head.split(' ').nth(1) != Some("200") {
+        let answer = if head.split(' ').nth(1) == Some("200") {
+            Ok(body)
+        } else {
             let line = head.lines().next().unwrap_or_default().to_string();
-            return Err(io::Error::other(format!("{url}: {line}")));
-        }
-        Ok(body)
+            Err(io::Error::other(format!("{url}: {line}")))
+        };
+        Ok((answer, sock))
     }
-}
 
-#[derive(Clone, Default)]
-pub(crate) struct Dialer {
-    phone: Option<Arc<ProxyOffer>>,
-    trust: Option<Arc<ClientConfig>>,
-}
-
-impl Dialer {
     pub(crate) async fn connect(&self, target: &Target<'_>) -> io::Result<Box<dyn Conn>> {
         let plain: Box<dyn Conn> = match &self.phone {
             Some(phone) => {
