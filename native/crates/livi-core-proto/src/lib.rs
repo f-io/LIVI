@@ -19,6 +19,8 @@ pub mod patch;
 pub mod runtime;
 pub mod state;
 pub mod telemetry;
+#[cfg(test)]
+mod telemetry_doc;
 pub mod theme;
 
 pub const PROTOCOL: u32 = 11;

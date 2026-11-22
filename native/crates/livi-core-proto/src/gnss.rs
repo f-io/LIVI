@@ -166,41 +166,49 @@ pub struct GnssInfo {
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpsFix {
+    /// Values: -90 to 90
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub lat: Option<f64>,
+    /// Values: -180 to 180
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub lng: Option<f64>,
+    /// Values: e.g. 34
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub alt: Option<f64>,
+    /// Values: 0 to 360 clockwise from north
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub heading: Option<f64>,
+    /// Values: e.g. 20.3
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub speed_ms: Option<f64>,
+    /// Values: e.g. 5
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub accuracy_m: Option<f64>,
+    /// Values: e.g. 9
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"
     )]
     pub satellites: Option<f64>,
+    /// Values: e.g. 1795392000000
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "optional_number"

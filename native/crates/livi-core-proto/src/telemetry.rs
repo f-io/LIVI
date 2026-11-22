@@ -87,13 +87,17 @@ use crate::gnss::{GnssInfo, GpsFix};
 #[serde(rename_all = "camelCase")]
 pub struct TelemetrySnapshot {
     /// Unix milliseconds, LIVI fills it in when a push has none.
+    /// Values: e.g. 1795392000000
     pub ts: Option<u64>,
+    /// Values: e.g. 73
     pub speed_kph: Option<f64>,
+    /// Values: e.g. 2400
     pub rpm: Option<f64>,
-    /// A number for a manual gearbox, -1 reverse, 0 neutral, 1 to 10. A string for an automatic,
-    /// P, R, N, D, S or M1 to M10.
+    /// A number for a manual gearbox, -1 reverse, 0 neutral. A string for an automatic.
+    /// Values: -1 to 10, P, R, N, D, S, M1 to M10
     pub gear: Option<Value>,
     /// Negative is left.
+    /// Values: e.g. -90
     pub steering_deg: Option<f64>,
     /// Wins over `gear`.
     pub reverse: Option<bool>,
@@ -105,68 +109,106 @@ pub struct TelemetrySnapshot {
     /// Taken as `turn` too, the name it had before.
     pub turn_signal: Option<TurnSignal>,
     pub parking_brake: Option<bool>,
+    /// Values: e.g. 90
     pub coolant_c: Option<f64>,
+    /// Values: e.g. 100
     pub oil_c: Option<f64>,
     /// Automatic transmission oil.
+    /// Values: e.g. 80
     pub transmission_c: Option<f64>,
     /// Intake air.
+    /// Values: e.g. 35
     pub iat_c: Option<f64>,
     /// Outside, Android Auto and CarPlay get it too.
+    /// Values: e.g. 18
     pub ambient_c: Option<f64>,
     /// The 12 V battery.
+    /// Values: e.g. 12.6, 14.2 with the engine running
     pub battery_v: Option<f64>,
-    /// 0 to 100, for an electric car the state of charge.
+    /// For an electric car the state of charge.
+    /// Values: 0 to 100
     pub fuel_pct: Option<f64>,
+    /// Values: e.g. 420
     pub range_km: Option<f64>,
     /// Hybrids only, the range on the tank.
+    /// Values: e.g. 380
     pub range_fuel_km: Option<f64>,
     /// Hybrids only, the range on the battery.
+    /// Values: e.g. 45
     pub range_electric_km: Option<f64>,
+    /// Values: e.g. 6.5
     pub fuel_rate_lph: Option<f64>,
+    /// Values: e.g. 7.2
     pub consumption_l_per100_km: Option<f64>,
+    /// Values: e.g. 6.8
     pub consumption_avg_l_per100_km: Option<f64>,
     /// Gross capacity. Turns on electric routing in Android Auto, whatever `carType` says.
+    /// Values: e.g. 77
     pub battery_capacity_kwh: Option<f64>,
     /// Taken from `fuelPct` and the capacity when absent.
+    /// Values: e.g. 52
     pub battery_level_kwh: Option<f64>,
     /// True while the battery charges.
     pub charging: Option<bool>,
-    /// The `EvConnectorType` name of the plug that charges, such as `Combo2`.
+    /// The plug that charges.
+    /// Values: EvConnectorType
     pub active_connector: Option<String>,
     /// The range on a full battery.
+    /// Values: e.g. 450
     pub range_max_electric_km: Option<f64>,
-    /// A `CarType` name such as `HybridDiesel`, written into the settings when it differs.
+    /// Written into the settings when it differs.
+    /// Values: CarType
     pub car_type: Option<String>,
-    /// `EvConnectorType` names such as `Combo2`, written into the settings when they differ.
+    /// Written into the settings when they differ.
+    /// Values: EvConnectorType
     pub ev_connector_types: Option<Vec<String>>,
     /// The fastest AC charging the car takes, written into the settings when it differs.
+    /// Values: e.g. 11
     pub ev_max_ac_power_kw: Option<f64>,
     /// The fastest DC charging the car takes, written into the settings when it differs.
+    /// Values: e.g. 150
     pub ev_max_dc_power_kw: Option<f64>,
     /// Manifold absolute pressure.
+    /// Values: e.g. 35 idling, 200 boosted
     pub map_kpa: Option<f64>,
     /// Android Auto also gets it on its environment channel.
+    /// Values: e.g. 101.3
     pub baro_kpa: Option<f64>,
+    /// Values: e.g. 80, 0 is ambient
     pub boost_kpa: Option<f64>,
-    /// Throttle position, 0 to 100.
+    /// Throttle position.
+    /// Values: 0 to 100
     pub throttle_pct: Option<f64>,
     /// 1.0 is stoichiometric.
+    /// Values: e.g. 0.98
     pub lambda: Option<f64>,
     /// Air to fuel ratio.
+    /// Values: e.g. 14.7
     pub afr: Option<f64>,
     /// Android Auto gets it in steps of 0.1 km.
+    /// Values: e.g. 123456.7
     pub odometer_km: Option<f64>,
+    /// Values: e.g. 312.4
     pub odometer_trip_km: Option<f64>,
-    /// Android Auto's driving restrictions as they are, 0 is none.
+    /// Android Auto's driving restrictions as they are.
+    /// Values: bits 1 no video, 2 no keyboard, 4 no voice, 8 no setup, 16 short text
     pub driving_status: Option<u32>,
+    /// Values: e.g. 20000 by day, 5 at night
     pub ambient_lux: Option<f64>,
-    /// The dimmer of the panel lights, 0 to 100.
+    /// The dimmer of the panel lights.
+    /// Values: 0 to 100
     pub dimmer_pct: Option<f64>,
+    /// Values: 0 to 1
     pub display_brightness: Option<f64>,
+    /// Values: 0.5 to 1.5, 1 is unchanged
     pub display_gamma: Option<f64>,
+    /// Values: 0.5 to 1.5, 1 is unchanged
     pub display_contrast: Option<f64>,
+    /// Values: 0.5 to 1.5, 1 is unchanged
     pub display_color_r: Option<f64>,
+    /// Values: 0.5 to 1.5, 1 is unchanged
     pub display_color_g: Option<f64>,
+    /// Values: 0.5 to 1.5, 1 is unchanged
     pub display_color_b: Option<f64>,
     /// Day or night for Android Auto and CarPlay, LIVI's own look follows `darkMode`. It sets the
     /// four below at once, those of them in the same push apply after it. LIVI's appearance
@@ -182,8 +224,9 @@ pub struct TelemetrySnapshot {
     pub cluster_ui_night_mode: Option<bool>,
     /// The map on the cluster.
     pub cluster_map_night_mode: Option<bool>,
-    /// How carplay treats the four above, `auto`, `user` or `always`, saved as the setting of the
-    /// same name, `user` when never set.
+    /// How carplay treats the four above, saved as the setting of the same name, `user` when never
+    /// set.
+    /// Values: AppearanceSetting
     pub appearance_setting: Option<String>,
     /// LIVI's own look, dark or light. A push sets the Dark Mode setting, a change of that
     /// setting shows up here.
@@ -194,16 +237,20 @@ pub struct TelemetrySnapshot {
     /// show that app: for CarPlay it is a `requestUI` URL (`/projection/maps`,
     /// `/projection/mobilephone`, `/projection/comgooglemaps://?daddr=…`), for Android Auto the
     /// known categories (maps, nowplaying, radio, mobilephone) map to its hard keys.
+    /// Values: e.g. `/media`, `/settings/devices`, `/projection/maps`
     pub path: Option<String>,
     /// The name of a key binding such as `zoomIn`, `zoomOut`, `next` or `home`, pressed once on
     /// every push as if its key were pressed, bound to a key or not.
+    /// Values: e.g. `down`, all names under Keys
     pub key: Option<String>,
-    /// The head unit's level, 0 to 1. It sets `huVolume`, which drives the amplifier and, while
+    /// The head unit's level. It sets `huVolume`, which drives the amplifier and, while
     /// linked, the system mixer.
+    /// Values: 0 to 1
     pub volume: Option<f64>,
     /// Send the whole fix every time or only what the sensor delivers.
     pub gps: Option<GpsFix>,
     /// Only LIVI's own receiver sends it, a push replaces it whole.
+    /// Values: e.g. `{"connected": true, "fixQuality": "gps", "fixMode": "3d", "satellitesUsed": 9}`
     pub gnss: Option<GnssInfo>,
     pub tire_pressure: Option<TirePressure>,
     pub doors: Option<Doors>,
@@ -228,13 +275,18 @@ pub enum TurnSignal {
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TirePressure {
+    /// Values: e.g. 240
     pub front_left_kpa: Option<f64>,
+    /// Values: e.g. 240
     pub front_right_kpa: Option<f64>,
+    /// Values: e.g. 240
     pub rear_left_kpa: Option<f64>,
+    /// Values: e.g. 240
     pub rear_right_kpa: Option<f64>,
 }
 
-/// True is open. A sensor may push one closure at a time, a car without rear doors leaves them out.
+/// A sensor may push one closure at a time, a car without rear doors leaves them out.
+/// Values: `true` open, `false` closed
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Doors {
@@ -246,8 +298,8 @@ pub struct Doors {
     pub trunk: Option<bool>,
 }
 
-/// True is buckled, false is an occupied seat without its belt. A seat the car does not know about
-/// is left out.
+/// A seat the car does not know about is left out.
+/// Values: `true` buckled, `false` an occupied seat without its belt
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SeatBelts {
@@ -258,6 +310,7 @@ pub struct SeatBelts {
     pub rear_right: Option<bool>,
 }
 
+/// Values: `true` lit, `false` off
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Telltales {
@@ -287,8 +340,11 @@ pub struct Telltales {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct CanFrame {
+    /// Values: e.g. 1001
     pub id: u32,
+    /// Values: e.g. [0, 255, 18, 4]
     pub data: Vec<u8>,
+    /// Values: e.g. 0
     pub bus: Option<u8>,
 }
 
@@ -299,6 +355,7 @@ pub struct CanFrame {
 pub struct Climate {
     /// Who set it last: `carplay` the phone, `external` a push that names no source, `saved` the
     /// last run, `default` LIVI's start values. Anything but `carplay` reaches the phone.
+    /// Values: source of last change: `carplay`, `external`, `saved`, `default`
     pub source: Option<String>,
     pub on: Option<bool>,
     pub auto: Option<bool>,
@@ -308,25 +365,32 @@ pub struct Climate {
     pub recirculation: Option<bool>,
     /// The passenger side follows the driver's temperature.
     pub zones_synced: Option<bool>,
-    /// 16 to 28 in steps of 0.5, the ends show as LO and HI.
+    /// The ends show as LO and HI.
+    /// Values: 16 to 28 in steps of 0.5
     pub driver_target_c: Option<f64>,
+    /// Values: 16 to 28 in steps of 0.5
     pub passenger_target_c: Option<f64>,
     /// Measured by the car.
+    /// Values: e.g. 21.5
     pub driver_cabin_c: Option<f64>,
+    /// Values: e.g. 21.5
     pub passenger_cabin_c: Option<f64>,
-    /// 0 to 7, 0 is off.
+    /// 0 is off.
+    /// Values: 0 to 7
     pub fan_level: Option<u8>,
     pub fan_auto: Option<bool>,
-    /// 0 or 1.
+    /// Values: 0 or 1
     pub front_window_heating: Option<u8>,
+    /// Values: 0 or 1
     pub rear_window_heating: Option<u8>,
     pub vent_upper: Option<bool>,
     pub vent_middle: Option<bool>,
     pub vent_lower: Option<bool>,
     /// AUTO picks the vents.
     pub vents_auto: Option<bool>,
-    /// 0 to 2.
+    /// Values: 0 to 2
     pub driver_seat_heating: Option<u8>,
+    /// Values: 0 to 2
     pub passenger_seat_heating: Option<u8>,
 }
 
@@ -335,11 +399,14 @@ pub struct Climate {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Notification {
+    /// Values: e.g. Ice warning
     pub title: Option<String>,
+    /// Values: e.g. Outside 2 °C
     pub text: Option<String>,
     /// An SF Symbol such as `snowflake`, or the name of a PNG in `~/.config/LIVI/carplay-images`
     /// such as `livi`. A PNG shows only once the phone fetched the folder, from the next CarPlay
     /// start and in practice only with a theme, else just SF Symbols work.
+    /// Values: e.g. `snowflake`
     pub symbol: Option<String>,
     /// True shows it, false closes it.
     pub open: Option<bool>,

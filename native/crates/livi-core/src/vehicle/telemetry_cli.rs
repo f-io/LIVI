@@ -23,6 +23,8 @@ livi-core telemetry pushes values into a running LIVI's telemetry.
   --every-ms  pushes again in this rhythm until Ctrl+C
   --to        another LIVI, 127.0.0.1:4000 when absent
 
+Every field and key name is listed in TELEMETRY.md in the LIVI repository.
+
 Examples:
   livi-core telemetry set speedKph=50 rpm=1500 gear=D lights=true
   livi-core telemetry set gear=R
