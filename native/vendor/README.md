@@ -8,7 +8,7 @@
 - Only `src/` and the manifest are kept, the book, tests and examples are left out.
 - Its Cargo.toml allows `unused_imports` and `dead_code`: with the default features off, as Slint builds it, upstream leaves `FilePath` and `font_scale` unused. A path dependency shows those warnings, the registry copy would hide them.
 
-## i-slint-backend-android-activity 1.18.1
+## i-slint-backend-android-activity 1.19.0
 
 - Adds `set_touch_hook`: every pointer goes to LIVI with its id and position first, and only reaches Slint when the hook declines it.
 - The winit backend hands LIVI the raw touches through its window event hook, the Android backend has no such hook.

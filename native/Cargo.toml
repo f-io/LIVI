@@ -50,7 +50,7 @@ thiserror = "2.0.21"
 tokio = "1.54.1"
 tokio-util = "0.7.20"
 uuid = "1.29.3"
-zbus = { version = "6.3.0", default-features = false }
+zbus = { version = "6.5.0", default-features = false }
 
 iap2-csm = { path = "crates/iap2-csm" }
 iap2-link = { path = "crates/iap2-link" }
