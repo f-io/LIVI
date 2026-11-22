@@ -1,4 +1,4 @@
-# F133 XFH + AIC8800D80 on SDIO, the kernel resets it through PG10 (wlan_pwrseq).
+# F133 XFH + AIC8800D40L on SDIO, the kernel resets it through PG10 (wlan_pwrseq).
 # 55 MB: no extra 4 MB held free after fragmentation events.
 echo 0 > /proc/sys/vm/watermark_boost_factor
 

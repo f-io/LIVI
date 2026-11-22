@@ -1,7 +1,7 @@
 # LIVI OS for the F133-B head unit
 
 Builds boot0, the boot package (OpenSBI, dtb, kernel) and the rootfs for the XFH F133-B head unit
-(452×1280 DSI panel, AIC8800D80, AB5301B). Everything lands in `$TOP/out`, `$TOP` defaults to
+(452×1280 DSI panel, AIC8800D40L, AB5301B). Everything lands in `$TOP/out`, `$TOP` defaults to
 `${XDG_CACHE_HOME:-~/.cache}/livi/f133-kernel`.
 
 ## Host

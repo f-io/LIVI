@@ -1,4 +1,4 @@
-# F133-B XFH head unit (C906, rv64) + AIC8800D80.
+# F133-B XFH head unit (C906, rv64) + AIC8800D40L, which the AIC8800D80 driver and firmware run.
 BOARD=f133
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMMON=$(cd "$HERE/../../../livi-link/common" && pwd)

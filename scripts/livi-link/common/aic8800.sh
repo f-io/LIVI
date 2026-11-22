@@ -1,4 +1,4 @@
-# Sourced by the boards with an AIC8800D80 on SDIO (ax520, v821b): the radxa driver, overlaid into the
+# Sourced by the boards with a chip of the AIC8800D80 family on SDIO: the radxa driver, overlaid into the
 # kernel tree with Bluetooth over SDIO, and the firmware it loads. Needs TOP, KDIR, OUT, COMMON, log().
 AIC_ORG=${AIC_ORG:-https://github.com/radxa-pkg/aic8800}
 AIC_REF=${AIC_REF:-516e3b087763d80c44f5e3b6d2dd63e0d925c91d}

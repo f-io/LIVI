@@ -56,8 +56,8 @@ KM=(make -C "$KDIR" ARCH=riscv CROSS_COMPILE=$CROSS_COMPILE -j"$JOBS")
 } >"$TOP/frag.config"
 (cd "$KDIR" && ARCH=riscv scripts/kconfig/merge_config.sh -m .config "$TOP/frag.config" >/dev/null)
 (cd "$KDIR" && ./scripts/config $(aic8800_config))
-# The AB5301B on the UART is the head unit's bluetooth, the AIC8800's own goes unused. The firmware
-# stays the combined one, only fdrv's hci device is left out.
+# The AB5301B on the UART is the head unit's bluetooth, the AIC8800D40L has no classic bluetooth.
+# The firmware stays the combined one, only fdrv's hci device is left out.
 (cd "$KDIR" && ./scripts/config --disable BT)
 sed -i 's/^CONFIG_SDIO_BT = y/CONFIG_SDIO_BT = n/' "$AIC_DRV/aic8800_fdrv/Makefile"
 "${KM[@]}" olddefconfig >/dev/null
