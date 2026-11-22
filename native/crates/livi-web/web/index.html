@@ -36,6 +36,9 @@
   .flash-row:last-child { border-bottom: 0; }
   .flash-row .slot { font-family: ui-monospace, monospace; color: var(--acc); }
   .flash-row .name { color: var(--dim); font-size: 12px; }
+  @media (max-width: 560px) {
+    .flash-row .row { grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-end; }
+  }
   .msg { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 12px; min-height: 1.4em; }
   .msg.ok { color: var(--ok); }
   .msg.err { color: var(--warn); }
@@ -299,6 +302,8 @@ async function flashFile(file) {
 
   const xhr = new XMLHttpRequest();
   let writePoll = null;
+  let rebooting = false;
+  const stopPoll = () => { if (writePoll) { clearInterval(writePoll); writePoll = null; } };
   xhr.upload.addEventListener('progress', e => {
     if (e.lengthComputable) {
       const pct = (e.loaded / e.total) * 100;
@@ -337,6 +342,7 @@ async function flashFile(file) {
           lastPhaseKey = key; phaseAt = now;
         }
       } else if (j.phase === 'done') {
+        rebooting = true;
         say(`Rebooting…`, 'ok');
       } else if (j.phase === 'error') {
         say(`${short} flash error`, 'err');
@@ -345,7 +351,7 @@ async function flashFile(file) {
     } catch {}
   }, 250);
   xhr.addEventListener('load', () => {
-    if (writePoll) { clearInterval(writePoll); writePoll = null; }
+    stopPoll();
     bar.hidden = true;
     try {
       const j = JSON.parse(xhr.responseText);
@@ -353,8 +359,15 @@ async function flashFile(file) {
       else      say(j.error || 'flash failed', 'err');
     } catch { say('server returned non-JSON: ' + xhr.responseText.slice(0, 200), 'err'); }
   });
-  xhr.addEventListener('error', () => { bar.hidden = true; resume(); say('network error during upload', 'err'); });
-  xhr.addEventListener('abort', () => { bar.hidden = true; resume(); say('upload aborted', 'err'); });
+  // A board that wrote everything reboots before it answers, the lost connection is that reboot.
+  xhr.addEventListener('error', () => {
+    stopPoll();
+    bar.hidden = true;
+    if (rebooting) return;
+    resume();
+    say('network error during upload', 'err');
+  });
+  xhr.addEventListener('abort', () => { stopPoll(); bar.hidden = true; resume(); say('upload aborted', 'err'); });
   // The bundle carries a CRC per image, the dongle checks them before it writes anything.
   xhr.open('POST', '/api/flash');
   xhr.setRequestHeader('Content-Type', 'application/octet-stream');
