@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::process::Command;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -16,7 +16,7 @@ use crate::{Flash, HandOver, MtdSlot, WebCaps};
 
 const HAND_BACK_AFTER: Duration = Duration::from_secs(180);
 
-static TAKEN: AtomicU64 = AtomicU64::new(0);
+static TAKEN: AtomicUsize = AtomicUsize::new(0);
 static FLASHING: AtomicBool = AtomicBool::new(false);
 static REBOOTING: AtomicBool = AtomicBool::new(false);
 
