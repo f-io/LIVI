@@ -39,8 +39,6 @@ board_start() {
     export LIVI_BOARD_HIDDEN=screenSettings,dashboard.cluster,dashboard.aux,media.cluster,media.aux,camera.cluster,camera.aux,projectionWidth,projectionHeight,projectionFps,clusterWidth,clusterHeight,clusterFps,softwareUpdate,audioOutputDevice,audioInputDevice,samplingFrequency,huVolumeLinkSystem
     export SLINT_KMS_ROTATION=270 SLINT_KMS_FORMAT=AR24 LIVI_UART_MODULE=/dev/ttyS1 LIVI_MFI_ON_BOARD=1
     export LIVI_LOCKDOWN_STORE=$home/.config/LIVI/lockdown
-    # mimalloc keeps freed pages a second instead of 10 ms, frame buffers come back every 16-33 ms.
-    export MIMALLOC_PURGE_DELAY=1000
     # One decoder at a time: its buffers stay reserved and pass from one stream to the next.
     export LIVI_VIDEO_DECODERS=1
     export LIVI_CODECS="h264=hw h265=hw"
