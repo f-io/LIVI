@@ -75,14 +75,19 @@ impl Link {
     }
 
     fn write(&self, f: &[u8]) {
-        if let Err(e) = self.port.lock().unwrap().write_all(f) {
+        if let Err(e) = self
+            .port
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .write_all(f)
+        {
             eprintln!("[ab5301] {:02x} not sent: {e}", f[2]);
         }
     }
 
     fn apply(&self, level: f64) {
         let level = level.clamp(0.0, 1.0);
-        *self.level.lock().unwrap() = Some(level);
+        *self.level.lock().unwrap_or_else(|e| e.into_inner()) = Some(level);
         let master = (level * MAX_LEVEL).round() as u8;
         self.send(
             HOST,
@@ -103,18 +108,27 @@ impl Link {
     }
 
     fn knob(&self, steps: f64) {
-        let Some(level) = *self.level.lock().unwrap() else {
+        let Some(level) = *self.level.lock().unwrap_or_else(|e| e.into_inner()) else {
             return;
         };
         self.apply(level + steps / MAX_LEVEL);
-        if let Some(tx) = self.watcher.lock().unwrap().as_ref() {
+        if let Some(tx) = self
+            .watcher
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let _ = tx.send(OutputEvent::Changed);
         }
     }
 
     fn press(&self, code: u8, key: Key) {
         let now = Instant::now();
-        let before = self.pressed.lock().unwrap().replace((code, now));
+        let before = self
+            .pressed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .replace((code, now));
         if !before.is_some_and(|(c, at)| c == code && now - at < PRESS_REPEATS) {
             keys::pressed(key);
         }
@@ -132,7 +146,7 @@ impl Link {
             (CHIP, KEY, [_, key, ..]) => println!("[ab5301] key {key:02x}"),
             (CHIP, ASKS_SOURCE, _) => self.send(CHIP, ASKS_SOURCE, &[0, 0]),
             (CHIP, cmd, _) if CLASSIC_BT.contains(&cmd) => {
-                let mut helper = self.helper.lock().unwrap();
+                let mut helper = self.helper.lock().unwrap_or_else(|e| e.into_inner());
                 if helper.as_mut().is_some_and(|h| h.write_all(f).is_err()) {
                     *helper = None;
                 }
@@ -172,7 +186,7 @@ fn serve_helper(link: &'static Link) {
         let Ok(from) = helper.try_clone() else {
             continue;
         };
-        *link.helper.lock().unwrap() = Some(helper);
+        *link.helper.lock().unwrap_or_else(|e| e.into_inner()) = Some(helper);
         std::thread::spawn(move || {
             each_frame(from, |f| {
                 if f[1] == HOST {
@@ -268,14 +282,14 @@ pub struct Watch;
 impl Drop for Watch {
     fn drop(&mut self) {
         if let Ok(link) = link() {
-            *link.watcher.lock().unwrap() = None;
+            *link.watcher.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }
     }
 }
 
 pub fn watch(tx: mpsc::UnboundedSender<OutputEvent>) -> Watch {
     if let Ok(link) = link() {
-        *link.watcher.lock().unwrap() = Some(tx);
+        *link.watcher.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
     }
     Watch
 }
