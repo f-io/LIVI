@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
@@ -12,7 +13,7 @@ use livi_aa_proto::{
     AuthCompleteNotification, BluetoothPairingRequest, BluetoothPairingResponse,
     ChannelOpenResponse, KeyBindingResponse, MediaConfigResponse, MediaConfigStatus,
     MediaSetupRequest, MessageStatus, PhoneStatusNotification, PingRequest, SensorRequest,
-    SensorResponse, VideoFocusMode, VideoFocusNotification, WifiAccessPointType,
+    SensorResponse, SensorType, VideoFocusMode, VideoFocusNotification, WifiAccessPointType,
     WifiCredentialsResponse, WifiCredentialsSecurityMode,
 };
 use livi_wifi::Security;
@@ -253,6 +254,7 @@ pub struct Session {
     cluster_focus_pending: bool,
     cluster_stream_wanted: bool,
     shutdowns_waiting: u32,
+    latest: HashMap<i32, Vec<u8>>,
 }
 
 impl Session {
@@ -293,6 +295,7 @@ impl Session {
             cluster_focus_pending: false,
             cluster_stream_wanted: true,
             shutdowns_waiting: 0,
+            latest: HashMap::new(),
         };
         (session, vec![Out::After(WATCHDOG, Timer::Watchdog)])
     }
@@ -1009,26 +1012,30 @@ impl Session {
             sensor_msg::RESPONSE,
             resp,
         );
-        if sensor_type == 13 {
+        // The phone subscribes whenever it likes, often after core replayed the car's state.
+        let batch = self.latest.get(&sensor_type).cloned();
+        if let Some(batch) = batch.or_else(|| self.fallback(sensor_type)) {
             self.send_to(
                 out,
                 ch::SENSOR,
                 frame_flags::ENC_SIGNAL,
                 sensor_msg::BATCH,
-                [0x6a, 0x02, 0x08, 0x00],
-            );
-        } else if sensor_type == 10 {
-            let night = self.config.borrow().initial_night_mode == Some(true);
-            self.send_to(
-                out,
-                ch::SENSOR,
-                frame_flags::ENC_SIGNAL,
-                sensor_msg::BATCH,
-                [0x52, 0x02, 0x08, u8::from(night)],
+                batch,
             );
             if debug() {
-                println!("[Session] SensorBatch: NightMode={night} sent");
+                println!("[Session] SensorBatch type={sensor_type} sent on subscription");
             }
+        }
+    }
+
+    fn fallback(&self, sensor_type: i32) -> Option<Vec<u8>> {
+        if sensor_type == SensorType::DrivingStatusData as i32 {
+            sensors::batch(&Sensor::DrivingStatus(0))
+        } else if sensor_type == SensorType::NightMode as i32 {
+            let night = self.config.borrow().initial_night_mode == Some(true);
+            sensors::batch(&Sensor::NightMode(night))
+        } else {
+            None
         }
     }
 
@@ -1146,20 +1153,23 @@ impl Session {
 
     pub fn send_sensor(&mut self, sensor: &Sensor) -> Vec<Out> {
         let mut out = Vec::new();
+        let Some(batch) = sensors::batch(sensor) else {
+            return out;
+        };
+        self.latest
+            .insert(sensors::sensor_type(sensor) as i32, batch.clone());
         if self.state != State::Running {
             return out;
         }
-        if let Some(batch) = sensors::batch(sensor) {
-            self.send_to(
-                &mut out,
-                ch::SENSOR,
-                frame_flags::ENC_SIGNAL,
-                sensor_msg::BATCH,
-                batch,
-            );
-            if debug() {
-                println!("[Session] SensorBatch {sensor:?}");
-            }
+        self.send_to(
+            &mut out,
+            ch::SENSOR,
+            frame_flags::ENC_SIGNAL,
+            sensor_msg::BATCH,
+            batch,
+        );
+        if debug() {
+            println!("[Session] SensorBatch {sensor:?}");
         }
         out
     }
@@ -1555,6 +1565,30 @@ pub(crate) mod tests {
         );
         tx.send_modify(|c| c.video_width = Some(1920));
         assert_eq!(s.geometry().tier_width, 1280);
+    }
+
+    #[test]
+    fn a_subscription_gets_the_last_reported_value() {
+        let (mut s, _tx) = running(AaConfig::default());
+        let subscribe = |s: &mut Session, sensor_type: u8| {
+            let out = s.on_message(ch::SENSOR, sensor_msg::REQUEST, &[0x08, sensor_type]);
+            frames(&out).get(1).map(|f| f.payload.clone())
+        };
+        assert_eq!(
+            subscribe(&mut s, 13),
+            sensors::batch(&Sensor::DrivingStatus(0))
+        );
+        assert_eq!(subscribe(&mut s, 4), None);
+        for sensor in [
+            Sensor::NightMode(true),
+            Sensor::DrivingStatus(31),
+            Sensor::ParkingBrake(true),
+            Sensor::Gear(5),
+        ] {
+            s.send_sensor(&sensor);
+            let sensor_type = sensors::sensor_type(&sensor) as u8;
+            assert_eq!(subscribe(&mut s, sensor_type), sensors::batch(&sensor));
+        }
     }
 
     #[test]

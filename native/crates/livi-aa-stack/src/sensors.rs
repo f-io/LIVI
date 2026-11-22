@@ -5,8 +5,8 @@
 use livi_aa_proto::{
     BatteryConfig, CarLocation, ChargingPrefs, CurrentGear, DoorStates, DrivingStatus,
     EnergyConsumption, EnergyRate, EnergyValue, EngineRpm, EnvironmentConditions, FuelLevel,
-    LightStates, NightModeData, Odometer, ParkingBrake, SensorBatchNotification, TirePressures,
-    VehicleEnergyModel, VehicleSpeed,
+    LightStates, NightModeData, Odometer, ParkingBrake, SensorBatchNotification, SensorType,
+    TirePressures, VehicleEnergyModel, VehicleSpeed,
 };
 use prost::Message;
 
@@ -119,6 +119,25 @@ fn vehicle_energy_model(
         }),
         charging_prefs: Some(ChargingPrefs { mode: Some(1) }),
     })
+}
+
+pub fn sensor_type(sensor: &Sensor) -> SensorType {
+    match sensor {
+        Sensor::Fuel { .. } => SensorType::Fuel,
+        Sensor::Speed(_) => SensorType::Speed,
+        Sensor::Rpm(_) => SensorType::Rpm,
+        Sensor::Gear(_) => SensorType::Gear,
+        Sensor::NightMode(_) => SensorType::NightMode,
+        Sensor::ParkingBrake(_) => SensorType::ParkingBrake,
+        Sensor::Light { .. } => SensorType::LightData,
+        Sensor::Environment { .. } => SensorType::EnvironmentData,
+        Sensor::Odometer { .. } => SensorType::Odometer,
+        Sensor::DrivingStatus(_) => SensorType::DrivingStatusData,
+        Sensor::TirePressure(_) => SensorType::TirePressureData,
+        Sensor::Doors { .. } => SensorType::DoorData,
+        Sensor::Gps(_) => SensorType::Location,
+        Sensor::VehicleEnergyModel { .. } => SensorType::VehicleEnergyModelData,
+    }
 }
 
 pub fn batch(sensor: &Sensor) -> Option<Vec<u8>> {
