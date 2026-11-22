@@ -153,10 +153,11 @@ fn serve(start: HelperStart, host: Host) -> Held {
     let chip = chip(&start, &host);
     let own_chip = chip.is_some();
     let link = watch_link(&host);
-    let kernel_bt = cfg!(feature = "bluez") && livi_core_proto::helper::kernel_bluetooth();
     let bt_adapter = start.settings.bt_adapter.as_str();
     let over_dongle =
         bt_adapter == livi_link_host::link::CHOICE || bt_adapter == livi_core_proto::helper::MODULE;
+    let kernel_bt =
+        !over_dongle && cfg!(feature = "bluez") && livi_core_proto::helper::kernel_bluetooth();
     let dongle_ap = start.settings.wifi_iface == livi_link_host::link::CHOICE;
     let dongle = crate::bt_dongle::Dongle::default();
     let auth = SharedCoprocessor::new(chip.unwrap_or_else(|| Box::new(NoCoprocessor)));

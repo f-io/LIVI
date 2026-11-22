@@ -103,9 +103,7 @@ pub fn bt_mac(adapter: &str) -> Option<String> {
     if let Ok(mac) = std::env::var("AA_BT_MAC") {
         return Some(mac);
     }
-    let userspace = if livi_core_proto::helper::kernel_bluetooth() {
-        None
-    } else if adapter == livi_link_host::link::CHOICE {
+    let userspace = if adapter == livi_link_host::link::CHOICE {
         Some(livi_link_host::ap::bt_mac())
     } else if adapter == livi_core_proto::helper::MODULE {
         Some(livi_core_proto::helper::module_bt_mac())
