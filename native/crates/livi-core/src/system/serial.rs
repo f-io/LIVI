@@ -70,7 +70,7 @@ fn speed(baud_rate: u32) -> Option<libc::speed_t> {
     })
 }
 
-fn raw_mode(file: &File, baud_rate: u32) -> io::Result<()> {
+pub(crate) fn raw_mode(file: &File, baud_rate: u32) -> io::Result<()> {
     let speed = speed(baud_rate).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -87,6 +87,7 @@ fn raw_mode(file: &File, baud_rate: u32) -> io::Result<()> {
         }
         libc::cfmakeraw(&mut t);
         t.c_cflag &= !libc::CRTSCTS;
+        t.c_cflag |= libc::CLOCAL | libc::CREAD;
         if libc::cfsetspeed(&mut t, speed) != 0 || libc::tcsetattr(fd, libc::TCSANOW, &t) != 0 {
             return Err(io::Error::last_os_error());
         }

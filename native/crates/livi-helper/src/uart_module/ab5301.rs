@@ -15,7 +15,7 @@
 //! The chip holds one phone at a time: `IB` and `AD` bring it, `IA` takes it away. It reconnects the
 //! phone it held last on its own, before LIVI's access point is up. `AT#CD` also stops that until the
 //! chip restarts, so LIVI drops it at boot and pages with `AT#CC` (no address, the phone it held last)
-//! once the access point is up and the CPU has room for the session.
+//! once the access point is up.
 //!
 //! The chip has one channel and does not say whose it is, so a phone that leaves iAP2 unanswered
 //! gets it as android auto.
@@ -27,16 +27,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use livi_base::hex::mac;
 use livi_core_proto::helper::MODULE_BT_MAC;
-use livi_helper_stack::hfp::Hfp;
+use livi_core_proto::module::{CHIP, HOST, frame, next_frame};
 use livi_helper_stack::reconnect::{Link, Paging};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::bt_dongle::Arrival;
+use crate::bt_dongle::{Arrival, Profiles};
 
-const HOST: u8 = 0x80;
-const CHIP: u8 = 0x81;
 const LINE: u8 = 0xd4;
 const DATA: u8 = 0xd6;
 const CHUNK: usize = 240;
@@ -52,36 +51,6 @@ static PORT: Mutex<Option<Chip>> = Mutex::new(None);
 /// The bool: its iAP2 channel was asked for again since.
 static HELD: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
-#[derive(Clone)]
-pub struct Profiles {
-    pub carplay: Option<UnboundedSender<Arrival>>,
-    pub android_auto: Option<UnboundedSender<Arrival>>,
-    pub hfp: Hfp,
-}
-
-fn frame(cmd: u8, data: &[u8]) -> Vec<u8> {
-    let mut f = vec![0x02, HOST, cmd, data.len() as u8];
-    f.extend_from_slice(data);
-    let xor = f[1..].iter().fold(0, |x, b| x ^ b);
-    f.push(xor);
-    f
-}
-
-fn next_frame(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
-    loop {
-        let start = buf.iter().position(|&b| b == 0x02).unwrap_or(buf.len());
-        buf.drain(..start);
-        if buf.len() < 5 || buf.len() < 5 + usize::from(buf[3]) {
-            return None;
-        }
-        let len = 5 + usize::from(buf[3]);
-        if buf[1..len - 1].iter().fold(0, |x, b| x ^ b) == buf[len - 1] {
-            return Some(buf.drain(..len).collect());
-        }
-        buf.remove(0);
-    }
-}
-
 fn address(hex: &str) -> Option<[u8; 6]> {
     let hex = hex.get(hex.len().checked_sub(12)?..)?;
     let mut out = [0u8; 6];
@@ -91,19 +60,16 @@ fn address(hex: &str) -> Option<[u8; 6]> {
     Some(out)
 }
 
-fn text(addr: &[u8; 6]) -> String {
-    addr.iter()
-        .map(|b| format!("{b:02X}"))
-        .collect::<Vec<_>>()
-        .join(":")
-}
-
 #[derive(Clone)]
 struct Chip(Arc<Mutex<UnixStream>>);
 
 impl Chip {
     fn send(&self, cmd: u8, data: &[u8]) -> bool {
-        self.0.lock().unwrap().write_all(&frame(cmd, data)).is_ok()
+        self.0
+            .lock()
+            .unwrap()
+            .write_all(&frame(HOST, cmd, data))
+            .is_ok()
     }
 
     fn at(&self, line: &str) -> bool {
@@ -129,7 +95,7 @@ impl Session {
         match code {
             "AD" => {
                 if let Some(addr) = address(rest) {
-                    self.peer = text(&addr);
+                    self.peer = mac(&addr);
                     *HELD.lock().unwrap() = Some((self.peer.clone(), false));
                     self.profiles.hfp.chip_link(&self.peer, true);
                     self.open(self.profiles.carplay.clone());
@@ -157,7 +123,7 @@ impl Session {
                 if let Some(mut addr) = address(rest) {
                     addr.reverse();
                     self.local = addr;
-                    if let Err(e) = std::fs::write(MODULE_BT_MAC, format!("{}\n", text(&addr))) {
+                    if let Err(e) = std::fs::write(MODULE_BT_MAC, format!("{}\n", mac(&addr))) {
                         eprintln!("[ab5301] {MODULE_BT_MAC}: {e}");
                     }
                 }
@@ -201,7 +167,7 @@ impl Session {
         println!(
             "[ab5301] {} opened a channel to {}",
             self.peer,
-            text(&self.local)
+            mac(&self.local)
         );
         let _ = to.send(Arrival {
             peer: self.peer.clone(),

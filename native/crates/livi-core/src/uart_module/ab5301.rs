@@ -11,11 +11,11 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::fd::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use livi_core_proto::module::{CHIP, HOST, frame, next_frame};
 use tokio::sync::mpsc;
 
 use crate::audio::system_volume::{Fault, OutputEvent};
@@ -23,8 +23,6 @@ use crate::system::keys::{self, Key};
 
 pub const MODEL: &str = "AB5301B";
 
-const HOST: u8 = 0x80;
-const CHIP: u8 = 0x81;
 /// The vendor firmware's maxVolume.
 const MAX_LEVEL: f64 = 33.0;
 /// Bluetooth and active source volume, as the vendor Config.ini sets them (btVolume, carplayVolume).
@@ -62,37 +60,6 @@ struct Link {
     watcher: Mutex<Option<mpsc::UnboundedSender<OutputEvent>>>,
     helper: Mutex<Option<UnixStream>>,
     pressed: Mutex<Option<(u8, Instant)>>,
-}
-
-fn frame(dir: u8, cmd: u8, data: &[u8]) -> Vec<u8> {
-    let mut f = vec![0x02, dir, cmd, data.len() as u8];
-    f.extend_from_slice(data);
-    let xor = f[1..].iter().fold(0, |x, b| x ^ b);
-    f.push(xor);
-    f
-}
-
-fn raw_115200(port: &File) -> std::io::Result<()> {
-    let fd = port.as_raw_fd();
-    // SAFETY: termios is plain data, filled by tcgetattr before use.
-    let mut t: libc::termios = unsafe { std::mem::zeroed() };
-    // SAFETY: fd is an open tty and t a valid termios.
-    if unsafe { libc::tcgetattr(fd, &mut t) } != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: t is a valid termios.
-    unsafe {
-        libc::cfmakeraw(&mut t);
-        libc::cfsetspeed(&mut t, libc::B115200);
-    }
-    t.c_cflag |= libc::CLOCAL | libc::CREAD;
-    t.c_cc[libc::VMIN] = 1;
-    t.c_cc[libc::VTIME] = 0;
-    // SAFETY: fd is an open tty and t a valid termios.
-    if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &t) } != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
 }
 
 impl Link {
@@ -168,21 +135,6 @@ impl Link {
     }
 }
 
-fn next_frame(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
-    loop {
-        let start = buf.iter().position(|&b| b == 0x02).unwrap_or(buf.len());
-        buf.drain(..start);
-        if buf.len() < 5 || buf.len() < 5 + usize::from(buf[3]) {
-            return None;
-        }
-        let len = 5 + usize::from(buf[3]);
-        if buf[1..len - 1].iter().fold(0, |x, b| x ^ b) == buf[len - 1] {
-            return Some(buf.drain(..len).collect());
-        }
-        buf.remove(0);
-    }
-}
-
 fn each_frame(mut from: impl Read, mut take: impl FnMut(&[u8])) {
     let mut buf = Vec::with_capacity(512);
     let mut chunk = [0u8; 512];
@@ -237,7 +189,7 @@ fn link() -> Result<&'static Link, Fault> {
             .map_err(|e| {
                 (e.kind() != std::io::ErrorKind::NotFound).then(|| format!("{name}: {e}"))
             })?;
-        raw_115200(&port).map_err(|e| Some(format!("{name}: {e}")))?;
+        crate::system::serial::raw_mode(&port, 115200).map_err(|e| Some(format!("{name}: {e}")))?;
         let reader = port.try_clone().map_err(|e| Some(e.to_string()))?;
         Ok(Link {
             port: Mutex::new(port),
@@ -252,6 +204,13 @@ fn link() -> Result<&'static Link, Fault> {
         Some(e) => Fault::Other(e.clone()),
         None => Fault::Missing,
     })
+}
+
+/// Opens the module at start, its keys, knob and the helper socket do not wait for a volume call.
+pub fn start() {
+    if let Err(Fault::Other(e)) = link() {
+        eprintln!("[ab5301] {e}");
+    }
 }
 
 fn started(reader: File) {
@@ -299,18 +258,4 @@ pub fn watch(tx: mpsc::UnboundedSender<OutputEvent>) -> Watch {
         *link.watcher.lock().unwrap() = Some(tx);
     }
     Watch
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_frame_ends_in_the_xor_from_dir_on() {
-        assert_eq!(frame(HOST, 0xa4, &[]), [0x02, 0x80, 0xa4, 0x00, 0x24]);
-        assert_eq!(
-            frame(HOST, KEY_ACK, &[ALIVE, 0x01, 0, 0, 0]),
-            [0x02, 0x80, 0xb0, 0x05, 0xce, 0x01, 0x00, 0x00, 0x00, 0xfa]
-        );
-    }
 }

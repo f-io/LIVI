@@ -224,11 +224,7 @@ pub fn start_bluetooth(
             radios.sockets.module,
             radios.name,
             radios.wifi.clone(),
-            crate::uart_module::Profiles {
-                carplay: profiles.carplay,
-                android_auto: profiles.android_auto,
-                hfp: profiles.hfp,
-            },
+            profiles,
         ));
         tokio::spawn(livi_helper_stack::reconnect::run(
             crate::uart_module::Pager::new(radios.wifi.clone()),

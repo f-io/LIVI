@@ -14,6 +14,7 @@ pub mod icon;
 pub mod ids;
 pub mod input;
 pub mod message;
+pub mod module;
 pub mod patch;
 pub mod runtime;
 pub mod state;
