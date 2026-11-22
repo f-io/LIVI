@@ -218,7 +218,9 @@ pub(super) fn render_screen(c: &mut Controller, s: &SettingsState, state: &Value
                     row_data(r, at)
                 })
                 .collect();
-            s.set_focus_rows(ModelRc::from(Rc::new(VecModel::from(focus_rows))));
+            if let Some(fresh) = refill(&s.get_focus_rows(), focus_rows) {
+                s.set_focus_rows(fresh);
+            }
             if let Some(fresh) = refill(&s.get_rows(), data) {
                 s.set_rows(fresh);
             }
@@ -227,15 +229,16 @@ pub(super) fn render_screen(c: &mut Controller, s: &SettingsState, state: &Value
         }
         Screen::Select { title, options } => {
             s.set_title(title.into());
-            s.set_picks(ModelRc::from(Rc::new(VecModel::from(
-                options
-                    .into_iter()
-                    .map(|p| PickData {
-                        label: p.label.into(),
-                        selected: p.selected,
-                    })
-                    .collect::<Vec<_>>(),
-            ))));
+            let picks = options
+                .into_iter()
+                .map(|p| PickData {
+                    label: p.label.into(),
+                    selected: p.selected,
+                })
+                .collect();
+            if let Some(fresh) = refill(&s.get_picks(), picks) {
+                s.set_picks(fresh);
+            }
             s.set_kind(ScreenKind::Select);
         }
         Screen::Number {

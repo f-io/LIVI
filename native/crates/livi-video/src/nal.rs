@@ -63,6 +63,13 @@ fn classify_byte(header_byte: u8, codec: CpCodec) -> CpNalKind {
     }
 }
 
+fn picture(header_byte: u8, codec: CpCodec) -> bool {
+    match codec {
+        CpCodec::H265 => (header_byte >> 1) & 0x3f < 32,
+        CpCodec::H264 => matches!(header_byte & 0x1f, 1..=5),
+    }
+}
+
 pub fn classify_nal(frame: &[u8], codec: CpCodec) -> CpNalKind {
     if frame.starts_with(&[0, 0, 0, 1]) {
         classify_annex_b(frame, codec)
@@ -77,9 +84,10 @@ fn classify_annex_b(frame: &[u8], codec: CpCodec) -> CpNalKind {
     while i + 3 < frame.len() {
         if frame[i] == 0 && frame[i + 1] == 0 && frame[i + 2] == 1 {
             let kind = classify_byte(frame[i + 3], codec);
-            if kind > best {
-                best = kind;
+            if picture(frame[i + 3], codec) {
+                return kind.max(best);
             }
+            best = best.max(kind);
             i += 4;
         } else {
             i += 1;
@@ -189,6 +197,15 @@ mod tests {
         let mut au = annex_b(&[&[0x67, 0, 0]]);
         au.extend_from_slice(&[0, 0, 1, 0x65, 0, 0]);
         assert_eq!(classify_nal(&au, CpCodec::H264), CpNalKind::Keyframe);
+    }
+
+    #[test]
+    fn annex_b_stops_at_the_first_slice() {
+        let mut au = annex_b(&[&[0x67, 0, 0], &[0x41, 0, 0]]);
+        au.extend_from_slice(&[0, 0, 1, 0x65, 0]);
+        assert_eq!(classify_nal(&au, CpCodec::H264), CpNalKind::Params);
+        let sei_first = annex_b(&[&[0x06, 0x05], &[0x65, 0, 0]]);
+        assert_eq!(classify_nal(&sei_first, CpCodec::H264), CpNalKind::Keyframe);
     }
 
     #[test]
