@@ -88,6 +88,18 @@ pub const CLUSTER_RECV_ID: u32 = 0x7a00_0010;
 pub const CLUSTER_PLANE_MIN: u32 = 0x7a00_0011;
 pub const CLUSTER_PLANE_MAX: u32 = 0x7a00_0013;
 
+/// `LIVI_VIDEO_DECODERS` caps the decoders, parked ones included. Unset or 0 parks none, with 1 the
+/// main player stops while the cluster stream has the main screen.
+pub fn video_decoders() -> usize {
+    static CAP: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("LIVI_VIDEO_DECODERS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(0)
+    })
+}
+
 pub fn is_cluster_plane(id: u32) -> bool {
     (CLUSTER_PLANE_MIN..=CLUSTER_PLANE_MAX).contains(&id)
 }

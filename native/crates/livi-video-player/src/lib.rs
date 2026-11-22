@@ -9,7 +9,7 @@ use gstreamer_base as gst_base;
 use livi_output_proto::VideoCodec;
 use livi_video::nal::{CpCodec, CpNalKind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Once, OnceLock};
+use std::sync::{Arc, Mutex, Once};
 
 mod camera;
 #[cfg(in_process)]
@@ -267,21 +267,10 @@ impl Decoding {
 
 type Parked = (VideoCodec, String, Vec<u8>, Decoding);
 
-/// `LIVI_VIDEO_DECODERS` caps the pipelines, parked ones included. Unset or 0 parks none.
 static PARKED: Mutex<Vec<Parked>> = Mutex::new(Vec::new());
 static PIPELINES: AtomicUsize = AtomicUsize::new(0);
 const HELD_MAX: usize = 300;
 static PLAYERS: AtomicUsize = AtomicUsize::new(0);
-
-fn decoders_cap() -> usize {
-    static CAP: OnceLock<usize> = OnceLock::new();
-    *CAP.get_or_init(|| {
-        std::env::var("LIVI_VIDEO_DECODERS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0)
-    })
-}
 
 fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -380,7 +369,7 @@ impl Player {
                     {
                         parked.remove(i).3.close();
                     }
-                    let cap = decoders_cap();
+                    let cap = livi_output_proto::video_decoders();
                     while cap > 0 && PIPELINES.load(Ordering::Relaxed) >= cap && !parked.is_empty()
                     {
                         parked.remove(0).3.close();
@@ -393,7 +382,7 @@ impl Player {
         let d = match parked {
             Some(d) => d,
             None => {
-                let cap = decoders_cap();
+                let cap = livi_output_proto::video_decoders();
                 if cap > 0 && PIPELINES.load(Ordering::Relaxed) >= cap {
                     return Some(false);
                 }
@@ -441,7 +430,7 @@ impl Player {
             return;
         };
         self.view.remove();
-        if decoders_cap() == 0 {
+        if livi_output_proto::video_decoders() == 0 {
             d.close();
             return;
         }

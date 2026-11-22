@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use livi_output_proto::{
     AIRPLAY_TAG, CAMERA_TAG, CLUSTER_PLANE_MIN, CameraOrder, MAIN_TAG, PLANE_AIRPLAY, PLANE_CAMERA,
@@ -57,10 +57,8 @@ fn same_stream(codec: Option<VideoCodec>, data: &[u8], next: VideoCodec, atom: &
     codec == Some(next) && data == atom
 }
 
-/// One decoder: the main player stops while the cluster stream has the main screen.
 fn single_decoder() -> bool {
-    static ONE: OnceLock<bool> = OnceLock::new();
-    *ONE.get_or_init(|| std::env::var("LIVI_VIDEO_DECODERS").is_ok_and(|v| v.trim() == "1"))
+    livi_output_proto::video_decoders() == 1
 }
 
 #[derive(Default)]
