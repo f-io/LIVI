@@ -897,11 +897,8 @@ pub async fn adapter_address(conn: &Connection, adapter: &str) -> Result<[u8; 6]
         .await?;
     let value: OwnedVariant = reply.body().deserialize()?;
     let addr = String::try_from(value)?;
-    let mut mac = [0u8; 6];
-    for (i, part) in addr.split(':').enumerate().take(6) {
-        mac[i] = u8::from_str_radix(part, 16).unwrap_or(0);
-    }
-    Ok(mac)
+    livi_base::hex::parse_mac(&addr)
+        .ok_or_else(|| BtError::Other(format!("{adapter} has no address in {addr}")))
 }
 
 pub fn drop_link(conn: &Connection, adapter: &str, mac: String) {

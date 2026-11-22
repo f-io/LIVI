@@ -113,12 +113,7 @@ pub fn bt_mac(adapter: &str) -> Option<String> {
         None
     };
     if let Some(mac) = userspace {
-        return mac.map(|b| {
-            b.iter()
-                .map(|x| format!("{x:02X}"))
-                .collect::<Vec<_>>()
-                .join(":")
-        });
+        return mac.map(|b| livi_base::hex::mac(&b));
     }
     match bt_mac_in(Path::new(BT_SYSFS), adapter) {
         Ok(Some(mac)) => Some(mac),

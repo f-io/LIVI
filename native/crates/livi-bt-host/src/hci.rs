@@ -43,12 +43,9 @@ pub fn text(addr: &Addr) -> String {
 }
 
 pub fn parse_addr(text: &str) -> Option<Addr> {
-    let mut out = [0u8; 6];
-    let mut parts = text.trim().split(':');
-    for byte in out.iter_mut().rev() {
-        *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
-    }
-    parts.next().is_none().then_some(out)
+    let mut out = livi_base::hex::parse_mac(text)?;
+    out.reverse();
+    Some(out)
 }
 
 pub fn command(opcode: u16, params: &[u8]) -> Vec<u8> {

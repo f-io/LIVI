@@ -178,14 +178,7 @@ fn host_mac(device: &Device, func: &NcmFunction) -> Option<Mac> {
 }
 
 fn parse_mac(text: &str) -> Option<Mac> {
-    if text.len() != 12 {
-        return None;
-    }
-    let mut mac = [0u8; 6];
-    for (i, byte) in mac.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
-    }
-    Some(mac)
+    livi_base::hex::decode(text)?.try_into().ok()
 }
 
 fn format_mac(mac: &Mac) -> String {

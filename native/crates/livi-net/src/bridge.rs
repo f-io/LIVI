@@ -59,12 +59,7 @@ fn neighbour(arp: &str, ip: IpAddr) -> Option<([u8; 6], &str)> {
 }
 
 fn parse_mac(text: &str) -> Option<[u8; 6]> {
-    let mut mac = [0; 6];
-    let mut parts = text.split(':');
-    for byte in &mut mac {
-        *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
-    }
-    (parts.next().is_none() && mac != [0; 6]).then_some(mac)
+    livi_base::hex::parse_mac(text).filter(|mac| *mac != [0; 6])
 }
 
 fn port_no(root: &Path, iface: &str) -> Option<u16> {

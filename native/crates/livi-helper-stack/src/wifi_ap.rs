@@ -288,12 +288,9 @@ pub fn teardown(iface: &str) {
 }
 
 fn iface_mac(iface: &str) -> Option<[u8; 6]> {
-    let raw = std::fs::read_to_string(format!("/sys/class/net/{iface}/address")).ok()?;
-    let mut mac = [0u8; 6];
-    for (i, part) in raw.trim().split(':').enumerate().take(6) {
-        mac[i] = u8::from_str_radix(part, 16).ok()?;
-    }
-    Some(mac)
+    livi_base::hex::parse_mac(
+        &std::fs::read_to_string(format!("/sys/class/net/{iface}/address")).ok()?,
+    )
 }
 
 fn has_link_local(iface: &str) -> bool {

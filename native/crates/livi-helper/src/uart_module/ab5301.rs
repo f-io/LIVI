@@ -52,12 +52,9 @@ static PORT: Mutex<Option<Chip>> = Mutex::new(None);
 static HELD: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
 fn address(hex: &str) -> Option<[u8; 6]> {
-    let hex = hex.get(hex.len().checked_sub(12)?..)?;
-    let mut out = [0u8; 6];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
-    }
-    Some(out)
+    livi_base::hex::decode(hex.get(hex.len().checked_sub(12)?..)?)?
+        .try_into()
+        .ok()
 }
 
 #[derive(Clone)]

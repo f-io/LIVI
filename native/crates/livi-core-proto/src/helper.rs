@@ -46,13 +46,7 @@ pub fn uart_module() -> Option<PathBuf> {
 pub const MODULE_BT_MAC: &str = "/tmp/livi/bt-mac";
 
 pub fn module_bt_mac() -> Option<[u8; 6]> {
-    let text = std::fs::read_to_string(MODULE_BT_MAC).ok()?;
-    let mut out = [0u8; 6];
-    let mut parts = text.trim().split(':');
-    for byte in &mut out {
-        *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
-    }
-    parts.next().is_none().then_some(out)
+    livi_base::hex::parse_mac(&std::fs::read_to_string(MODULE_BT_MAC).ok()?)
 }
 
 /// The board wires its own coprocessor, so its power pin is not the user's to set.
