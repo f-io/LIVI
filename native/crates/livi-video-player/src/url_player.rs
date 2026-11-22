@@ -211,9 +211,13 @@ pub(crate) fn video_sink(say: &Say) -> Option<gst::Element> {
             .inspect_err(|e| say(&format!("[gst_video] no glimagesink: {e}")))
             .ok();
     }
-    let chosen = livi_video::codec::sink_override();
-    let desc = livi_video::codec::desktop_sink(chosen.as_deref());
-    gst::parse::bin_from_description(desc, true)
+    let desc = livi_video::codec::sink_override().unwrap_or_else(|| {
+        format!(
+            "videoconvert n-threads=0 ! {}",
+            livi_video::codec::desktop_sink(None)
+        )
+    });
+    gst::parse::bin_from_description(&desc, true)
         .inspect_err(|e| say(&format!("[gst_video] no video sink {desc}: {e}")))
         .ok()
         .map(|bin| bin.upcast())
