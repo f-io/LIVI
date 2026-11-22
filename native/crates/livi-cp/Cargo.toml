@@ -41,7 +41,12 @@ livi-net.workspace = true
 rustls-native-certs = "0.8"
 
 [dev-dependencies]
+openssl = "0.10.82"
+tokio-openssl = "0.6.5"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "test-util"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))'.dev-dependencies]
+openssl = { version = "0.10.82", features = ["vendored"] }
 
 [lints]
 workspace = true
