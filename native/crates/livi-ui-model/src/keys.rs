@@ -96,6 +96,23 @@ pub fn resolve(code: &str, typed: Option<&str>, config: &Value) -> String {
         .unwrap_or_else(|| code.to_string())
 }
 
+/// The code a named binding presses, for a key that arrives by name from core.
+pub fn code_for(name: &str, config: &Value) -> Option<String> {
+    let fallback = match name {
+        "left" | "knobLeft" => "ArrowLeft",
+        "right" | "knobRight" => "ArrowRight",
+        "up" | "knobUp" => "ArrowUp",
+        "down" | "knobDown" => "ArrowDown",
+        "selectDown" => "Enter",
+        "back" => "Escape",
+        "cycleSession" => "KeyS",
+        _ => "",
+    };
+    Some(or(binding(config, name), fallback))
+        .filter(|c| !c.is_empty())
+        .map(str::to_string)
+}
+
 pub fn binding_value(code: &str, typed: Option<&str>) -> String {
     typed
         .and_then(typed_name)
@@ -524,5 +541,15 @@ mod tests {
         assert_eq!(binding_value("F5", Some("F5")), "F5");
         assert_eq!(binding_value("Space", Some(" ")), "Space");
         assert_eq!(binding_value("Fn", None), "Fn");
+    }
+
+    #[test]
+    fn a_named_key_presses_its_binding_or_the_usual_key() {
+        assert_eq!(code_for("back", &config()).as_deref(), Some("Backspace"));
+        assert_eq!(
+            code_for("knobDown", &config()).as_deref(),
+            Some("ArrowDown")
+        );
+        assert_eq!(code_for("zoomIn", &config()), None);
     }
 }

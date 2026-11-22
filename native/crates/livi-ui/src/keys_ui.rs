@@ -10,8 +10,8 @@ use livi_core_client::Client;
 use livi_core_proto::input::Input;
 use livi_core_proto::message::Action;
 use livi_ui_model::keys::{
-    Context, Focused, HELD_GAP, MirrorKey, Outcome, Zone, bound_to, decide, held_factor, released,
-    resolve,
+    Context, Focused, HELD_GAP, MirrorKey, Outcome, Zone, bound_to, code_for, decide, held_factor,
+    released, resolve,
 };
 use livi_ui_model::media::pressed;
 #[cfg(winit)]
@@ -487,6 +487,42 @@ pub fn key(
     let ctx = context(ui, repeat);
     let outcome = decide(code, ctx, &config);
     apply(ui, client, code, outcome)
+}
+
+pub fn from_core(ui: &AppWindow, client: &Client, name: &str) {
+    let config = client.mirror().json["config"].clone();
+    let Some(code) = code_for(name, &config) else {
+        return;
+    };
+    ui.invoke_wake_nav();
+    if crate::settings_ui::capturing() {
+        return;
+    }
+    KEY_REPEAT.set(false);
+    let outcome = decide(&code, context(ui, false), &config);
+    if matches!(outcome, Outcome::ToCore(_)) {
+        return;
+    }
+    if !apply(ui, client, &code, outcome) {
+        type_key(ui, &code);
+    }
+}
+
+fn type_key(ui: &AppWindow, code: &str) {
+    use slint::platform::{Key, WindowEvent};
+    let key = match code {
+        "Enter" | "NumpadEnter" => Key::Return,
+        "Escape" => Key::Escape,
+        "ArrowLeft" => Key::LeftArrow,
+        "ArrowRight" => Key::RightArrow,
+        "ArrowUp" => Key::UpArrow,
+        "ArrowDown" => Key::DownArrow,
+        _ => return,
+    };
+    let text = slint::SharedString::from(key);
+    let window = ui.window();
+    window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+    window.dispatch_event(WindowEvent::KeyReleased { text });
 }
 
 thread_local! {

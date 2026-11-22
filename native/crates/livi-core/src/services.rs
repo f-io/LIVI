@@ -487,6 +487,7 @@ impl CarPlay {
             settings: self.settings,
             themes: self.user_data.join("themes"),
             mfi_chip: self.sockets.mfi_chip.clone(),
+            ui_keys: asks.ui_keys.clone(),
         };
         let mut projection = Projection::new(
             hub,

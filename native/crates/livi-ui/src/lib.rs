@@ -244,6 +244,11 @@ fn apply(ui: &AppWindow, update: Update) {
             }
         }
         Update::Open(path) => open_path(ui, &path),
+        Update::Key(name) => CLIENT.with_borrow(|c| {
+            if let Some(c) = c {
+                keys_ui::from_core(ui, c, &name);
+            }
+        }),
         Update::Volume(level) => overlay_ui::volume(ui, level),
         Update::PhoneName(name) => overlay_ui::phone(ui, &name),
         Update::Camera(found) => ui.set_camera_found(found),
@@ -413,6 +418,7 @@ fn follow_core(weak: Weak<AppWindow>) -> impl FnMut(Event, &Mutex<Mirror>) + Sen
             Event::Changed(keys) => follow.changed(Some(&keys), &read().state),
             Event::Spectrum(bands) => vec![Update::Spectrum(bands)],
             Event::OpenPage(path) => vec![Update::Open(path)],
+            Event::Key(name) => vec![Update::Key(name)],
             Event::Gone(why) => {
                 eprintln!("[ui] core gone: {why}");
                 return;

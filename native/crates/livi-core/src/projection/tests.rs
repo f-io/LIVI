@@ -108,6 +108,7 @@ impl Rig {
             settings,
             themes: dir.0.join("themes"),
             mfi_chip: dir.0.join("mfi-chip.json"),
+            ui_keys: tokio::sync::broadcast::channel(8).0,
         };
         let p = Projection::new(
             hub.clone(),
@@ -857,6 +858,25 @@ async fn the_telemetry_presses_a_binding_by_its_name() {
             stack(1, StackCmd::MapZoom { zoom_in: false }),
         ]
     );
+}
+
+#[tokio::test]
+async fn a_named_navigation_key_moves_the_livi_ui_while_it_is_in_front() {
+    let mut rig = Rig::new();
+    rig.connect(1, true);
+    let mut keys = rig.p.ui_keys.subscribe();
+    rig.want(Front::Livi);
+    rig.drain();
+    rig.p.press_named("down");
+    rig.p.press_named("zoomIn");
+    assert_eq!(keys.try_recv().ok().as_deref(), Some("down"));
+    assert!(keys.try_recv().is_err());
+    assert_eq!(rig.drain(), [stack(1, StackCmd::MapZoom { zoom_in: true })]);
+    rig.want(Front::Projection);
+    rig.drain();
+    rig.p.press_named("down");
+    assert!(keys.try_recv().is_err());
+    assert!(!rig.drain().is_empty());
 }
 
 #[tokio::test]

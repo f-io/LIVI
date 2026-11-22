@@ -29,6 +29,7 @@ pub enum Update {
     Settings,
     Spectrum(Vec<f32>),
     Open(String),
+    Key(String),
     Volume(livi_ui_model::overlay::Level),
     PhoneName(String),
     Camera(bool),

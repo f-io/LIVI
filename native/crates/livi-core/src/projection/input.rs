@@ -99,6 +99,13 @@ impl Projection {
             println!("[core] the telemetry pressed {binding:?}, no key binding has that name");
             return;
         };
+        if key != Key::ClusterLayout
+            && !key.works_behind()
+            && self.front_main() != Front::Projection
+        {
+            let _ = self.ui_keys.send(binding.to_string());
+            return;
+        }
         self.press(key, true);
         self.press(key, false);
     }

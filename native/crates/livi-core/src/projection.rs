@@ -392,6 +392,7 @@ pub struct Drivers {
     pub settings: mpsc::UnboundedSender<Value>,
     pub themes: PathBuf,
     pub mfi_chip: PathBuf,
+    pub ui_keys: broadcast::Sender<String>,
 }
 
 pub struct Projection {
@@ -432,6 +433,7 @@ pub struct Projection {
     cluster: Cluster,
     themes: PathBuf,
     mfi_chip: PathBuf,
+    ui_keys: broadcast::Sender<String>,
     theme_asked: String,
     theme_ready: (mpsc::UnboundedSender<Theme>, mpsc::UnboundedReceiver<Theme>),
     radio: Option<mpsc::UnboundedSender<crate::radio::RadioAsk>>,
@@ -482,6 +484,7 @@ pub struct UiAsks {
     pub input_from_compositor: mpsc::UnboundedSender<Input>,
     pub commands_back: mpsc::UnboundedSender<UiCommand>,
     pub ap_ready: watch::Receiver<bool>,
+    pub ui_keys: broadcast::Sender<String>,
 }
 
 pub struct UiSenders {
@@ -496,6 +499,7 @@ pub struct UiSenders {
     pub activity: watch::Receiver<Activity>,
     pub radio: mpsc::UnboundedSender<crate::radio::RadioAsk>,
     pub ap_ready: watch::Sender<bool>,
+    pub ui_keys: broadcast::Sender<String>,
 }
 
 pub struct DongleAsks {
@@ -516,6 +520,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
     let (activity_tx, activity_rx) = watch::channel(Activity::default());
     let (radio_tx, radio_rx) = mpsc::unbounded_channel();
     let (ap_ready_tx, ap_ready_rx) = watch::channel(true);
+    let ui_keys = broadcast::channel(8).0;
     let feed = spectrum::Feed::new();
     (
         UiSenders {
@@ -530,6 +535,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             activity: activity_rx,
             radio: radio_tx.clone(),
             ap_ready: ap_ready_tx,
+            ui_keys: ui_keys.clone(),
         },
         UiAsks {
             wants: wants_rx,
@@ -543,6 +549,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             input_from_compositor: input_tx,
             commands_back: commands_tx,
             ap_ready: ap_ready_rx,
+            ui_keys,
         },
         DongleAsks {
             radios: dongle_rx,
@@ -572,6 +579,7 @@ impl Projection {
             settings,
             themes,
             mfi_chip,
+            ui_keys,
         } = drivers;
         let cp_telemetry = CpTelemetry::new(devices.helper.clone());
         let cfg = hub.config();
@@ -618,6 +626,7 @@ impl Projection {
             cluster,
             themes,
             mfi_chip,
+            ui_keys,
             theme_asked: String::new(),
             theme_ready: mpsc::unbounded_channel(),
             radio: None,

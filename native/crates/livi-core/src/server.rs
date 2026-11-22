@@ -438,6 +438,7 @@ async fn client(core: Arc<Core>, stream: UnixStream) -> io::Result<()> {
     }
     println!("[core] {client} connected");
     let mut pages = core.open_page.subscribe();
+    let mut keys = core.asks.ui_keys.subscribe();
     let mut patches = welcome(&core, &mut wr).await?;
     let mut viewer: Option<Viewer> = None;
     let mut link_speed_viewer: Option<LinkSpeedViewer> = None;
@@ -487,6 +488,11 @@ async fn client(core: Arc<Core>, stream: UnixStream) -> io::Result<()> {
             frame = next_spectrum(&mut viewer) => wr.write_all(&frame).await?,
             page = pages.recv() => match page {
                 Ok(path) => send(&mut wr, &FromCore::OpenPage { path }).await?,
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            key = keys.recv() => match key {
+                Ok(name) => send(&mut wr, &FromCore::Key { name }).await?,
                 Err(broadcast::error::RecvError::Lagged(_)) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
             },

@@ -48,6 +48,9 @@ pub enum FromCore {
     OpenPage {
         path: String,
     },
+    Key {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
