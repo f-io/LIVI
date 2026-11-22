@@ -99,18 +99,6 @@ pub fn wireless_config(base: &CpConfig, wifi: &str) -> CpConfig {
     }
 }
 
-pub fn wireless_identity(base: &Identity, module: bool) -> Identity {
-    let bt_mac = if module {
-        livi_core_proto::helper::module_bt_mac()
-    } else {
-        livi_link_host::ap::bt_mac()
-    };
-    Identity {
-        bt_mac: bt_mac.unwrap_or(base.bt_mac),
-        ..base.clone()
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub async fn wireless_sessions(
     auth: SharedCoprocessor,

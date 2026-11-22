@@ -67,6 +67,7 @@ fn config(path: &str) -> LiviSockConfig {
         disconnect: None,
         targets: None,
         cp_live: None,
+        bt_mac_live: None,
     }
 }
 

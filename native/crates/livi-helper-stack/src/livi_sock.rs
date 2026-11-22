@@ -78,6 +78,7 @@ pub struct LiviSockConfig {
     pub disconnect: Option<DropLink>,
     pub targets: Option<PushTargets>,
     pub cp_live: Option<CpFactory>,
+    pub bt_mac_live: Option<fn() -> Option<[u8; 6]>>,
 }
 
 pub type DropLink = Arc<dyn Fn(String) -> Result<(), BtError> + Send + Sync>;
@@ -142,10 +143,14 @@ where
                 return Ok(());
             }
             println!("[cp-sock] tunnel up (cid={cid}, btMac={shown})");
-            let cfg = match &bluez {
-                Some(bluez) => LiviSockConfig {
+            let bt_mac = match &bluez {
+                Some(bluez) => Some(bluez.bt_mac),
+                None => cfg.bt_mac_live.and_then(|ask| ask()),
+            };
+            let cfg = match bt_mac {
+                Some(bt_mac) => LiviSockConfig {
                     identity: Identity {
-                        bt_mac: bluez.bt_mac,
+                        bt_mac,
                         ..cfg.identity
                     },
                     ..cfg

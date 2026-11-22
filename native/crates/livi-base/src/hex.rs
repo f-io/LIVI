@@ -36,6 +36,16 @@ pub fn mac(bytes: &[u8]) -> String {
         .join(":")
 }
 
+/// Reads `38:BA:B0:A0:E6:6F` in the order it is written.
+pub fn parse_mac(text: &str) -> Option<[u8; 6]> {
+    let mut out = [0u8; 6];
+    let mut parts = text.trim().split(':');
+    for byte in &mut out {
+        *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
+    }
+    parts.next().is_none().then_some(out)
+}
+
 fn nibble(c: u8) -> Option<u8> {
     char::from(c).to_digit(16).map(|d| d as u8)
 }
@@ -43,6 +53,18 @@ fn nibble(c: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mac_reads_in_the_order_it_is_written() {
+        assert_eq!(
+            parse_mac(" 38:BA:B0:A0:E6:6F\n"),
+            Some([0x38, 0xba, 0xb0, 0xa0, 0xe6, 0x6f])
+        );
+        assert_eq!(parse_mac("38:BA:B0:A0:E6"), None);
+        assert_eq!(parse_mac("38:BA:B0:A0:E6:6F:11"), None);
+        assert_eq!(parse_mac("38:BA:B0:A0:E6:XX"), None);
+        assert_eq!(parse_mac("not an address"), None);
+    }
 
     #[test]
     fn bytes_round_trip_in_lowercase() {

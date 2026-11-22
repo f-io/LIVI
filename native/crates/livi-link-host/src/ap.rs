@@ -157,32 +157,12 @@ pub fn mac() -> Option<String> {
 }
 
 pub fn bt_mac() -> Option<[u8; 6]> {
-    address(&status_field("btmac")?)
-}
-
-pub fn address(text: &str) -> Option<[u8; 6]> {
-    let mut out = [0u8; 6];
-    let mut parts = text.trim().split(':');
-    for byte in &mut out {
-        *byte = u8::from_str_radix(parts.next()?, 16).ok()?;
-    }
-    parts.next().is_none().then_some(out)
+    livi_base::hex::parse_mac(&status_field("btmac")?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn an_address_reads_in_the_order_it_is_written() {
-        assert_eq!(
-            address("38:BA:B0:A0:E6:6F"),
-            Some([0x38, 0xba, 0xb0, 0xa0, 0xe6, 0x6f])
-        );
-        assert_eq!(address("38:BA:B0:A0:E6"), None);
-        assert_eq!(address("38:BA:B0:A0:E6:6F:11"), None);
-        assert_eq!(address("not an address"), None);
-    }
 
     fn status_of(text: &str) -> HashMap<String, String> {
         fields(text.as_bytes())
