@@ -87,4 +87,3 @@ pub fn carplay(start: &HelperStart, transport: Transport) -> (Identity, CpConfig
     };
     (identity, cp)
 }
-

@@ -12,10 +12,7 @@ mod local {
     pub use crate::usb_pipe::open_stream;
 
     pub fn find_iphones() -> Vec<PhoneInfo> {
-        crate::linux::find_iphones()
-            .into_iter()
-            .map(info)
-            .collect()
+        crate::linux::find_iphones().into_iter().map(info).collect()
     }
 
     pub fn ensure_carplay_config(serial: &str) -> Result<PhoneInfo, Error> {
