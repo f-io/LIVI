@@ -93,6 +93,7 @@ struct Connector {
     panel_mm: Option<(i32, i32)>,
     transform: Transform,
     crtcs: Vec<crtc::Handle>,
+    lit: Option<(crtc::Handle, Mode)>,
 }
 
 struct Output {
@@ -243,7 +244,7 @@ fn open_device(
                 continue;
             }
         };
-        let (device, notifier) = match DrmDevice::new(fd.clone(), true) {
+        let (device, notifier) = match DrmDevice::new(fd.clone(), false) {
             Ok(opened) => opened,
             Err(e) => {
                 log::info!("{} drives no display: {e}", path.display());
@@ -286,6 +287,10 @@ fn connectors(device: &DrmDevice, probe: bool) -> Vec<Connector> {
                 .filter_map(|&e| device.get_encoder(e).ok())
                 .flat_map(|e| resources.filter_crtcs(e.possible_crtcs()))
                 .collect();
+            let lit = info
+                .current_encoder()
+                .and_then(|e| device.get_encoder(e).ok()?.crtc())
+                .and_then(|c| Some((c, device.get_crtc(c).ok()?.mode()?)));
             let name = format!("{}-{}", info.interface().as_str(), info.interface_id());
             let edid = property(device, handle, "EDID")
                 .and_then(|(_, blob)| device.get_property_blob(blob).ok());
@@ -305,6 +310,7 @@ fn connectors(device: &DrmDevice, probe: bool) -> Vec<Connector> {
                     .or_else(|| edid.as_deref().and_then(timing_mm)),
                 transform: orientation(device, handle),
                 crtcs,
+                lit,
                 name,
             })
         })
@@ -562,11 +568,29 @@ fn arrange(state: &mut LiviState) {
             Err(e) => log::error!("{name} for screen {screen_idx} did not light up: {e}"),
         }
     }
+    if let Some(drm) = state.drm.as_mut() {
+        dark_unused(drm);
+    }
     if changed {
         crate::ctrl::send_displays(state);
         crate::ctrl::send_panels(state);
     }
     apply_calibration(state);
+}
+
+fn dark_unused(drm: &mut DrmState) {
+    for connector in &mut drm.connectors {
+        let Some((crtc, _)) = connector.lit else {
+            continue;
+        };
+        if drm.outputs.iter().any(|o| o.crtc == crtc) {
+            continue;
+        }
+        connector.lit = None;
+        if let Err(e) = drm.device.set_crtc(crtc, None, (0, 0), &[], None) {
+            log::warn!("{} stays lit: {e}", connector.name);
+        }
+    }
 }
 
 pub fn apply_calibration(state: &mut LiviState) {
@@ -611,13 +635,21 @@ fn light(
         .iter()
         .find(|c| c.name == name)
         .ok_or("connector gone")?;
-    let mode = pick_mode(&connector.modes, mode_setting).ok_or("no mode")?;
+    let picked = pick_mode(&connector.modes, mode_setting).ok_or("no mode")?;
     let busy: Vec<crtc::Handle> = drm.outputs.iter().map(|o| o.crtc).collect();
-    let crtc = *connector
-        .crtcs
-        .iter()
-        .find(|c| !busy.contains(c))
-        .ok_or("no free crtc")?;
+    let lit = connector.lit.filter(|(c, _)| !busy.contains(c));
+    let crtc = match lit {
+        Some((c, _)) => c,
+        None => *connector
+            .crtcs
+            .iter()
+            .find(|c| !busy.contains(c))
+            .ok_or("no free crtc")?,
+    };
+    let mode = match lit {
+        Some((_, m)) if m.size() == picked.size() && m.vrefresh() == picked.vrefresh() => m,
+        _ => picked,
+    };
     let (handle, transform) = (connector.handle, turned(connector.transform, rotation));
     let surface = drm.device.create_surface(crtc, mode, &[handle])?;
     let allocator = GbmAllocator::new(
