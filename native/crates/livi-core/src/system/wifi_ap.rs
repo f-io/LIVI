@@ -299,6 +299,8 @@ pub async fn follow(core: Arc<Core>, p: Privileged) {
     }
 }
 
+const RESPAWN_PAUSE: Duration = Duration::from_secs(2);
+
 fn spawn_ap(helper: &Path) -> Option<tokio::process::Child> {
     let mut cmd = Command::new(helper);
     cmd.arg("--wifi-ap").kill_on_drop(true);
@@ -321,7 +323,7 @@ async fn own_child(core: Arc<Core>, helper: PathBuf) {
     let mut applied = core.hub.applied();
     let mut cfg = applied.borrow_and_update().clone();
     loop {
-        let ap = wanted(&cfg).then(|| spawn_ap(&helper)).flatten();
+        let mut ap = wanted(&cfg).then(|| spawn_ap(&helper)).flatten();
         let ran = if ap.is_some() {
             core.ap_ready().send_replace(false);
             on_air(&cfg.wifi_interface).await;
@@ -332,15 +334,23 @@ async fn own_child(core: Arc<Core>, helper: PathBuf) {
             cfg.clone()
         };
         let started = (wanted(&ran), ap_settings(&ran));
-        loop {
-            if applied.changed().await.is_err() {
-                return;
+        let died = loop {
+            tokio::select! {
+                changed = applied.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    cfg = applied.borrow_and_update().clone();
+                    if (wanted(&cfg), ap_settings(&cfg)) != started {
+                        break false;
+                    }
+                }
+                status = ended(&mut ap) => {
+                    eprintln!("[wifi-ap] the access point ended ({status}), it starts again");
+                    break true;
+                }
             }
-            cfg = applied.borrow_and_update().clone();
-            if (wanted(&cfg), ap_settings(&cfg)) != started {
-                break;
-            }
-        }
+        };
         if let Some(mut ap) = ap {
             let _ = ap.kill().await;
             let _ = Command::new(&helper)
@@ -348,9 +358,21 @@ async fn own_child(core: Arc<Core>, helper: PathBuf) {
                 .status()
                 .await;
         }
-        if wanted(&cfg) {
+        if died {
+            tokio::time::sleep(RESPAWN_PAUSE).await;
+        } else if wanted(&cfg) {
             println!("[wifi-ap] restarting with the new settings");
         }
+    }
+}
+
+async fn ended(ap: &mut Option<tokio::process::Child>) -> String {
+    match ap {
+        Some(child) => child
+            .wait()
+            .await
+            .map_or_else(|e| e.to_string(), |status| status.to_string()),
+        None => std::future::pending().await,
     }
 }
 
