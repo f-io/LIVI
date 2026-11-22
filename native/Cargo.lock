@@ -4236,6 +4236,9 @@ dependencies = [
 [[package]]
 name = "livi-base"
 version = "10.6.0"
+dependencies = [
+ "libc 1.0.0-alpha.5",
+]
 
 [[package]]
 name = "livi-bt-host"
@@ -4556,6 +4559,7 @@ name = "livi-net"
 version = "10.6.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "livi-base",
 ]
 
 [[package]]

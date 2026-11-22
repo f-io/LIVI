@@ -10,6 +10,21 @@ pub fn unix_ms() -> f64 {
         .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
 }
 
+pub fn set_clock(secs: i64) -> std::io::Result<()> {
+    let at = libc::timespec {
+        tv_sec: secs as _,
+        tv_nsec: 0,
+    };
+    // SAFETY: at is a valid timespec for the call.
+    if unsafe { libc::clock_settime(libc::CLOCK_REALTIME, &at) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let _ = std::process::Command::new(crate::sys::tool("fake-hwclock"))
+        .arg("save")
+        .output();
+    Ok(())
+}
+
 pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);

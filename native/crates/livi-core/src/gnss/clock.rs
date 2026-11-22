@@ -96,13 +96,20 @@ impl Clock {
 }
 
 pub async fn step(step: Step) {
-    if !Path::new(SET_TIME_HELPER).exists() {
+    // SAFETY: geteuid has no preconditions.
+    let stepped = if unsafe { libc::geteuid() } == 0 {
+        livi_base::time::set_clock(step.epoch)
+            .inspect_err(|e| eprintln!("[clock] {e}"))
+            .is_ok()
+    } else if Path::new(SET_TIME_HELPER).exists() {
+        sudo(&[SET_TIME_HELPER, &step.epoch.to_string()]).await
+    } else {
         eprintln!(
             "[clock] {SET_TIME_HELPER} missing, run the installer again to let GPS set the time"
         );
         return;
-    }
-    if sudo(&[SET_TIME_HELPER, &step.epoch.to_string()]).await {
+    };
+    if stepped {
         println!(
             "[clock] system clock stepped by {:.1}s from GPS",
             step.drift_s
