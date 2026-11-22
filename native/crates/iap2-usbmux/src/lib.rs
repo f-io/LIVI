@@ -24,7 +24,7 @@ pub use backend::{ensure_carplay_config, find_iphones, reset, restore_default_co
 #[cfg(any(target_os = "linux", target_os = "android", test))]
 pub(crate) type Mac = [u8; 6];
 
-pub(crate) fn short(serial: &str) -> &str {
+pub fn short(serial: &str) -> &str {
     &serial[..8.min(serial.len())]
 }
 

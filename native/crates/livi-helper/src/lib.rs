@@ -88,7 +88,3 @@ pub fn carplay(start: &HelperStart, transport: Transport) -> (Identity, CpConfig
     (identity, cp)
 }
 
-#[cfg_attr(not(usb_host), allow(dead_code))]
-pub(crate) fn short(serial: &str) -> &str {
-    &serial[..8.min(serial.len())]
-}

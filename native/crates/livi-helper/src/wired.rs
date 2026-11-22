@@ -23,7 +23,7 @@ use livi_helper_stack::mfi_async::SharedCoprocessor;
 use livi_helper_stack::state::HelperState;
 
 use crate::link::LinkPresence;
-use crate::short;
+use iap2_usbmux::short;
 
 fn announce_gone(bcast: &Broadcaster, serial: &str) {
     bcast.push_json(
