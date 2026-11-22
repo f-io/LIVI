@@ -224,13 +224,7 @@ pub(crate) fn video_sink(say: &Say) -> Option<gst::Element> {
 }
 
 fn audio_sink(device: &str) -> Option<gst::Element> {
-    let (element, device_property) = if cfg!(target_vendor = "apple") {
-        ("osxaudiosink", "unique-id")
-    } else if cfg!(target_os = "android") {
-        ("aaudiosink", "device")
-    } else {
-        ("pulsesink", "device")
-    };
+    let (element, device_property) = livi_output_proto::audio::audio_sink();
     let sink = gst::ElementFactory::make(element).build().ok()?;
     if !device.is_empty() {
         sink.set_property(device_property, device);

@@ -135,6 +135,18 @@ pub fn parse_mic_open(rest: &[u8]) -> Option<(MicOpts, [u8; 32])> {
     Some((opts, *key))
 }
 
+pub const fn audio_sink() -> (&'static str, &'static str) {
+    if cfg!(target_vendor = "apple") {
+        ("osxaudiosink", "unique-id")
+    } else if cfg!(target_os = "android") {
+        ("aaudiosink", "device")
+    } else if cfg!(livi_os) {
+        ("alsasink", "device")
+    } else {
+        ("pulsesink", "device")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

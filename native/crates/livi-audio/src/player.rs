@@ -11,6 +11,7 @@ use gstreamer_app as gst_app;
 use gstreamer_audio as gst_audio;
 use gstreamer_controller as gst_controller;
 use gstreamer_controller::prelude::*;
+use livi_output_proto::audio::audio_sink;
 
 use crate::stream::{Codec, RTP_HEADER_LEN, aac_raw_caps, alac_caps, reframe_aac, rtp_caps};
 use std::str::FromStr;
@@ -45,18 +46,6 @@ fn decoder_chain(codec: Codec) -> Option<&'static str> {
         Codec::AacLc => {
             Some("rtpjitterbuffer latency={latency} ! rtpmp4gdepay ! aacparse ! avdec_aac")
         }
-    }
-}
-
-const fn audio_sink() -> (&'static str, &'static str) {
-    if cfg!(target_vendor = "apple") {
-        ("osxaudiosink", "unique-id")
-    } else if cfg!(target_os = "android") {
-        ("aaudiosink", "device")
-    } else if cfg!(livi_os) {
-        ("alsasink", "device")
-    } else {
-        ("pulsesink", "device")
     }
 }
 
