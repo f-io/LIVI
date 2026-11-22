@@ -5,11 +5,11 @@
 use std::fmt::Write;
 
 fn main() {
+    livi_cfg::emit();
     println!("cargo::rustc-check-cfg=cfg(winit)");
     println!("cargo::rustc-check-cfg=cfg(kms)");
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
-    if env == "musl" {
+    if std::env::var_os("CARGO_CFG_LIVI_OS").is_some() {
         println!("cargo::rustc-cfg=kms");
     } else if os != "android" {
         println!("cargo::rustc-cfg=winit");

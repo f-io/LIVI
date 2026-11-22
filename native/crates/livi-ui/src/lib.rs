@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(in_process))]
 mod app;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(in_process))]
 mod bundle;
 pub mod clock;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(in_process))]
 mod core_process;
 #[cfg(winit)]
 mod cursor_ui;
@@ -23,7 +23,7 @@ mod fullscreen;
 mod icon_ui;
 mod icons;
 mod keys_ui;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(in_process))]
 mod log;
 mod media;
 mod media_ui;
@@ -35,7 +35,7 @@ mod shape_ui;
 mod touch_ui;
 mod video_ui;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(in_process))]
 pub use app::main;
 
 use std::cell::{Cell, RefCell};
@@ -387,7 +387,7 @@ pub(crate) fn attach_video(window: &slint::Window, screen: &str) -> bool {
         livi_video_view::set_window(screen, fd.as_raw_fd() as usize);
         true
     }
-    #[cfg(not(any(target_os = "macos", kms)))]
+    #[cfg(not(ui_video))]
     {
         let _ = (window, screen);
         true
@@ -395,9 +395,9 @@ pub(crate) fn attach_video(window: &slint::Window, screen: &str) -> bool {
 }
 
 pub(crate) fn detach_video(screen: &str) {
-    #[cfg(any(target_os = "macos", kms))]
+    #[cfg(ui_video)]
     livi_video_view::set_window(screen, 0);
-    #[cfg(not(any(target_os = "macos", kms)))]
+    #[cfg(not(ui_video))]
     let _ = screen;
 }
 

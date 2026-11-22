@@ -8,7 +8,7 @@ license.workspace = true
 name = "livi"
 path = "src/main.rs"
 
-[target.'cfg(target_env = "musl")'.dependencies]
+[target.'cfg(livi_os)'.dependencies]
 livi-core = { path = "../livi-core", default-features = false }
 livi-helperd.workspace = true
 livi-output.workspace = true

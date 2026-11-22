@@ -18,7 +18,7 @@ gstreamer-video = { workspace = true, features = ["v1_24"], optional = true }
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 gstreamer-video = { workspace = true, features = ["v1_24"] }
 
-[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+[target.'cfg(livi_os)'.dependencies]
 gstreamer-video = { workspace = true, features = ["v1_24"] }
 drm = "0.14.1"
 libc.workspace = true

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-#[cfg(not(target_env = "musl"))]
+#[cfg(not(livi_os))]
 const POWER_HELPER: &str = "/usr/local/lib/livi/livi-power.sh";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,11 +21,11 @@ impl Power {
 }
 
 pub fn owns_host() -> bool {
-    cfg!(target_env = "musl") || std::env::var("LIVI_KIOSK").is_ok_and(|v| v == "1")
+    cfg!(livi_os) || std::env::var("LIVI_KIOSK").is_ok_and(|v| v == "1")
 }
 
 /// LIVI OS runs core as root and has no sudo, so core powers the host itself.
-#[cfg(target_env = "musl")]
+#[cfg(livi_os)]
 pub fn run(action: Power) {
     println!("[power] host {}", action.arg());
     // SAFETY: sync and reboot take plain values and touch no memory of ours.
@@ -43,7 +43,7 @@ pub fn run(action: Power) {
     );
 }
 
-#[cfg(not(target_env = "musl"))]
+#[cfg(not(livi_os))]
 pub fn run(action: Power) {
     use std::os::unix::process::CommandExt;
     use std::path::Path;

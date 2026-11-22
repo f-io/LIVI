@@ -134,7 +134,7 @@ if [[ ${GST_REBUILT:-0} == 1 ]]; then
 fi
 ( cd "$REPO/native" && gst_env && \
   CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_MUSL_LINKER=$REALGCC \
-  CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=+crt-static" \
+  CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=+crt-static --cfg livi_os" \
   CC_riscv64gc_unknown_linux_musl=$TOP/userspace/stage/musl-$US_ARCH/bin/musl-gcc \
   AR_riscv64gc_unknown_linux_musl=${CROSS_COMPILE}ar \
   CARGO_PROFILE_EMBEDDED_STRIP=false \

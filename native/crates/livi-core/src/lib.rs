@@ -19,7 +19,7 @@ mod camera;
 mod devices;
 mod dongle;
 mod files;
-#[cfg(all(feature = "net", not(target_env = "musl")))]
+#[cfg(feature = "net")]
 mod fonts;
 mod gnss;
 mod helper;
@@ -174,7 +174,7 @@ pub async fn run(
     ));
     #[cfg(not(feature = "net"))]
     drop(update_asks);
-    #[cfg(all(feature = "net", not(target_env = "musl")))]
+    #[cfg(feature = "net")]
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));
     files::state_files::start(&core, core.activity(), &user_data);
     tokio::spawn(audio::audio_devices::follow(

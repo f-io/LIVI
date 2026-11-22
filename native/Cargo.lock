@@ -4637,6 +4637,7 @@ dependencies = [
  "i-slint-backend-linuxkms",
  "image",
  "libc 1.0.0-alpha.5",
+ "livi-cfg",
  "livi-core-client",
  "livi-core-proto",
  "livi-ui-model",

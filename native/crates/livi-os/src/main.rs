@@ -6,7 +6,7 @@
 
 use std::process::ExitCode;
 
-#[cfg(target_env = "musl")]
+#[cfg(livi_os)]
 fn main() -> ExitCode {
     let arg0 = std::env::args_os().next().unwrap_or_default();
     let name = std::path::Path::new(&arg0).file_name().unwrap_or_default();
@@ -31,7 +31,7 @@ fn main() -> ExitCode {
     }
 }
 
-#[cfg(not(target_env = "musl"))]
+#[cfg(not(livi_os))]
 fn main() -> ExitCode {
     eprintln!(
         "livi is the LIVI OS build, other systems run LIVI, livi-core, livi-helperd and livi-output"

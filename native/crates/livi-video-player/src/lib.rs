@@ -20,13 +20,9 @@ mod url_player;
     path = "view/mac.rs"
 )]
 #[cfg_attr(in_process, path = "view/in_process.rs")]
-#[cfg_attr(all(target_os = "linux", target_env = "musl"), path = "view/kms.rs")]
+#[cfg_attr(livi_os, path = "view/kms.rs")]
 #[cfg_attr(
-    not(any(
-        all(target_os = "macos", feature = "window-view"),
-        in_process,
-        all(target_os = "linux", target_env = "musl")
-    )),
+    not(any(all(target_os = "macos", feature = "window-view"), in_process, livi_os)),
     path = "view/none.rs"
 )]
 mod view;
@@ -794,16 +790,16 @@ fn usable(name: &str) -> bool {
 }
 
 pub fn reserve_scanout(handle: usize) {
-    #[cfg(all(target_os = "linux", target_env = "musl", not(in_process)))]
+    #[cfg(all(livi_os, not(in_process)))]
     view::reserve(handle);
-    #[cfg(not(all(target_os = "linux", target_env = "musl", not(in_process))))]
+    #[cfg(not(all(livi_os, not(in_process))))]
     let _ = handle;
 }
 
 pub fn set_curves(handle: usize, rgb: &[f32]) {
-    #[cfg(all(target_os = "linux", target_env = "musl", not(in_process)))]
+    #[cfg(all(livi_os, not(in_process)))]
     view::curves(handle, rgb);
-    #[cfg(not(all(target_os = "linux", target_env = "musl", not(in_process))))]
+    #[cfg(not(all(livi_os, not(in_process))))]
     let _ = (handle, rgb);
 }
 

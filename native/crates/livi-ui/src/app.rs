@@ -56,7 +56,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&runtime)?;
     let planes = runtime.join("ui-planes.sock");
     let fixture = fixture()?;
-    #[cfg(any(target_os = "macos", kms))]
+    #[cfg(ui_video)]
     if fixture.is_none() {
         livi_video_view::serve(&runtime.join("compositor.ctrl"), &planes)?;
     }

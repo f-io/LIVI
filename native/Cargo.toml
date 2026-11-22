@@ -18,6 +18,9 @@ homepage = "https://f-io.dev"
 authors = ["Lasse Heitgres"]
 license = "GPL-3.0-or-later"
 
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(livi_os)"] }
+
 [workspace.lints.clippy]
 dbg_macro = "warn"
 undocumented_unsafe_blocks = "warn"
