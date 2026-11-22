@@ -20,7 +20,7 @@ use tokio::sync::{Mutex, Notify, broadcast, oneshot, watch};
 use crate::audio::spectrum::Viewer;
 use crate::devices::Shared;
 use crate::dongle::LinkSpeedViewer;
-use crate::files::config_file::{ConfigFile, apply_patch};
+use crate::files::config_file::ConfigFile;
 use crate::files::status_file::Activity;
 use crate::hub::{Frame, Hub};
 use crate::projection::{UiCommand, UiSenders};
@@ -136,7 +136,7 @@ impl Core {
 
     pub async fn set_config(&self, patch: &Value) -> Result<(), String> {
         let _one_at_a_time = self.config_writes.lock().await;
-        let next = apply_patch(&self.hub.config(), patch)?;
+        let next = self.config_saves.file.patch(&self.hub.config(), patch)?;
         self.hub.update(|s| s.config = next);
         let wanted = self.config_saves.wanted.fetch_add(1, Ordering::SeqCst) + 1;
         let (saves, hub) = (self.config_saves.clone(), self.hub.clone());

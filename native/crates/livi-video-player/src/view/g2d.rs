@@ -67,7 +67,6 @@ pub fn nv12(fd: i32, width: u32, height: u32, clip: Rect) -> Image {
     }
 }
 
-/// The blit flag that turns by `rotation` degrees.
 pub fn turn(rotation: u32) -> u32 {
     match rotation {
         90 => ROT_90,

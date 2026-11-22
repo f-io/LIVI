@@ -223,7 +223,6 @@ public class LiviActivity extends NativeActivity {
         runOnUiThread(this::applyKiosk);
     }
 
-    // Android drops the bars' flags when the app loses the focus, minimized or behind another app.
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);

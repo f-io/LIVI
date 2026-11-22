@@ -22,14 +22,87 @@ pub struct HostFacts {
     pub panel_px: Option<(u32, u32)>,
 }
 
+#[derive(Default)]
+pub struct Board {
+    pub defaults: Map<String, Value>,
+    pub pinned: Map<String, Value>,
+    pub hidden: Vec<String>,
+}
+
+impl Board {
+    pub fn from_env() -> Self {
+        let object = |name: &str| match std::env::var(name) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
+                eprintln!("[core] {name} is no JSON object: {e}");
+                Map::new()
+            }),
+            Err(_) => Map::new(),
+        };
+        Self {
+            defaults: object("LIVI_BOARD_DEFAULTS"),
+            pinned: object("LIVI_BOARD_PINNED"),
+            hidden: std::env::var("LIVI_BOARD_HIDDEN")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+
+    fn apply(&self, config: Config) -> Config {
+        if self.pinned.is_empty()
+            && self
+                .hidden
+                .iter()
+                .all(|h| config.hidden_settings.contains(h))
+        {
+            return config;
+        }
+        let Ok(Value::Object(mut fields)) = serde_json::to_value(&config) else {
+            return config;
+        };
+        fields.extend(self.pinned.clone());
+        let mut pinned: Config = match serde_json::from_value(Value::Object(fields)) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[core] the board's pinned settings do not fit: {e}");
+                config
+            }
+        };
+        for h in &self.hidden {
+            if !pinned.hidden_settings.contains(h) {
+                pinned.hidden_settings.push(h.clone());
+            }
+        }
+        pinned
+    }
+}
+
 pub struct ConfigFile {
     path: PathBuf,
     backup: PathBuf,
+    board: Board,
 }
 
 impl ConfigFile {
     pub fn new(path: PathBuf, backup: PathBuf) -> Self {
-        Self { path, backup }
+        Self {
+            path,
+            backup,
+            board: Board::default(),
+        }
+    }
+
+    pub fn with_board(mut self, board: Board) -> Self {
+        self.board = board;
+        self
+    }
+
+    /// [`apply_patch`] with the board's say on top.
+    pub fn patch(&self, current: &Config, patch: &Value) -> Result<Config, String> {
+        apply_patch(current, patch).map(|next| self.board.apply(next))
     }
 
     pub fn load(&self, host: &HostFacts) -> Config {
@@ -59,7 +132,13 @@ impl ConfigFile {
             defaults.cluster_height = h;
         }
 
-        let mut config = merge(&current_names(&file), &defaults);
+        let mut named = current_names(&file);
+        if let Value::Object(fields) = &mut named {
+            for (k, v) in &self.board.defaults {
+                fields.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+        }
+        let mut config = self.board.apply(merge(&named, &defaults));
         keep_known_hidden(&mut config);
         config.settle_night_modes(|_| false);
         if !WIFI_PASSWORD_LEN.contains(&config.wifi_password.chars().count()) {
@@ -67,7 +146,7 @@ impl ConfigFile {
             config.wifi_password = self::defaults().wifi_password;
         }
 
-        if !self.path.exists() || file != for_file(&config) {
+        if !self.path.exists() || file != for_file(&config, &self.board) {
             match self.save(&config) {
                 Ok(()) => println!("[core] wrote the corrected config"),
                 Err(e) => eprintln!("[core] cannot write {}: {e}", self.path.display()),
@@ -77,7 +156,7 @@ impl ConfigFile {
     }
 
     pub fn save(&self, config: &Config) -> io::Result<()> {
-        let json = serde_json::to_string_pretty(&for_file(config))?;
+        let json = serde_json::to_string_pretty(&for_file(config, &self.board))?;
         write_atomic(&self.path, &json, SHARED)?;
         if let Err(e) = write_atomic(&self.backup, &json, SHARED) {
             eprintln!("[core] config backup mirror failed: {e}");
@@ -100,8 +179,10 @@ fn read_json(path: &Path) -> Option<Value> {
     }
 }
 
-fn for_file(config: &Config) -> Value {
-    let mut value = serde_json::to_value(config).unwrap_or(Value::Null);
+fn for_file(config: &Config, board: &Board) -> Value {
+    let mut config = config.clone();
+    config.hidden_settings.retain(|h| !board.hidden.contains(h));
+    let mut value = serde_json::to_value(&config).unwrap_or(Value::Null);
     if let Value::Object(map) = &mut value {
         for key in OMIT_WHEN_EMPTY {
             if map
@@ -575,7 +656,7 @@ pub mod tests {
         let path = dir.0.join("LIVI/config.json");
         fs::write(
             &path,
-            serde_json::to_string(&for_file(&defaults())).unwrap(),
+            serde_json::to_string(&for_file(&defaults(), &Board::default())).unwrap(),
         )
         .unwrap();
         let before = fs::read_to_string(&path).unwrap();
@@ -675,5 +756,39 @@ pub mod tests {
         let mut loaded = merge(&file, &defaults());
         keep_known_hidden(&mut loaded);
         assert_eq!(loaded.hidden_settings, ["fm"]);
+    }
+
+    fn board() -> Board {
+        Board {
+            defaults: json!({ "uiZoomPercent": 160 }).as_object().unwrap().clone(),
+            pinned: json!({ "projectionFps": 30 }).as_object().unwrap().clone(),
+            hidden: vec!["projectionFps".into()],
+        }
+    }
+
+    #[test]
+    fn the_board_fills_pins_and_hides_but_the_file_keeps_the_user_choice() {
+        let dir = TempDir::new();
+        let file = file_in(&dir).with_board(board());
+        fs::create_dir_all(dir.0.join("LIVI")).unwrap();
+        fs::write(
+            dir.0.join("LIVI/config.json"),
+            r#"{"projectionFps":60,"hiddenSettings":["fm"]}"#,
+        )
+        .unwrap();
+        let config = file.load(&HostFacts::default());
+        assert_eq!(config.ui_zoom_percent, 160);
+        assert_eq!(config.projection_fps, 30);
+        assert_eq!(config.hidden_settings, ["fm", "projectionFps"]);
+        assert_eq!(
+            written(&dir, "LIVI/config.json")["hiddenSettings"],
+            json!(["fm"])
+        );
+
+        let next = file
+            .patch(&config, &json!({ "projectionFps": 60 }))
+            .unwrap();
+        assert_eq!(next.projection_fps, 30);
+        assert_eq!(next.hidden_settings, ["fm", "projectionFps"]);
     }
 }

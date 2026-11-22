@@ -43,7 +43,7 @@ mod vehicle;
 pub use app::main;
 
 use devices::Shared;
-use files::config_file::{CAR_NAME_MAX, ConfigFile, HostFacts};
+use files::config_file::{Board, CAR_NAME_MAX, ConfigFile, HostFacts};
 pub use files::log_file;
 pub use files::paths::Paths;
 pub use helper::Helper;
@@ -100,7 +100,8 @@ pub async fn run(
         car_name: system::host::hostname().and_then(|h| system::host::car_name(&h, CAR_NAME_MAX)),
         panel_px: system::host::panel_native_px(),
     };
-    let config_file = ConfigFile::new(paths.config.clone(), paths.config_backup.clone());
+    let config_file = ConfigFile::new(paths.config.clone(), paths.config_backup.clone())
+        .with_board(Board::from_env());
     let config = config_file.load(&host);
     let user_data = paths
         .config

@@ -32,20 +32,11 @@ board_start() {
         mkdir -p /tmp/livi/$d $home/.config/LIVI
         ln -s /tmp/livi/$d $home/.config/LIVI/$d
     done
-    cfg=$home/.config/LIVI/config.json
-    [ -e $cfg ] || echo '{"uiZoomPercent":160,"wifiInterface":"wlan0","wifiDedicatedInterface":true,"btAdapter":"module"}' >$cfg
-    hidden='"hiddenSettings":["screenSettings","dashboard.cluster","dashboard.aux","media.cluster","media.aux","camera.cluster","camera.aux","projectionWidth","projectionHeight","projectionFps","clusterWidth","clusterHeight","clusterFps","softwareUpdate","audioOutputDevice","audioInputDevice","samplingFrequency","huVolumeLinkSystem"]'
-    grep -q hiddenSettings $cfg || sed -i "1s/^{/{$hidden,/" $cfg
-    sed -i -E ":a;N;\$!ba;s/\"hiddenSettings\": *\[[^]]*\]/$hidden/" $cfg
+    # core applies these at load and on every change, the config file keeps only what the user chose.
     # Hidden settings keep the board's value: the codec is the only audio device, 48 kHz is its rate.
-    for kv in projectionFps=30 clusterFps=30 samplingFrequency=1 huVolumeLinkSystem=true audioOutputDevice='""' audioInputDevice='""'; do
-        k=${kv%%=*} v=${kv#*=}
-        if grep -q "\"$k\"" $cfg; then
-            sed -i -E "s/\"$k\": *(\"[^\"]*\"|[^,}]*)/\"$k\": $v/" $cfg
-        else
-            sed -i "1s/^{/{\"$k\":$v,/" $cfg
-        fi
-    done
+    export LIVI_BOARD_DEFAULTS='{"uiZoomPercent":160,"wifiInterface":"wlan0","wifiDedicatedInterface":true,"btAdapter":"module"}'
+    export LIVI_BOARD_PINNED='{"projectionFps":30,"clusterFps":30,"samplingFrequency":1,"huVolumeLinkSystem":true,"audioOutputDevice":"","audioInputDevice":""}'
+    export LIVI_BOARD_HIDDEN=screenSettings,dashboard.cluster,dashboard.aux,media.cluster,media.aux,camera.cluster,camera.aux,projectionWidth,projectionHeight,projectionFps,clusterWidth,clusterHeight,clusterFps,softwareUpdate,audioOutputDevice,audioInputDevice,samplingFrequency,huVolumeLinkSystem
     export SLINT_KMS_ROTATION=270 SLINT_KMS_FORMAT=AR24 LIVI_UART_MODULE=/dev/ttyS1 LIVI_MFI_ON_BOARD=1
     export LIVI_LOCKDOWN_STORE=$home/.config/LIVI/lockdown
     # mimalloc keeps freed pages a second instead of 10 ms, frame buffers come back every 16-33 ms.
