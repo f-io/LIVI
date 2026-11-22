@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use livi_link_ap::radio::{self, Radio};
 
@@ -149,20 +149,37 @@ pub(crate) fn status_json() -> String {
     )
 }
 
-/// How busy the CPU was since the previous status request, empty on the first. The load average
-/// counts threads that wait as well, so it reads above 1 on a single core that is not full.
+struct CpuSample {
+    at: Instant,
+    times: (u64, u64),
+    shown: String,
+}
+
 fn cpu_percent() -> String {
-    static PREV: Mutex<Option<(u64, u64)>> = Mutex::new(None);
+    const MIN_SPAN: Duration = Duration::from_secs(1);
+    static LAST: Mutex<Option<CpuSample>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(s) = last.as_ref()
+        && s.at.elapsed() < MIN_SPAN
+    {
+        return s.shown.clone();
+    }
     let Some(now) = fs::read_to_string("/proc/stat")
         .ok()
         .and_then(|s| cpu_times(&s))
     else {
         return String::new();
     };
-    match PREV.lock().unwrap().replace(now) {
-        Some(prev) => busy_percent(prev, now).map_or(String::new(), |p| format!("{p} %")),
-        None => String::new(),
-    }
+    let shown = last
+        .as_ref()
+        .and_then(|s| busy_percent(s.times, now))
+        .map_or(String::new(), |p| format!("{p} %"));
+    *last = Some(CpuSample {
+        at: Instant::now(),
+        times: now,
+        shown: shown.clone(),
+    });
+    shown
 }
 
 /// Busy and total jiffies of all CPUs from /proc/stat, idle and iowait are the idle part.
