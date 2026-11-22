@@ -362,7 +362,9 @@ pub fn apply_patch(current: &Config, patch: &Value) -> Result<Config, String> {
     }
     let mut next = next;
     next.settle_night_modes(|key| patch.contains_key(key));
-    keep_known_hidden(&mut next);
+    if patch.contains_key("hiddenSettings") {
+        keep_known_hidden(&mut next);
+    }
     Ok(next)
 }
 

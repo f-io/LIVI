@@ -11,7 +11,7 @@ use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
 use livi_core_proto::config::Config;
 use livi_core_proto::helper::HelperSockets;
 use livi_core_proto::message::MediaControl;
-use livi_core_proto::state::{Front, Protocol, Screen, State};
+use livi_core_proto::state::{Front, PerScreen, Protocol, Screen, State};
 use livi_cp::helper_sock::HelperSock;
 use livi_cp::pairings::Pairings;
 use livi_cp::stack::StackCtx;
@@ -597,6 +597,13 @@ fn changed_screens(last: Option<&Config>, now: &Config) -> Vec<ScreenWant> {
         .collect()
 }
 
+/// Only what the compositor follows, the whole state also carries artwork and device lists.
+struct Seen {
+    config: Config,
+    front: PerScreen<Front>,
+    shown: (bool, bool, bool),
+}
+
 async fn follow_state(
     mut state: watch::Receiver<State>,
     ctrl: CompositorControl,
@@ -604,9 +611,23 @@ async fn follow_state(
     airplay: Arc<MainPlane>,
     clusters: Arc<ClusterPlanes>,
 ) {
-    let mut last: Option<State> = None;
+    let shown = |s: &State| {
+        (
+            s.front.main == Front::Projection,
+            s.sessions.active == Some(Protocol::Airplay),
+            s.sessions.held,
+        )
+    };
+    let mut last: Option<Seen> = None;
     loop {
-        let now = state.borrow_and_update().clone();
+        let now = {
+            let s = state.borrow_and_update();
+            Seen {
+                config: s.config.clone(),
+                front: s.front,
+                shown: shown(&s),
+            }
+        };
         let display_changed = last.as_ref().is_none_or(|l| {
             l.config.dark_mode != now.config.dark_mode
                 || l.config.background_color_dark != now.config.background_color_dark
@@ -645,13 +666,6 @@ async fn follow_state(
         {
             ctrl.aspect("main", Some(stream(&now.config)));
         }
-        let shown = |s: &State| {
-            (
-                s.front.main == Front::Projection,
-                s.sessions.active == Some(Protocol::Airplay),
-                s.sessions.held,
-            )
-        };
         if last.as_ref().is_none_or(|l| l.front != now.front) {
             let f = &now.front;
             let cluster_on_main = f.main == Front::Cluster;
@@ -663,8 +677,8 @@ async fn follow_state(
                 plane.give_way(false);
             }
         }
-        if last.as_ref().is_none_or(|l| shown(l) != shown(&now)) {
-            let (projection, mirrored, held) = shown(&now);
+        if last.as_ref().is_none_or(|l| l.shown != now.shown) {
+            let (projection, mirrored, held) = now.shown;
             plane.set_visible(projection && !mirrored);
             airplay.set_visible(projection && mirrored && !held);
         }

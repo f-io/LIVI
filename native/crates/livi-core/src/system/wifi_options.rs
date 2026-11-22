@@ -217,13 +217,14 @@ pub async fn follow(core: Arc<Core>) {
     let mut state = hub.watch();
     let mut last = None;
     loop {
-        let cfg = state.borrow_and_update().config.clone();
-        let key = (
-            cfg.wifi_type,
-            cfg.country.clone(),
-            cfg.wifi_interface.clone(),
-        );
-        if last.as_ref() != Some(&key) {
+        let (key, cfg) = {
+            let s = state.borrow_and_update();
+            let c = &s.config;
+            let key = (c.wifi_type, c.country.clone(), c.wifi_interface.clone());
+            let cfg = (last.as_ref() != Some(&key)).then(|| c.clone());
+            (key, cfg)
+        };
+        if let Some(cfg) = cfg {
             let (bands, chans) = options(&cfg).await;
             let patch = corrected(&cfg, &bands, &chans);
             hub.update(|s| {

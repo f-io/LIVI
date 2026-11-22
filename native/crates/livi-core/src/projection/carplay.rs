@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -602,38 +602,68 @@ pub struct ConfigSource {
     addresses: Mutex<Addresses>,
     told: Mutex<HashMap<String, String>>,
     accessory: String,
-    images: PathBuf,
+    images: Images,
 }
 
-fn carplay_images(dir: &Path) -> Vec<(String, Vec<u8>)> {
-    let logo = dir.join("livi.png");
-    if !logo.exists() {
-        let written = std::fs::create_dir_all(dir).and_then(|_| std::fs::write(&logo, LOGO));
-        if let Err(e) = written {
-            println!("[core] cannot write {}: {e}", logo.display());
+type Stamp = (String, PathBuf, u64, Option<std::time::SystemTime>);
+type Png = (String, Vec<u8>);
+
+struct Images {
+    dir: PathBuf,
+    seen: Mutex<(Vec<Stamp>, Vec<Png>)>,
+}
+
+impl Images {
+    fn new(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            seen: Mutex::new((Vec::new(), Vec::new())),
         }
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut images: Vec<_> = entries
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            let png = path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("png"));
-            let name = path.file_stem()?.to_str()?.to_string();
-            png.then(|| Some((name, std::fs::read(&path).ok()?)))
-                .flatten()
-        })
-        .collect();
-    images.sort();
-    images
-}
 
-fn with_images(mut cfg: StackConfig, images: &Path) -> StackConfig {
-    cfg.images = carplay_images(images);
-    cfg
+    fn read(&self) -> Vec<Png> {
+        let logo = self.dir.join("livi.png");
+        if !logo.exists() {
+            let written =
+                std::fs::create_dir_all(&self.dir).and_then(|_| std::fs::write(&logo, LOGO));
+            if let Err(e) = written {
+                println!("[core] cannot write {}: {e}", logo.display());
+            }
+        }
+        let stamps = self.stamps();
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        if seen.0 != stamps {
+            let images = stamps
+                .iter()
+                .filter_map(|(name, path, ..)| Some((name.clone(), std::fs::read(path).ok()?)))
+                .collect();
+            *seen = (stamps, images);
+        }
+        seen.1.clone()
+    }
+
+    fn stamps(&self) -> Vec<Stamp> {
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return Vec::new();
+        };
+        let mut stamps: Vec<_> = entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if !path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+                {
+                    return None;
+                }
+                let name = path.file_stem()?.to_str()?.to_string();
+                let meta = entry.metadata().ok()?;
+                Some((name, path, meta.len(), meta.modified().ok()))
+            })
+            .collect();
+        stamps.sort();
+        stamps
+    }
 }
 
 fn remembered(told: &mut HashMap<String, String>, key: String, found: Option<String>) -> String {
@@ -676,10 +706,9 @@ impl ConfigSource {
             (s.config.clone(), s.cluster.theme.clone())
         };
         let screen = host::screen_panel();
-        let first = with_images(
-            stack_config(&cfg, &panels.borrow(), screen, false, &addresses, &cluster),
-            &images,
-        );
+        let images = Images::new(images);
+        let mut first = stack_config(&cfg, &panels.borrow(), screen, false, &addresses, &cluster);
+        first.images = images.read();
         let (tx, rx) = watch::channel(first);
         let (aa, aa_rx) = watch::channel(aa_config(
             &cfg,
@@ -766,7 +795,7 @@ impl ConfigSource {
             &cluster,
         );
         next.info.video_playback = self.url_video.load(Ordering::Relaxed);
-        let next = with_images(next, &self.images);
+        next.images = self.images.read();
         self.tx.send_if_modified(|cur| {
             let changed = *cur != next;
             *cur = next;
@@ -995,11 +1024,13 @@ mod tests {
     fn the_image_folder_gets_the_logo_and_hands_out_every_png() {
         let dir = std::env::temp_dir().join(format!("livi-carplay-images-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(carplay_images(&dir), [("livi".to_string(), LOGO.to_vec())]);
+        let images = Images::new(dir.clone());
+        assert_eq!(images.read(), [("livi".to_string(), LOGO.to_vec())]);
         std::fs::write(dir.join("frost.PNG"), b"ice").unwrap();
         std::fs::write(dir.join("notes.txt"), b"no").unwrap();
         std::fs::write(dir.join("livi.png"), b"own").unwrap();
-        let names: Vec<_> = carplay_images(&dir)
+        let names: Vec<_> = images
+            .read()
             .into_iter()
             .map(|(name, png)| (name, png.len()))
             .collect();
@@ -1007,7 +1038,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let blocked = dir.with_extension("file");
         std::fs::write(&blocked, b"").unwrap();
-        assert!(carplay_images(&blocked).is_empty());
+        assert!(Images::new(blocked.clone()).read().is_empty());
         let _ = std::fs::remove_file(&blocked);
     }
 
