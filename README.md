@@ -8,6 +8,8 @@ LIVI is an open-source Apple CarPlay and Android Auto head unit built in Rust wi
 
 It runs on Linux desktops and embedded boards as well as on macOS and Android. A native zero-copy GStreamer pipeline handles hardware-decoded video and low-latency audio. Multitouch and D-Pad navigation are built in, and it works even on very small embedded and OEM displays.
 
+[LIVI OS](LIVI-OS.md) is LIVI's own operating system for in-vehicle hardware, built on mainline Linux.
+
 ## Project Status
 
 ![Release](https://img.shields.io/github/v/release/f-io/LIVI?label=release)

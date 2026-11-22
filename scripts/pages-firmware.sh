@@ -169,5 +169,5 @@ mkdir -p "$DEST"
 for product in livi-link livi-os; do
   [[ ${CHANNELS[$product]} == *"<td>"* ]] || CHANNELS[$product]+='<tr><td colspan="5">No builds yet</td></tr>'
 done
-page "LIVI Firmware" "Firmware for the <a href=\"https://github.com/$REPO/blob/main/LIVI-LINK.md\">LIVI Link</a> dongles and the head units running LIVI OS, and the provisioning tool for the LIVI Link." \
+page "LIVI Firmware" "Firmware for the <a href=\"https://github.com/$REPO/blob/main/LIVI-LINK.md\">LIVI Link</a> dongles and the head units running <a href=\"https://github.com/$REPO/blob/main/LIVI-OS.md\">LIVI OS</a>, and the provisioning tool for the LIVI Link." \
   "<h2>${NAME[livi-link]}</h2><table>${CHANNELS[livi-link]}</table><h2>${NAME[livi-os]}</h2><table>${CHANNELS[livi-os]}</table>" > "$DEST/index.html"
