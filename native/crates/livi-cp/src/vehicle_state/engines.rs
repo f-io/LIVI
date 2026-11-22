@@ -18,6 +18,7 @@ pub struct Rpm {
 
 pub(super) const ENGINE_RPM: i64 = 2562;
 pub(super) const ENGINE_POWER: i64 = 2818;
+pub(super) const COOLANT: i64 = 2566;
 
 pub(super) fn combustion_engine(rpm: Rpm) -> Accessory {
     use Format::*;
@@ -27,25 +28,43 @@ pub(super) fn combustion_engine(rpm: Rpm) -> Accessory {
             .up_to(max)
             .in_units(REVOLUTIONS_PER_MINUTE)
     };
+    let temperature = |iid, kind, name, initial: f64| {
+        car(iid, kind, name, Float, Value::Real(initial))
+            .between(-40.0, 200.0, 1.0)
+            .in_units(CELSIUS)
+    };
     Accessory {
         name: "combustion engine",
         iid: 2560,
         kind: 0x0900_0005,
-        services: vec![Service {
-            iid: 2561,
-            kind: 0x1A00_000F,
-            characteristics: vec![
-                speed(ENGINE_RPM, 0x3000_0024, "rotationalSpeed", 0),
-                speed(2563, 0x3000_004E, "rotationalSpeedMax", max).fixed(),
-                speed(
-                    2564,
-                    0x3000_004F,
-                    "rotationalSpeedMarkerRedline",
-                    rpm.redline,
-                )
-                .fixed(),
-            ],
-        }],
+        services: vec![
+            Service {
+                iid: 2561,
+                kind: 0x1A00_000F,
+                characteristics: vec![
+                    speed(ENGINE_RPM, 0x3000_0024, "rotationalSpeed", 0),
+                    speed(2563, 0x3000_004E, "rotationalSpeedMax", max).fixed(),
+                    speed(
+                        2564,
+                        0x3000_004F,
+                        "rotationalSpeedMarkerRedline",
+                        rpm.redline,
+                    )
+                    .fixed(),
+                ],
+            },
+            Service {
+                iid: COOLANT - 1,
+                kind: 0x1A00_0010,
+                characteristics: vec![
+                    temperature(COOLANT, 0x3000_001D, "temperature", 0.0),
+                    temperature(COOLANT + 1, 0x3000_0054, "temperatureMin", 40.0).fixed(),
+                    temperature(COOLANT + 2, 0x3000_0055, "temperatureMax", 130.0).fixed(),
+                    temperature(COOLANT + 3, 0x3000_0056, "temperatureMarkerCold", 60.0).fixed(),
+                    temperature(COOLANT + 4, 0x3000_0057, "temperatureMarkerHot", 115.0).fixed(),
+                ],
+            },
+        ],
     }
 }
 

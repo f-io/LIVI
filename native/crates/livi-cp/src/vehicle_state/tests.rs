@@ -200,7 +200,11 @@ fn climate_and_seats_come_only_with_the_climate_controls() {
     let mut without = VehicleState::new(false, "9.5.0", "").with_climate(false);
     assert!(without.set_climate(&default_climate()).is_empty());
     assert!(!iids(&without).contains(&512));
-    assert!(!iids(&without).contains(&1024));
+    assert!(without.characteristic(SEAT_HEATING[0].0).is_none());
+    assert!(
+        iids(&without).contains(&SEATS),
+        "the seat belts come without the climate controls"
+    );
     assert!(without.climate().is_none());
     let with = VehicleState::new(false, "9.5.0", "").with_climate(true);
     let order = iids(&with);
@@ -326,6 +330,10 @@ fn both_front_seats_heat_in_two_steps() {
         .get("services")
         .and_then(bplist::Value::as_array)
         .unwrap();
+    let services: Vec<_> = services
+        .iter()
+        .filter(|s| s.get("type").and_then(bplist::Value::as_int) == Some(0x2200_0001))
+        .collect();
     assert_eq!(services.len(), 2);
     for service in services {
         assert_eq!(
@@ -1886,4 +1894,185 @@ fn the_radio_reaches_the_phone_as_updates() {
     );
     assert_eq!(shown(&Value::Data(vec![0; 3])), "3 B");
     assert_eq!(shown(&Value::Array(vec![Value::Null; 5])), "5 items");
+}
+
+fn updated(answers: &[(Lane, Vec<u8>)]) -> Option<Value> {
+    opened(&answers.first()?.1).get("values").cloned()
+}
+
+#[test]
+fn speed_coolant_and_turn_signals_reach_the_phone() {
+    let mut state = VehicleState::new(false, "", "").with_engines(Engines {
+        combustion: Some(Rpm {
+            max: 7000,
+            redline: 6000,
+        }),
+        electric: false,
+    });
+    let iids = [SPEED, SPEED + 1, COOLANT, TURN_SIGNALS, TURN_SIGNALS + 1]
+        .map(Value::Int)
+        .to_vec();
+    state.handle(Lane::High, &command("registerRequest", Value::Array(iids)));
+    let answers = state.set_gauges(
+        serde_json::json!({ "speedKph": 100.4, "coolantC": 91.26, "turnSignal": "left" })
+            .as_object()
+            .unwrap(),
+    );
+    assert_eq!(
+        updated(&answers),
+        Some(by_iid(&[
+            (SPEED, Value::Int(100)),
+            (SPEED + 1, Value::Int(62)),
+            (COOLANT, Value::Real(91.0)),
+            (TURN_SIGNALS, Value::Int(SIGNAL_ON)),
+        ]))
+    );
+    let answers = state.set_gauges(serde_json::json!({ "hazards": true }).as_object().unwrap());
+    assert_eq!(
+        updated(&answers),
+        Some(by_iid(&[(TURN_SIGNALS + 1, Value::Int(SIGNAL_ON))])),
+        "the hazards light both sides"
+    );
+    let answers = state.set_gauges(
+        serde_json::json!({ "hazards": false, "turnSignal": "none" })
+            .as_object()
+            .unwrap(),
+    );
+    assert_eq!(
+        updated(&answers),
+        Some(by_iid(&[
+            (TURN_SIGNALS, Value::Int(SIGNAL_OFF)),
+            (TURN_SIGNALS + 1, Value::Int(SIGNAL_OFF)),
+        ]))
+    );
+}
+
+#[test]
+fn each_closure_has_its_latch_and_place() {
+    let mut state = VehicleState::new(false, "", "");
+    let closures = state
+        .accessories
+        .iter()
+        .find(|a| a.kind == 0x0D00_0001)
+        .unwrap();
+    assert_eq!(closures.services.len(), CLOSURES.len());
+    for (n, service) in closures.services.iter().enumerate() {
+        assert_eq!(service.kind, 0x1D00_0001);
+        let latch = &service.characteristics[0];
+        assert_eq!((latch.iid, latch.kind), (latch_iid(n), 0x4200_000B));
+        assert!(latch.format == Format::Bool);
+        assert_eq!(latch.initial, Some(Value::Bool(LATCHED)));
+        let place = service.characteristics[1].initial.clone();
+        assert_eq!(place, Some(Value::str(CLOSURES[n].1)));
+    }
+    let iids = (0..CLOSURES.len())
+        .map(|n| Value::Int(latch_iid(n)))
+        .collect();
+    state.handle(Lane::High, &command("registerRequest", Value::Array(iids)));
+    let answers = state.set_gauges(
+        serde_json::json!({ "doors": { "frontRight": true, "trunk": false, "hood": "open" } })
+            .as_object()
+            .unwrap(),
+    );
+    assert_eq!(
+        updated(&answers),
+        Some(by_iid(&[(latch_iid(1), Value::Bool(!LATCHED))])),
+        "a closed trunk is already latched, a word for open changes nothing"
+    );
+}
+
+#[test]
+fn an_open_door_a_tyre_warning_or_charging_opens_the_popover() {
+    let content = ClusterContent {
+        panel: "Cluster_Display".into(),
+        zones: [String::new(), "maps://".into()],
+    };
+    let mut state = VehicleState::new(false, "", "").with_cluster_content(Some(&content));
+    let request = request_iid(POPOVER_ZONE);
+    let iids = [POPOVER_ELEMENT + 1, request, request + 1]
+        .map(Value::Int)
+        .to_vec();
+    state.handle(
+        Lane::Normal,
+        &command("registerRequest", Value::Array(iids)),
+    );
+    let mut push = |gauges: serde_json::Value| {
+        state.set_gauges(gauges.as_object().unwrap());
+        [POPOVER_ELEMENT + 1, request, request + 1].map(|iid| state.values.get(&iid).cloned())
+    };
+    let shown = |url| {
+        [
+            Some(Value::str(url)),
+            Some(Value::str(url)),
+            Some(Value::Bool(true)),
+        ]
+    };
+    assert_eq!(
+        push(serde_json::json!({ "charging": true })),
+        shown(CHARGING_POPOVER)
+    );
+    assert_eq!(
+        push(serde_json::json!({ "doors": { "rearLeft": true } })),
+        shown(BODY_POPOVER),
+        "an open door comes first"
+    );
+    assert_eq!(
+        push(serde_json::json!({ "telltales": { "tyrePressure": true } })),
+        shown(BODY_POPOVER)
+    );
+    assert_eq!(
+        push(serde_json::json!({ "doors": { "rearLeft": false } })),
+        shown(TIRES_POPOVER)
+    );
+    push(serde_json::json!({ "telltales": { "tyrePressure": false } }));
+    assert_eq!(
+        push(serde_json::json!({ "charging": false })),
+        [
+            Some(Value::str(CHARGING_POPOVER)),
+            Some(Value::str("maps://")),
+            Some(Value::Bool(true)),
+        ],
+        "the release gives the zone its own content back and leaves the element as it was"
+    );
+}
+
+#[test]
+fn without_cluster_content_there_is_no_popover() {
+    let mut state = VehicleState::new(false, "", "");
+    state.set_gauges(serde_json::json!({ "charging": true }).as_object().unwrap());
+    assert_eq!(state.popover, None);
+}
+
+#[test]
+fn each_seat_belt_has_its_buckle_warning_and_place() {
+    let mut state = VehicleState::new(false, "", "");
+    let seats = state.accessories.iter().find(|a| a.iid == SEATS).unwrap();
+    assert_eq!(seats.services.len(), BELTS.len());
+    for (n, service) in seats.services.iter().enumerate() {
+        assert_eq!(service.kind, 0x2200_0004);
+        let kinds: Vec<i64> = service.characteristics.iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, [0x6000_0002, 0x6000_0007, 0x6000_0006, 0x3600_0065]);
+        assert_eq!(service.characteristics[0].iid, buckle_iid(n));
+        let place = service.characteristics[3].initial.clone();
+        assert_eq!(place, Some(Value::str(BELTS[n].1)));
+    }
+    let iids = (0..BELTS.len())
+        .flat_map(|n| [buckle_iid(n), buckle_iid(n) + 1])
+        .map(Value::Int)
+        .collect();
+    state.handle(Lane::High, &command("registerRequest", Value::Array(iids)));
+    let answers = state.set_gauges(
+        serde_json::json!({ "seatBelts": { "frontLeft": true, "rearCenter": false } })
+            .as_object()
+            .unwrap(),
+    );
+    assert_eq!(
+        updated(&answers),
+        Some(by_iid(&[
+            (buckle_iid(0), Value::Int(LOCKED)),
+            (buckle_iid(0) + 1, Value::Int(BELT_OK)),
+            (buckle_iid(3), Value::Int(UNLOCKED)),
+            (buckle_iid(3) + 1, Value::Int(BELT_WARNING)),
+        ]))
+    );
 }

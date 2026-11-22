@@ -246,7 +246,7 @@ mod tests {
         let (tx, mut cmds) = mpsc::unbounded_channel();
         let cp = CpHandle::from_sender(tx);
         let mut t = CpTelemetry::new(sock);
-        let first = obj(json!({ "nightMode": true, "speedKph": 50, "ts": 1 }));
+        let first = obj(json!({ "nightMode": true, "steeringDeg": 5, "ts": 1 }));
         t.follow(&Map::new(), &first, &cp);
         assert!(
             cmds.try_recv().is_err(),
@@ -320,6 +320,18 @@ mod tests {
             "no plug number, no word"
         );
         let _ = cmds.try_recv();
+
+        t.follow(
+            &second,
+            &obj(json!({ "speedKph": 50, "doors": { "trunk": true } })),
+            &cp,
+        );
+        assert_eq!(
+            cmds.try_recv(),
+            Ok(CpCmd::Gauges(obj(
+                json!({ "speedKph": 50, "doors": { "trunk": true } })
+            )))
+        );
 
         t.hydrate(&second, &cp);
         assert!(matches!(cmds.try_recv(), Ok(CpCmd::Gauges(_))));

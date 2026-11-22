@@ -33,11 +33,13 @@ const FROM_OUTSIDE: &str = "external";
 const FROM_DEFAULTS: &str = "default";
 const FROM_LAST_RUN: &str = "saved";
 const RENAMED: [(&str, &str); 1] = [("turn", "turnSignal")];
-const NESTED: [&str; 6] = [
+const NESTED: [&str; 8] = [
     "gps",
     "can",
     CLIMATE,
     "tirePressure",
+    "doors",
+    "seatBelts",
     NOTIFICATION,
     "telltales",
 ];
@@ -567,6 +569,9 @@ mod tests {
         merge(&mut snap, &json!({ "telltales": { "abs": true } }));
         merge(&mut snap, &json!({ "telltales": { "seatBelt": true } }));
         assert_eq!(snap["telltales"], json!({ "abs": true, "seatBelt": true }));
+        merge(&mut snap, &json!({ "doors": { "frontLeft": true } }));
+        merge(&mut snap, &json!({ "doors": { "trunk": true } }));
+        assert_eq!(snap["doors"], json!({ "frontLeft": true, "trunk": true }));
 
         let changed = merge(&mut snap, &json!({ "can": { "id": 1 }, "ts": 7 })).unwrap();
         assert_eq!(

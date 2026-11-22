@@ -11,6 +11,7 @@ use crate::opack::{self, Value, dict};
 mod body;
 mod climate;
 mod cluster;
+mod driving;
 mod engines;
 mod media;
 mod navigation;
@@ -23,6 +24,7 @@ mod wire;
 use body::*;
 use climate::*;
 pub use cluster::*;
+use driving::*;
 pub use engines::*;
 pub use media::*;
 use navigation::*;
@@ -311,8 +313,16 @@ impl Control {
 }
 
 pub type Gauges = serde_json::Map<String, serde_json::Value>;
-pub const GAUGE_KEYS: [&str; 8] = [
+pub const GAUGE_KEYS: [&str; 16] = [
+    "speedKph",
     "rpm",
+    "coolantC",
+    "turnSignal",
+    "hazards",
+    "doors",
+    "seatBelts",
+    "telltales",
+    "charging",
     "fuelPct",
     "rangeKm",
     "consumptionLPer100Km",
@@ -383,8 +393,19 @@ pub struct VehicleState {
     history: Vec<HistoryEntry>,
     hidden_by_phone: Vec<u64>,
     zone_ready: bool,
+    signals: Signals,
+    popover: Option<&'static str>,
+    zone_content: String,
     phone: String,
     debug: bool,
+}
+
+#[derive(Default)]
+struct Signals {
+    turn: Option<String>,
+    hazards: bool,
+    tyre_warning: bool,
+    charging: bool,
 }
 
 impl VehicleState {
@@ -392,10 +413,14 @@ impl VehicleState {
         let accessories = vec![
             navigation(),
             automaker_settings(app_version, build_date),
+            seats(false),
             vehicle_resources(),
             fuel(),
             trip_computer(),
+            vehicle_motion(),
             tires(),
+            closures(),
+            indicators(),
             audio(),
             media(),
             now_playing(),
@@ -414,6 +439,9 @@ impl VehicleState {
             history: Vec::new(),
             hidden_by_phone: Vec::new(),
             zone_ready: false,
+            signals: Signals::default(),
+            popover: None,
+            zone_content: String::new(),
             phone: String::new(),
             debug,
         }
@@ -423,14 +451,12 @@ impl VehicleState {
         if !controls {
             return self;
         }
-        let before = self
-            .accessories
-            .iter()
-            .position(|a| a.iid == VEHICLE_RESOURCES)
-            .unwrap_or(self.accessories.len());
-        let climate = vec![climate(), seats()];
+        let Some(at) = self.accessories.iter().position(|a| a.iid == SEATS) else {
+            return self;
+        };
+        let climate = vec![climate(), seats(true)];
         self.values.extend(initial_values(&climate));
-        self.accessories.splice(before..before, climate);
+        self.accessories.splice(at..=at, climate);
         self
     }
 
@@ -657,20 +683,25 @@ impl VehicleState {
     pub fn with_cluster_content(mut self, content: Option<&ClusterContent>) -> Self {
         let Some(content) = content else { return self };
         let added = cluster_content(content);
+        self.zone_content = content.zones[POPOVER_ZONE].clone();
         self.values.extend(initial_values(&added));
         self.accessories.extend(added);
         self
     }
 
     pub fn show_in_zone(&mut self, zone: usize, url: &str) -> Vec<(Lane, Vec<u8>)> {
-        let base = 3073 + 6 * zone as i64;
-        if self.characteristic(base + 1).is_none() {
+        if self.characteristic(request_iid(zone)).is_none() {
             return Vec::new();
         }
         let mut changed = Vec::new();
-        self.car_sets(base + 1, Value::str(url), &mut changed);
-        self.car_sets(base + 2, Value::Bool(!url.is_empty()), &mut changed);
+        self.request_in_zone(zone, url, &mut changed);
         update_notify(changed).into_iter().collect()
+    }
+
+    fn request_in_zone(&mut self, zone: usize, url: &str, changed: &mut Vec<(Value, Value)>) {
+        let iid = request_iid(zone);
+        self.car_sets(iid, Value::str(url), changed);
+        self.car_sets(iid + 1, Value::Bool(!url.is_empty()), changed);
     }
 
     pub fn with_engines(mut self, engines: Engines) -> Self {
@@ -1164,6 +1195,63 @@ impl VehicleState {
         if let Some(rpm) = num("rpm") {
             given.push((ENGINE_RPM, rpm.into()));
         }
+        if let Some(kph) = num("speedKph").map(|k| k.max(0.0)) {
+            given.push((SPEED, kph.into()));
+            given.push((SPEED + 1, (kph / KM_PER_MILE).into()));
+        }
+        if let Some(c) = num("coolantC") {
+            given.push((COOLANT, c.into()));
+        }
+        if let Some(turn) = gauges.get("turnSignal").and_then(serde_json::Value::as_str) {
+            self.signals.turn = Some(turn.to_string());
+        }
+        if let Some(on) = gauges.get("hazards").and_then(serde_json::Value::as_bool) {
+            self.signals.hazards = on;
+        }
+        if gauges.contains_key("turnSignal") || gauges.contains_key("hazards") {
+            let turn = self.signals.turn.as_deref();
+            let hazards = self.signals.hazards;
+            let signal = |on: bool| if on { SIGNAL_ON } else { SIGNAL_OFF };
+            given.push((TURN_SIGNALS, signal(hazards || turn == Some("left")).into()));
+            given.push((
+                TURN_SIGNALS + 1,
+                signal(hazards || turn == Some("right")).into(),
+            ));
+        }
+        if let Some(doors) = gauges.get("doors").and_then(serde_json::Value::as_object) {
+            for (n, (name, _)) in CLOSURES.iter().enumerate() {
+                if let Some(open) = doors.get(*name).and_then(serde_json::Value::as_bool) {
+                    given.push((latch_iid(n), (open != LATCHED).into()));
+                }
+            }
+        }
+        if let Some(belts) = gauges
+            .get("seatBelts")
+            .and_then(serde_json::Value::as_object)
+        {
+            for (n, (name, _)) in BELTS.iter().enumerate() {
+                if let Some(buckled) = belts.get(*name).and_then(serde_json::Value::as_bool) {
+                    let iid = buckle_iid(n);
+                    let (lock, belt) = if buckled {
+                        (LOCKED, BELT_OK)
+                    } else {
+                        (UNLOCKED, BELT_WARNING)
+                    };
+                    given.push((iid, lock.into()));
+                    given.push((iid + 1, belt.into()));
+                }
+            }
+        }
+        if let Some(on) = gauges
+            .get("telltales")
+            .and_then(|t| t.get("tyrePressure"))
+            .and_then(serde_json::Value::as_bool)
+        {
+            self.signals.tyre_warning = on;
+        }
+        if let Some(on) = gauges.get("charging").and_then(serde_json::Value::as_bool) {
+            self.signals.charging = on;
+        }
         let ranges: [(&str, &[Distance]); 2] = [
             ("rangeKm", &[FUEL_RANGE, REMAINING_RANGE]),
             ("odometerKm", &[ODOMETER]),
@@ -1215,7 +1303,39 @@ impl VehicleState {
         {
             self.car_sets(MUTE, Value::Bool(false), &mut changed);
         }
+        self.follow_popover(&mut changed);
         update_notify(changed).into_iter().collect()
+    }
+
+    fn follow_popover(&mut self, changed: &mut Vec<(Value, Value)>) {
+        if self.characteristic(POPOVER_ELEMENT + 1).is_none() {
+            return;
+        }
+        let open_closure = (0..CLOSURES.len())
+            .any(|n| self.values.get(&latch_iid(n)) == Some(&Value::Bool(!LATCHED)));
+        let wanted = [
+            (open_closure, BODY_POPOVER),
+            (self.signals.tyre_warning, TIRES_POPOVER),
+            (self.signals.charging, CHARGING_POPOVER),
+        ]
+        .into_iter()
+        .find_map(|(on, url)| on.then_some(url));
+        if wanted == self.popover {
+            return;
+        }
+        self.popover = wanted;
+        let url = match wanted {
+            Some(url) => {
+                println!("[cpVehicle] car opens the popover {url}");
+                self.car_sets(POPOVER_ELEMENT + 1, Value::str(url), changed);
+                url.to_string()
+            }
+            None => {
+                println!("[cpVehicle] car releases the popover");
+                self.zone_content.clone()
+            }
+        };
+        self.request_in_zone(POPOVER_ZONE, &url, changed);
     }
 }
 

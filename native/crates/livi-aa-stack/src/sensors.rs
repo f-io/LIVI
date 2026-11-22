@@ -3,9 +3,9 @@
 // Additional terms: see NOTICE
 
 use livi_aa_proto::{
-    BatteryConfig, CarLocation, ChargingPrefs, CurrentGear, DrivingStatus, EnergyConsumption,
-    EnergyRate, EnergyValue, EngineRpm, EnvironmentConditions, FuelLevel, LightStates,
-    NightModeData, Odometer, ParkingBrake, SensorBatchNotification, TirePressures,
+    BatteryConfig, CarLocation, ChargingPrefs, CurrentGear, DoorStates, DrivingStatus,
+    EnergyConsumption, EnergyRate, EnergyValue, EngineRpm, EnvironmentConditions, FuelLevel,
+    LightStates, NightModeData, Odometer, ParkingBrake, SensorBatchNotification, TirePressures,
     VehicleEnergyModel, VehicleSpeed,
 };
 use prost::Message;
@@ -49,6 +49,13 @@ pub enum Sensor {
     },
     DrivingStatus(i32),
     TirePressure([i32; 4]),
+    /// Front left, front right, rear left, rear right. A door the car does not report is left out
+    /// from the end, one in between counts as closed.
+    Doors {
+        hood: Option<bool>,
+        trunk: Option<bool>,
+        doors: [Option<bool>; 4],
+    },
     Gps(GpsFix),
     VehicleEnergyModel {
         capacity_wh: i64,
@@ -180,6 +187,14 @@ pub fn batch(sensor: &Sensor) -> Option<Vec<u8>> {
         Sensor::TirePressure(pressures) => b.tire_pressures.push(TirePressures {
             pressures_e2: pressures.to_vec(),
         }),
+        Sensor::Doors { hood, trunk, doors } => {
+            let known = doors.iter().rposition(Option::is_some).map_or(0, |i| i + 1);
+            b.door_states.push(DoorStates {
+                hood_open: hood,
+                trunk_open: trunk,
+                doors_open: doors[..known].iter().map(|d| d.unwrap_or(false)).collect(),
+            })
+        }
         Sensor::Gps(fix) => b.locations.push(location(fix)?),
         Sensor::VehicleEnergyModel {
             capacity_wh,
@@ -266,6 +281,23 @@ mod tests {
         assert_eq!(
             decoded.tire_pressures[0].pressures_e2,
             [24_000, 24_500, 23_000, 23_100]
+        );
+    }
+
+    #[test]
+    fn doors_go_out_in_their_order_without_the_missing_rear() {
+        let bytes = batch(&Sensor::Doors {
+            hood: None,
+            trunk: Some(true),
+            doors: [Some(false), Some(true), None, None],
+        })
+        .unwrap();
+        assert_eq!(&bytes[..2], [0x82, 0x01], "sensor type 16");
+        let decoded = SensorBatchNotification::decode(bytes.as_slice()).unwrap();
+        let doors = &decoded.door_states[0];
+        assert_eq!(
+            (doors.hood_open, doors.trunk_open, &doors.doors_open[..]),
+            (None, Some(true), &[false, true][..])
         );
     }
 }

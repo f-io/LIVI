@@ -24,6 +24,8 @@ const WHEELS: [&str; 4] = [
     "rearLeftKpa",
     "rearRightKpa",
 ];
+const DOORS: &str = "doors";
+const DOOR_KEYS: [&str; 4] = ["frontLeft", "frontRight", "rearLeft", "rearRight"];
 
 pub fn gear(gear: Option<&Value>, reverse: Option<bool>) -> Option<i64> {
     match gear {
@@ -80,6 +82,7 @@ struct Sent {
     odometer: Option<(i32, Option<i32>)>,
     environment: Option<(Option<i32>, Option<i32>)>,
     tire_pressure: Option<[i32; 4]>,
+    doors: Option<Sensor>,
     gps: Option<GpsFix>,
     energy_model_at: Option<Instant>,
 }
@@ -241,6 +244,21 @@ impl AaTelemetry {
             }
         }
 
+        if changed(DOORS)
+            && let Some(doors) = next.get(DOORS).and_then(Value::as_object)
+        {
+            let open = |k: &str| doors.get(k).and_then(Value::as_bool);
+            let sensor = Sensor::Doors {
+                hood: open("hood"),
+                trunk: open("trunk"),
+                doors: DOOR_KEYS.map(open),
+            };
+            if sent.doors != Some(sensor) {
+                sent.doors = Some(sensor);
+                out.push(sensor);
+            }
+        }
+
         if changed("gps")
             && let Some(gps) = next.get("gps").and_then(Value::as_object)
             && let (Some(lat), Some(lng)) = (num(gps, "lat"), num(gps, "lng"))
@@ -355,6 +373,21 @@ mod tests {
             "frontLeftKpa": 240, "frontRightKpa": 245, "rearLeftKpa": 230, "rearRightKpa": 0
         } }));
         assert!(t.sensors(&four, &same, now).is_empty());
+    }
+
+    #[test]
+    fn doors_go_out_when_one_of_them_changes() {
+        let mut t = AaTelemetry::default();
+        let now = Instant::now();
+        let first = map(json!({ "doors": { "frontLeft": true, "trunk": false } }));
+        let doors = Sensor::Doors {
+            hood: None,
+            trunk: Some(false),
+            doors: [Some(true), None, None, None],
+        };
+        assert_eq!(t.sensors(&Map::new(), &first, now), [doors]);
+        let same = map(json!({ "doors": { "frontLeft": true, "trunk": false } }));
+        assert!(t.sensors(&first, &same, now).is_empty());
     }
 
     #[test]

@@ -4,9 +4,29 @@
 
 use super::*;
 
-pub(super) fn seats() -> Accessory {
+pub(super) const SEATS: i64 = 1024;
+pub(super) const BELTS: [(&str, &str); 5] = [
+    ("frontLeft", "seat_front_left"),
+    ("frontRight", "seat_front_right"),
+    ("rearLeft", "seat_2ndRow_left"),
+    ("rearCenter", "seat_2ndRow_middle"),
+    ("rearRight", "seat_2ndRow_right"),
+];
+pub(super) const LOCK_UNDEFINED: i64 = 0;
+pub(super) const LOCKED: i64 = 1;
+pub(super) const UNLOCKED: i64 = 2;
+pub(super) const BELT_NONE: i64 = 0;
+pub(super) const BELT_OK: i64 = 1;
+pub(super) const BELT_WARNING: i64 = 2;
+const OCCUPANCY_UNDEFINED: i64 = 0;
+
+pub(super) fn buckle_iid(seat: usize) -> i64 {
+    SEATS + 17 + 5 * seat as i64
+}
+
+pub(super) fn seats(heating: bool) -> Accessory {
     use Format::*;
-    let heating = |iid, names: [&'static str; 2], key| Service {
+    let heating_service = |iid, names: [&'static str; 2], key| Service {
         iid,
         kind: 0x2200_0001,
         characteristics: vec![
@@ -22,22 +42,66 @@ pub(super) fn seats() -> Accessory {
             .fixed(),
         ],
     };
+    let belt = |n: usize, key: &'static str| {
+        let iid = buckle_iid(n);
+        Service {
+            iid: iid - 1,
+            kind: 0x2200_0004,
+            characteristics: vec![
+                car(
+                    iid,
+                    0x6000_0002,
+                    "buckleState",
+                    Uint8,
+                    Value::Int(LOCK_UNDEFINED),
+                )
+                .up_to(2),
+                car(
+                    iid + 1,
+                    0x6000_0007,
+                    "seatBeltIndicator",
+                    Uint8,
+                    Value::Int(BELT_NONE),
+                )
+                .up_to(2),
+                car(
+                    iid + 2,
+                    0x6000_0006,
+                    "seatOccupancy",
+                    Uint8,
+                    Value::Int(OCCUPANCY_UNDEFINED),
+                )
+                .up_to(3),
+                car(
+                    iid + 3,
+                    0x3600_0065,
+                    "vehicleLayoutKey",
+                    String,
+                    Value::str(key),
+                )
+                .fixed(),
+            ],
+        }
+    };
+    let mut services = Vec::new();
+    if heating {
+        services.push(heating_service(
+            1025,
+            ["driverSeatHeatingLevel", "driverSeatHeatingOn"],
+            "seat_front_left",
+        ));
+        services.push(heating_service(
+            1029,
+            ["passengerSeatHeatingLevel", "passengerSeatHeatingOn"],
+            "seat_front_right",
+        ));
+    }
+    services.extend(BELTS.iter().enumerate().map(|(n, (_, key))| belt(n, key)));
     Accessory {
         name: "seats",
-        iid: 1024,
+        iid: SEATS,
         kind: 0x0150_0001,
-        services: vec![
-            heating(
-                1025,
-                ["driverSeatHeatingLevel", "driverSeatHeatingOn"],
-                "seat_front_left",
-            ),
-            heating(
-                1029,
-                ["passengerSeatHeatingLevel", "passengerSeatHeatingOn"],
-                "seat_front_right",
-            ),
-        ],
+        services,
     }
 }
 

@@ -164,6 +164,15 @@ pub(super) fn notice_service(panel: &str) -> Service {
 
 pub(super) const NOTICE: i64 = 3360;
 pub(super) const TEMPORARY_ZONE: i64 = 3085;
+pub(super) const POPOVER_ZONE: usize = 1;
+pub(super) const POPOVER_ELEMENT: i64 = 3329 + 6 * POPOVER_ZONE as i64;
+
+pub(super) fn request_iid(zone: usize) -> i64 {
+    3074 + 6 * zone as i64
+}
+pub(super) const BODY_POPOVER: &str = "widget://?identifier=com.apple.carBodyStatus";
+pub(super) const TIRES_POPOVER: &str = "widget://?identifier=com.apple.tires";
+pub(super) const CHARGING_POPOVER: &str = "widget://?identifier=com.apple.charging";
 pub(super) const NOTICE_URL: &str = "minimalRemoteNotification://";
 pub(super) const REQUEST_CONTENT: i64 = 0x1700_0004;
 pub(super) const REQUEST_TEMPORARY_CONTENT: i64 = 0x1700_000C;
@@ -174,7 +183,7 @@ pub(super) fn cluster_content(content: &ClusterContent) -> [Accessory; 2] {
     let mut requests = Vec::new();
     for (n, zone) in ZONES.iter().enumerate() {
         let url = content.zones[n].as_str();
-        let base = 3073 + 6 * n as i64;
+        let base = request_iid(n) - 1;
         requests.push(zone_service(
             base,
             REQUEST_CONTENT,
