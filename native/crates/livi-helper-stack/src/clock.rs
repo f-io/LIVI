@@ -4,12 +4,11 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CLAIM_FILE: &str = "/tmp/livi-gps-clock";
 const CLAIM_MAX_AGE_S: u64 = 120;
 const STEP_THRESHOLD_S: i64 = 2;
 
 fn gps_owns_clock() -> bool {
-    let Ok(meta) = std::fs::metadata(CLAIM_FILE) else {
+    let Ok(meta) = std::fs::metadata(livi_base::run::GPS_CLOCK) else {
         return false;
     };
     let Ok(modified) = meta.modified() else {

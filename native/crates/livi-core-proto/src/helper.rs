@@ -43,13 +43,10 @@ pub fn uart_module() -> Option<PathBuf> {
     std::env::var_os(UART_MODULE).map(PathBuf::from)
 }
 
-pub const MODULE_BT_MAC: &str = "/tmp/livi/bt-mac";
-
 pub fn module_bt_mac() -> Option<[u8; 6]> {
-    livi_base::hex::parse_mac(&std::fs::read_to_string(MODULE_BT_MAC).ok()?)
+    livi_base::hex::parse_mac(&std::fs::read_to_string(livi_base::run::BT_MAC).ok()?)
 }
 
-/// The board wires its own coprocessor, so its power pin is not the user's to set.
 pub fn board_mfi() -> bool {
     std::env::var_os(MFI_ON_BOARD).is_some()
 }

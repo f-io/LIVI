@@ -43,7 +43,7 @@ fn livid_main(args: &[String]) -> i32 {
     println!("livi-bt-up: hci{dev} up, MAC {mac}, bus {bus}, type {kind}");
 
     let _ = fs::create_dir_all("/tmp/livi");
-    if let Ok(mut f) = fs::File::create("/tmp/livi/bt-mac") {
+    if let Ok(mut f) = fs::File::create(livi_base::run::BT_MAC) {
         let _ = writeln!(f, "{mac}");
     }
     0

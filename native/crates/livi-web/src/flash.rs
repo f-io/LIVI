@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use livi_base::run::LED_DIR;
+
 use crate::http::{S_200, S_400, S_500, T_JSON, err_json, js, ok_json};
 use crate::{Flash, HandOver, MtdSlot, WebCaps};
 
@@ -262,8 +264,6 @@ pub(crate) fn post_write_check(f: &Flash) -> Result<(), String> {
         }
     }
 }
-
-pub(crate) const LED_DIR: &str = "/tmp/livi/led";
 
 pub(crate) fn led_flash_set(state: Option<&str>) {
     let _ = fs::create_dir_all(LED_DIR);

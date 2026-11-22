@@ -141,7 +141,7 @@ fn web_caps(args: &[String]) -> livi_web::WebCaps {
         bt: "hci0".into(),
         led,
         flash,
-        update_conf: "/tmp/livi/update.conf".into(),
+        update_conf: livi_base::run::UPDATE_CONF.into(),
     }
 }
 

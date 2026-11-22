@@ -10,8 +10,6 @@ use std::time::Duration;
 use livi_link_ap::server::{Ap, serve};
 use livi_net::port::CONTROL;
 
-const BASE: &str = "/tmp/livi/hostapd.conf.saved";
-const LIVE: [&str; 2] = ["/tmp/livi/hostapd.conf", "/tmp/livi/hostapd.alt"];
 const LOG: &str = "/tmp/livi/hostapd.log";
 const IDLE: Duration = Duration::from_secs(5);
 
@@ -25,17 +23,21 @@ pub fn run(_args: Vec<String>) -> i32 {
     };
     println!("[wifid] listening on :{CONTROL}");
     let standards = crate::wifi_standards(crate::board().1);
-    let ap = Ap::new(BASE, LIVE, LOG)
-        .with_standards(standards)
-        .with_on_save(Box::new(|| {
-            let _ = Command::new("/usr/bin/livid")
-                .arg("config")
-                .arg("save")
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-        }));
+    let ap = Ap::new(
+        livi_base::run::HOSTAPD_BASE,
+        livi_base::run::HOSTAPD_LIVE,
+        LOG,
+    )
+    .with_standards(standards)
+    .with_on_save(Box::new(|| {
+        let _ = Command::new("/usr/bin/livid")
+            .arg("config")
+            .arg("save")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }));
     let ap = Arc::new(Mutex::new(ap));
     for mut stream in livi_net::bridge::from_usb(&listener) {
         let ap = ap.clone();

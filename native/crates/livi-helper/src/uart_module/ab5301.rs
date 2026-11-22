@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use livi_base::hex::mac;
-use livi_core_proto::helper::MODULE_BT_MAC;
+use livi_base::run::BT_MAC;
 use livi_core_proto::module::{CHIP, HOST, frame, next_frame};
 use livi_helper_stack::reconnect::{Link, Paging};
 use tokio::runtime::Handle;
@@ -87,13 +87,16 @@ struct Session {
 
 impl Session {
     fn line(&mut self, line: &str) {
-        println!("[ab5301] {line}");
         let (code, rest) = line.split_at(line.len().min(2));
+        if code != "SI" {
+            println!("[ab5301] {line}");
+        }
         match code {
             "AD" => {
                 if let Some(addr) = address(rest) {
                     self.peer = mac(&addr);
-                    *HELD.lock().unwrap() = Some((self.peer.clone(), false));
+                    *HELD.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some((self.peer.clone(), false));
                     self.profiles.hfp.chip_link(&self.peer, true);
                     self.open(self.profiles.carplay.clone());
                     self.unanswered = Some(Instant::now() + IAP2_ANSWER);
@@ -101,7 +104,7 @@ impl Session {
             }
             "IA" => {
                 self.unanswered = None;
-                if let Some((peer, _)) = HELD.lock().unwrap().take() {
+                if let Some((peer, _)) = HELD.lock().unwrap_or_else(|e| e.into_inner()).take() {
                     self.profiles.hfp.chip_link(&peer, false);
                 }
             }
@@ -120,8 +123,8 @@ impl Session {
                 if let Some(mut addr) = address(rest) {
                     addr.reverse();
                     self.local = addr;
-                    if let Err(e) = std::fs::write(MODULE_BT_MAC, format!("{}\n", mac(&addr))) {
-                        eprintln!("[ab5301] {MODULE_BT_MAC}: {e}");
+                    if let Err(e) = std::fs::write(BT_MAC, format!("{}\n", mac(&addr))) {
+                        eprintln!("[ab5301] {BT_MAC}: {e}");
                     }
                 }
             }
@@ -231,7 +234,7 @@ fn serve(
     from.set_read_timeout(Some(TICK))
         .map_err(|e| e.to_string())?;
     let chip = Chip(Arc::new(Mutex::new(port)));
-    *PORT.lock().unwrap() = Some(chip.clone());
+    *PORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(chip.clone());
     if !crate::dongle::ap_on(wifi) {
         println!("[ab5301] access point not up, the chip's own reconnect stops");
         chip.at("CD");
@@ -277,20 +280,20 @@ fn serve(
         session.tick();
     }
     session.close();
-    *PORT.lock().unwrap() = None;
-    if let Some((peer, _)) = HELD.lock().unwrap().take() {
+    *PORT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    if let Some((peer, _)) = HELD.lock().unwrap_or_else(|e| e.into_inner()).take() {
         session.profiles.hfp.chip_link(&peer, false);
     }
     Err("livi-core closed the chip's bluetooth".into())
 }
 
 pub fn up() -> bool {
-    PORT.lock().unwrap().is_some()
+    PORT.lock().unwrap_or_else(|e| e.into_inner()).is_some()
 }
 
 /// The chip holds one phone, so whichever it is goes.
 pub fn disconnect(mac: &str) -> Result<(), String> {
-    let chip = PORT.lock().unwrap().clone();
+    let chip = PORT.lock().unwrap_or_else(|e| e.into_inner()).clone();
     match chip {
         Some(chip) if chip.at("CD") => {
             println!("[ab5301] dropping {mac}");
@@ -340,7 +343,7 @@ impl Pager {
 impl Paging for Pager {
     /// Not while a flash holds the host: core has stopped the chip from paging until the reboot.
     fn ready(&self) -> bool {
-        PORT.lock().unwrap().is_some()
+        PORT.lock().unwrap_or_else(|e| e.into_inner()).is_some()
             && crate::dongle::ap_on(&self.wifi)
             && !std::path::Path::new(livi_base::lfwb::HOLD).exists()
     }
@@ -354,8 +357,8 @@ impl Paging for Pager {
     }
 
     async fn poke(&self, mac: &str, _wake: Option<&str>) {
-        let chip = PORT.lock().unwrap().clone();
-        let mut held = HELD.lock().unwrap();
+        let chip = PORT.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let mut held = HELD.lock().unwrap_or_else(|e| e.into_inner());
         if let (Some(chip), Some((peer, asked @ false))) = (chip, held.as_mut())
             && peer.eq_ignore_ascii_case(mac)
         {
@@ -365,7 +368,7 @@ impl Paging for Pager {
     }
 
     async fn page(&self, mac: &str, _wake: Option<&str>) -> Option<bool> {
-        let chip = PORT.lock().unwrap().clone()?;
+        let chip = PORT.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
         if !chip.at("CC") {
             return None;
         }

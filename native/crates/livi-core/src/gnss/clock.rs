@@ -10,8 +10,6 @@ use super::info::{FixMode, GnssInfo};
 use crate::system::privileged::sudo;
 use livi_base::num::round_half_up;
 
-pub const CLAIM_FILE: &str = "/tmp/livi-gps-clock";
-
 const DRIFT_THRESHOLD_S: f64 = 2.0;
 const GROSS_DRIFT_S: f64 = 60.0;
 const MIN_STEP_INTERVAL_MS: i64 = 60_000;

@@ -313,7 +313,7 @@ pub async fn run(core: Arc<Core>, telemetry: mpsc::UnboundedSender<Value>) {
     let mut gnss = Gnss::new(
         telemetry,
         Box::new(Port::open),
-        Clock::new(clock::CLAIM_FILE),
+        Clock::new(livi_base::run::GPS_CLOCK),
     );
     gnss.begin(&config, Moment::now());
     loop {

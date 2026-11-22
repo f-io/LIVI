@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use livi_base::checksum::crc32;
+use livi_base::run::{HOSTAPD_BASE, LED_CONFIG, UPDATE_CONF};
 
 const MAGIC: &[u8; 4] = b"LVCF";
 const VERSION_V1: u16 = 1;
@@ -16,10 +17,7 @@ const V2_ENTRY_LEN: usize = 40;
 const MAX_PAYLOAD: usize = 32 * 1024;
 const MAX_ENTRY: usize = 8 * 1024;
 
-const TMPFS_LED: &str = "/tmp/livi/led.toml";
-const TMPFS_HOSTAPD: &str = "/tmp/livi/hostapd.conf.saved";
 const TMPFS_BT_KEYS: &str = "/tmp/livi/bt-keys";
-const TMPFS_UPDATE: &str = "/tmp/livi/update.conf";
 const TMPFS_RADIO: &str = livi_link_ap::radio::PATH;
 const TMPFS_WLAN_MAC: &str = "/tmp/livi/wlan-mac";
 const DEFAULT_LED: &str = "/etc/livi/led.toml";
@@ -72,10 +70,10 @@ fn cmd_load() -> i32 {
         Ok(entries) => {
             for e in entries {
                 let path = match e.name.as_str() {
-                    ENTRY_LED => TMPFS_LED,
-                    ENTRY_HOSTAPD => TMPFS_HOSTAPD,
+                    ENTRY_LED => LED_CONFIG,
+                    ENTRY_HOSTAPD => HOSTAPD_BASE,
                     ENTRY_BT_KEYS => TMPFS_BT_KEYS,
-                    ENTRY_UPDATE => TMPFS_UPDATE,
+                    ENTRY_UPDATE => UPDATE_CONF,
                     ENTRY_RADIO => TMPFS_RADIO,
                     ENTRY_WLAN_MAC => TMPFS_WLAN_MAC,
                     _ => {
@@ -97,9 +95,9 @@ fn cmd_load() -> i32 {
             eprintln!("[livid config load] not usable ({err}), seeding defaults");
         }
     }
-    seed_if_missing(TMPFS_LED, DEFAULT_LED);
-    seed_if_missing(TMPFS_HOSTAPD, DEFAULT_HOSTAPD);
-    ensure_setting(TMPFS_HOSTAPD, "bridge", "br0");
+    seed_if_missing(LED_CONFIG, DEFAULT_LED);
+    seed_if_missing(HOSTAPD_BASE, DEFAULT_HOSTAPD);
+    ensure_setting(HOSTAPD_BASE, "bridge", "br0");
     0
 }
 
@@ -134,10 +132,10 @@ fn seed_if_missing(target: &str, default: &str) {
 fn cmd_save() -> i32 {
     let mut entries: Vec<Entry> = Vec::new();
     for (name, path) in [
-        (ENTRY_LED, TMPFS_LED),
-        (ENTRY_HOSTAPD, TMPFS_HOSTAPD),
+        (ENTRY_LED, LED_CONFIG),
+        (ENTRY_HOSTAPD, HOSTAPD_BASE),
         (ENTRY_BT_KEYS, TMPFS_BT_KEYS),
-        (ENTRY_UPDATE, TMPFS_UPDATE),
+        (ENTRY_UPDATE, UPDATE_CONF),
         (ENTRY_RADIO, TMPFS_RADIO),
         (ENTRY_WLAN_MAC, TMPFS_WLAN_MAC),
     ] {

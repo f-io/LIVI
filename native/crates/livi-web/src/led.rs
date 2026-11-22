@@ -5,18 +5,16 @@
 use std::fs;
 use std::process::Command;
 
+use livi_base::run::{LED_CONFIG, LED_PID};
+
 use crate::http::{S_200, S_400, S_500, T_JSON, err_json, json_num, json_str, ok_json, url_decode};
-
-pub(crate) const LED_CFG: &str = "/tmp/livi/led.toml";
-
-pub(crate) const LED_PID: &str = "/tmp/livi/livi-ledd.pid";
 
 pub(crate) fn led_json() -> String {
     let mut r = 0x4du8;
     let mut g = 0xd0u8;
     let mut b = 0xe1u8;
     let mut brightness = 20u8;
-    if let Ok(s) = fs::read_to_string(LED_CFG) {
+    if let Ok(s) = fs::read_to_string(LED_CONFIG) {
         for line in s.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -93,7 +91,7 @@ pub(crate) fn set_led(body: Option<&[u8]>) -> (&'static str, &'static str, Vec<u
     let (r, g, b) = status.unwrap_or(cur_status);
     let bri = brightness.unwrap_or(cur_bri);
 
-    let cur_wb = fs::read_to_string(LED_CFG)
+    let cur_wb = fs::read_to_string(LED_CONFIG)
         .ok()
         .and_then(|s| {
             s.lines().find_map(|l| {
@@ -116,8 +114,8 @@ pub(crate) fn set_led(body: Option<&[u8]>) -> (&'static str, &'static str, Vec<u
     );
 
     let _ = fs::create_dir_all("/tmp/livi");
-    if let Err(e) = fs::write(LED_CFG, contents) {
-        return (S_500, T_JSON, err_json(&format!("write {LED_CFG}: {e}")));
+    if let Err(e) = fs::write(LED_CONFIG, contents) {
+        return (S_500, T_JSON, err_json(&format!("write {LED_CONFIG}: {e}")));
     }
     kick_ledd();
     persist_config();

@@ -24,7 +24,6 @@ const WATCH_RETRY: Duration = Duration::from_secs(1);
 const HOSTAPD: &str = "/usr/sbin/hostapd";
 const IFACE: &str = "wlan0";
 const BT: &str = "hci0";
-const BT_MAC: &str = "/tmp/livi/bt-mac";
 const BT_DEV: u16 = 0;
 const LIVI_RADIO: &str = "/usr/bin/livi-radio";
 
@@ -481,7 +480,7 @@ fn status(ap: &Ap) -> String {
         out.push_str(&format!("mac {}\n", mac.trim()));
     }
     if let Ok(mac) = std::fs::read_to_string(format!("/sys/class/bluetooth/{BT}/address"))
-        .or_else(|_| std::fs::read_to_string(BT_MAC))
+        .or_else(|_| std::fs::read_to_string(livi_base::run::BT_MAC))
     {
         out.push_str(&format!("btmac {}\n", mac.trim()));
     }

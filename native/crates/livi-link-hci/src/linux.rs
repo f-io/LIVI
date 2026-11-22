@@ -204,9 +204,9 @@ fn watch_link(pkt: &[u8], links: &mut HashSet<u16>) {
 }
 
 fn led_signal(name: &str, on: bool) {
-    let path = format!("/tmp/livi/led/{name}");
+    let path = format!("{}/{name}", livi_base::run::LED_DIR);
     if on {
-        let _ = std::fs::create_dir_all("/tmp/livi/led");
+        let _ = std::fs::create_dir_all(livi_base::run::LED_DIR);
         let _ = std::fs::write(&path, "");
     } else {
         let _ = std::fs::remove_file(&path);

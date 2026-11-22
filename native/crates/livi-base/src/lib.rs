@@ -8,5 +8,6 @@ pub mod fs;
 pub mod hex;
 pub mod lfwb;
 pub mod num;
+pub mod run;
 pub mod sys;
 pub mod time;

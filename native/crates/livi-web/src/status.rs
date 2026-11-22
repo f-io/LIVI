@@ -26,15 +26,15 @@ pub(crate) fn bt_json() -> String {
     let bt = caps().bt.as_str();
     let mut mac = read_trim(&format!("/sys/class/bluetooth/{bt}/address"));
     if mac.is_empty() {
-        mac = read_trim("/tmp/livi/bt-mac");
+        mac = read_trim(livi_base::run::BT_MAC);
     }
     let mut name = read_trim(&format!("/sys/class/bluetooth/{bt}/name"));
     if name.is_empty() {
         name = livi_link_ap::server::ap_name_from(
-            std::path::Path::new(HOSTAPD_BASE),
+            std::path::Path::new(livi_base::run::HOSTAPD_BASE),
             &[
-                std::path::Path::new(HOSTAPD_LIVE[0]),
-                std::path::Path::new(HOSTAPD_LIVE[1]),
+                std::path::Path::new(livi_base::run::HOSTAPD_LIVE[0]),
+                std::path::Path::new(livi_base::run::HOSTAPD_LIVE[1]),
             ],
         )
         .unwrap_or_default();
@@ -58,10 +58,6 @@ pub(crate) fn bt_json() -> String {
     )
 }
 
-pub(crate) const HOSTAPD_BASE: &str = "/tmp/livi/hostapd.conf.saved";
-
-pub(crate) const HOSTAPD_LIVE: [&str; 2] = ["/tmp/livi/hostapd.conf", "/tmp/livi/hostapd.alt"];
-
 pub(crate) fn wifi_json() -> String {
     let iface = caps().wifi_iface.as_str();
     let mut ssid = String::new();
@@ -76,10 +72,10 @@ pub(crate) fn wifi_json() -> String {
     }
     if ssid.is_empty() {
         let cfg = livi_link_ap::server::ap_config_from(
-            std::path::Path::new(HOSTAPD_BASE),
+            std::path::Path::new(livi_base::run::HOSTAPD_BASE),
             &[
-                std::path::Path::new(HOSTAPD_LIVE[0]),
-                std::path::Path::new(HOSTAPD_LIVE[1]),
+                std::path::Path::new(livi_base::run::HOSTAPD_LIVE[0]),
+                std::path::Path::new(livi_base::run::HOSTAPD_LIVE[1]),
             ],
         );
         if let Some(cfg) = cfg {

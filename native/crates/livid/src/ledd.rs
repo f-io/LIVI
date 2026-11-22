@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use livi_base::run::{LED_CONFIG, LED_DIR, LED_PID};
 use livi_link_ap::hostapd;
 use livi_link_ap::radio::{self, Radio};
 
@@ -27,9 +28,6 @@ const SPI_DEV: &str = "/dev/spidev1.0";
 const HOSTAPD_RETRY: Duration = Duration::from_secs(2);
 const LEDS_DIR: &str = "/sys/class/leds";
 const LED_COUNT_PROP: &str = "/sys/bus/spi/devices/spi1.0/of_node/livi,led-count";
-const CONFIG_PATH: &str = "/tmp/livi/led.toml";
-const PID_PATH: &str = "/tmp/livi/livi-ledd.pid";
-const STATE_DIR: &str = "/tmp/livi/led";
 
 const SPI_HZ: u32 = 3_200_000;
 const TICK_HZ: u64 = 50;
@@ -63,7 +61,7 @@ impl Default for Config {
 
 impl Config {
     fn load() -> Self {
-        let Ok(s) = fs::read_to_string(CONFIG_PATH) else {
+        let Ok(s) = fs::read_to_string(LED_CONFIG) else {
             return Self::default();
         };
         let mut cfg = Self::default();
@@ -187,7 +185,7 @@ impl State {
 }
 
 fn exists(name: &str) -> bool {
-    Path::new(&format!("{STATE_DIR}/{name}")).exists()
+    Path::new(&format!("{LED_DIR}/{name}")).exists()
 }
 
 static WIFI_CLIENT: AtomicBool = AtomicBool::new(false);
@@ -455,9 +453,9 @@ extern "C" fn on_sighup(_: libc::c_int) {
 }
 
 fn livid_main() -> std::io::Result<()> {
-    let _ = fs::create_dir_all(STATE_DIR);
+    let _ = fs::create_dir_all(LED_DIR);
 
-    let _ = fs::write(PID_PATH, format!("{}\n", std::process::id()));
+    let _ = fs::write(LED_PID, format!("{}\n", std::process::id()));
 
     // SAFETY: on_sighup only stores to an atomic, SIG_IGN installs no handler code.
     unsafe {
@@ -468,7 +466,7 @@ fn livid_main() -> std::io::Result<()> {
     let mut leds = Leds::open()?;
 
     let mut cfg = Config::load();
-    let mut cfg_mtime = mtime(CONFIG_PATH);
+    let mut cfg_mtime = mtime(LED_CONFIG);
     let mut tick: u64 = 0;
     thread::spawn(follow_wifi_clients);
 
@@ -476,7 +474,7 @@ fn livid_main() -> std::io::Result<()> {
         if RELOAD.swap(false, Ordering::SeqCst) {
             cfg = Config::load();
         }
-        let m = mtime(CONFIG_PATH);
+        let m = mtime(LED_CONFIG);
         if m != cfg_mtime {
             cfg_mtime = m;
             cfg = Config::load();
