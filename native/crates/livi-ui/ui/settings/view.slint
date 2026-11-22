@@ -94,6 +94,9 @@ export component SettingsView inherits Rectangle {
     property <length> lead: Metrics.header-h + Metrics.header-mb;
 
     changed focus-index => {
+        if (focus-index < 0) {
+            return;
+        }
         if (focus-index < SettingsState.focus-base) {
             flick.content-y = 0;
             return;
@@ -209,6 +212,7 @@ export component SettingsView inherits Rectangle {
                         commit(s) => { SettingsState.number-commit(s); }
                     }
                     if SettingsState.kind == ScreenKind.text: TextBody {
+                        base: SettingsState.focus-base;
                         focused: Focus.main(SettingsState.focus-base);
                         editing: Focus.editing && Focus.main(SettingsState.focus-base);
                         value: SettingsState.text-value;

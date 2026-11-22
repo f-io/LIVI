@@ -184,6 +184,7 @@ export component NumberBody inherits VerticalLayout {
 }
 
 export component TextBody inherits VerticalLayout {
+    in property <int> base;
     in property <bool> focused;
     in property <bool> editing;
     in property <string> value;
@@ -206,6 +207,13 @@ export component TextBody inherits VerticalLayout {
             vertical-alignment: center;
             single-line: true;
             accepted => { root.commit(self.text); }
+        }
+        if !root.editing: TouchArea {
+            clicked => {
+                Focus.zone = FocusZone.main;
+                Focus.main-index = root.base;
+                Focus.editing = true;
+            }
         }
     }
     changed editing => {
@@ -360,6 +368,13 @@ export component ColorBody inherits VerticalLayout {
                 accepted => {
                     root.hex-touched = false;
                     root.hex-commit(self.text);
+                }
+            }
+            if !root.hex-editing: TouchArea {
+                clicked => {
+                    Focus.zone = FocusZone.main;
+                    Focus.main-index = root.base;
+                    Focus.editing = true;
                 }
             }
         }
