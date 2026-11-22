@@ -21,6 +21,8 @@ pub enum Error {
     Write { path: PathBuf, source: io::Error },
     #[error("{0}")]
     Remote(String),
+    #[error("{0} timed out")]
+    Timeout(String),
 }
 
 impl Error {

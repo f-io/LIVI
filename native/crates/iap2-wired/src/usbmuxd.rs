@@ -3,7 +3,6 @@
 // Additional terms: see NOTICE
 
 use std::future::Future;
-use std::time::Duration;
 
 use idevice::IdeviceError;
 use idevice::provider::{IdeviceProvider, UsbmuxdProvider};
@@ -11,8 +10,7 @@ use idevice::services::lockdown::LockdownClient;
 use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice};
 
 use crate::LOCKDOWN_SERVICE;
-
-const STEP_TIMEOUT: Duration = Duration::from_secs(5);
+use crate::carkit::STEP_TIMEOUT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
