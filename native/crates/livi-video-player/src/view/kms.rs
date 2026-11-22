@@ -5,7 +5,8 @@
 //! A 2D engine crops, scales and turns the NV12 frames into scanout buffers of the panel's size,
 //! so a new format needs no new buffers.
 
-use std::fs::File;
+mod g2d;
+
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -19,6 +20,8 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
+
+use g2d::G2d;
 
 const FRAMES: usize = 3;
 const PLANE_OVERLAY: u64 = 0;
@@ -36,69 +39,9 @@ const RESERVE_WAIT: Duration = Duration::from_millis(200);
 /// CMA again at a stream start would compete with the decoder for the same memory.
 static SCANOUT: Mutex<Option<Vec<Frame>>> = Mutex::new(None);
 
-const G2D_CMD_BITBLT_H: libc::c_ulong = 0x55;
-const G2D_FORMAT_NV12: u32 = 0x28;
-const G2D_BLT_NONE: u32 = 0;
-const G2D_ROT_90: u32 = 0x100;
-const G2D_ROT_180: u32 = 0x200;
-const G2D_ROT_270: u32 = 0x300;
-
 unsafe extern "C" {
     fn gst_is_dmabuf_memory(mem: *mut gst::ffi::GstMemory) -> i32;
     fn gst_dmabuf_memory_get_fd(mem: *mut gst::ffi::GstMemory) -> i32;
-}
-
-#[repr(C)]
-#[derive(Default, Clone, Copy)]
-struct G2dRect {
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-}
-
-#[repr(C)]
-#[derive(Default, Clone, Copy)]
-struct G2dImage {
-    bbuff: i32,
-    color: u32,
-    format: u32,
-    laddr: [u32; 3],
-    haddr: [u32; 3],
-    width: u32,
-    height: u32,
-    align: [u32; 3],
-    clip_rect: G2dRect,
-    resize: [u32; 2],
-    coor: [i32; 2],
-    gamut: u32,
-    bpremul: i32,
-    alpha: u8,
-    pad: [u8; 3],
-    mode: u32,
-    fd: i32,
-    use_phy_addr: i32,
-    color_range: u32,
-}
-
-#[repr(C)]
-struct G2dBlt {
-    flag: u32,
-    src: G2dImage,
-    dst: G2dImage,
-}
-
-fn image(fd: i32, width: u32, height: u32, clip: G2dRect) -> G2dImage {
-    G2dImage {
-        bbuff: 1,
-        format: G2D_FORMAT_NV12,
-        width,
-        height,
-        clip_rect: clip,
-        alpha: 0xff,
-        fd,
-        ..G2dImage::default()
-    }
 }
 
 struct Card(OwnedFd);
@@ -162,7 +105,7 @@ struct Region {
 
 struct Kms {
     card: Card,
-    g2d: File,
+    g2d: G2d,
     crtc: crtc::Handle,
     panel: (u32, u32),
     video: plane::Handle,
@@ -262,11 +205,7 @@ impl Kms {
                 .try_into()
                 .ok()
             });
-        let g2d = File::options()
-            .read(true)
-            .write(true)
-            .open("/dev/g2d")
-            .ok()?;
+        let g2d = G2d::open()?;
         let rotation = std::env::var("SLINT_KMS_ROTATION")
             .ok()
             .and_then(|r| r.parse().ok())
@@ -386,12 +325,6 @@ impl Kms {
         true
     }
 
-    fn blit(&self, flag: u32, src: G2dImage, dst: G2dImage) -> bool {
-        let mut blt = G2dBlt { flag, src, dst };
-        // SAFETY: blt is a g2d_blt_h the driver reads for the length of the call.
-        unsafe { libc::ioctl(self.g2d.as_raw_fd(), G2D_CMD_BITBLT_H as _, &mut blt) >= 0 }
-    }
-
     fn hide(&mut self) {
         if !self.on {
             return;
@@ -473,38 +406,33 @@ impl Kms {
 
         self.next %= self.frames.len();
         let frame = &self.frames[self.next];
-        let source = image(
+        let source = g2d::nv12(
             fd,
             stride,
             (uv / stride as usize) as u32,
-            G2dRect {
+            g2d::Rect {
                 x: x as i32,
                 y: y as i32,
                 w,
                 h,
             },
         );
-        let target = image(
+        let target = g2d::nv12(
             frame.prime.as_raw_fd(),
             frame.dumb.pitch(),
             self.panel.1,
-            G2dRect {
+            g2d::Rect {
                 x: 0,
                 y: 0,
                 w: size.0,
                 h: size.1,
             },
         );
-        let turn = match self.rotation {
-            90 => G2D_ROT_90,
-            180 => G2D_ROT_180,
-            270 => G2D_ROT_270,
-            _ => G2D_BLT_NONE,
-        };
-        let blitted = if turn == G2D_BLT_NONE {
-            self.blit(G2D_BLT_NONE, source, target)
+        let turn = g2d::turn(self.rotation);
+        let blitted = if turn == g2d::NONE {
+            self.g2d.blit(g2d::NONE, source, target)
         } else if (dw, dh) == (w, h) {
-            self.blit(turn, source, target)
+            self.g2d.blit(turn, source, target)
         } else {
             // The rotator does not scale. The frame after the next one is off the screen, the
             // commit before waited for the flip, and holds the scaled frame unturned.
@@ -518,18 +446,18 @@ impl Kms {
             {
                 return;
             }
-            let between = image(
+            let between = g2d::nv12(
                 spare.prime.as_raw_fd(),
                 pitch,
                 wh as u32,
-                G2dRect {
+                g2d::Rect {
                     x: 0,
                     y: 0,
                     w: dw,
                     h: dh,
                 },
             );
-            self.blit(G2D_BLT_NONE, source, between) && self.blit(turn, between, target)
+            self.g2d.blit(g2d::NONE, source, between) && self.g2d.blit(turn, between, target)
         };
         if !blitted {
             return;
