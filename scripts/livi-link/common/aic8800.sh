@@ -51,11 +51,12 @@ aic8800_install() {
 
   # aic8800_bsp tells the firmware which port Bluetooth uses, so bsp and fdrv both need SDIO BT on.
   # With fdrv alone the firmware stays on UART and asserts on the first HCI reset.
-  local mk
-  for mk in "$AIC_DRV/aic8800_bsp/Makefile" "$AIC_DRV/aic8800_fdrv/Makefile"; do
-    sed -i 's|^\([[:space:]]*export[[:space:]]*\)\?CONFIG_SDIO_BT[[:space:]]*=.*|CONFIG_SDIO_BT = y|' "$mk"
-  done
-  grep -q '^CONFIG_SDIO_BT = y' "$AIC_DRV/aic8800_bsp/Makefile" && grep -q '^CONFIG_SDIO_BT = y' "$AIC_DRV/aic8800_fdrv/Makefile" \
+  # A board with its own bluetooth sets AIC_BT=0: bsp keeps the firmware on SDIO, fdrv brings no hci device.
+  local mk fdrv_bt=y
+  [[ ${AIC_BT:-1} == 1 ]] || fdrv_bt=n
+  sed -i 's|^\([[:space:]]*export[[:space:]]*\)\?CONFIG_SDIO_BT[[:space:]]*=.*|CONFIG_SDIO_BT = y|' "$AIC_DRV/aic8800_bsp/Makefile"
+  sed -i "s|^\\([[:space:]]*export[[:space:]]*\\)\\?CONFIG_SDIO_BT[[:space:]]*=.*|CONFIG_SDIO_BT = $fdrv_bt|" "$AIC_DRV/aic8800_fdrv/Makefile"
+  grep -q '^CONFIG_SDIO_BT = y' "$AIC_DRV/aic8800_bsp/Makefile" && grep -q "^CONFIG_SDIO_BT = $fdrv_bt" "$AIC_DRV/aic8800_fdrv/Makefile" \
     || { log "CONFIG_SDIO_BT not found in the AIC8800 Makefiles"; exit 6; }
   sed -i 's|#define AICBT_DBG_FLAG\([[:space:]]\{1,\}\)1|#define AICBT_DBG_FLAG\10|' "$AIC_DRV/aic8800_fdrv/aic_btsdio.h"
 }
@@ -66,8 +67,12 @@ aic8800_config() {
        --enable CFG80211_CERTIFICATION_ONUS --disable CFG80211_REQUIRE_SIGNED_REGDB \
        --disable CFG80211_CRDA_SUPPORT --enable CFG80211_INTERNAL_REGDB \
        --enable AIC_WLAN_SUPPORT --module AIC8800_WLAN_SUPPORT --disable AIC8800_BTLPM_SUPPORT \
-       --set-str AIC_FW_PATH /lib/firmware/aic8800d80 \
-       --enable BT --enable BT_BREDR --enable BT_LE --enable BT_RFCOMM --enable CRYPTO_ECDH
+       --set-str AIC_FW_PATH /lib/firmware/aic8800d80
+  if [[ ${AIC_BT:-1} == 1 ]]; then
+    echo --enable BT --enable BT_BREDR --enable BT_LE --enable BT_RFCOMM --enable CRYPTO_ECDH
+  else
+    echo --disable BT
+  fi
 }
 
 # bsp and fdrv, stripped, to $OUT/modules for the rootfs.

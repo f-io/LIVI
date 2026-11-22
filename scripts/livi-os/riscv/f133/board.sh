@@ -10,6 +10,7 @@ US_ARCH=riscv
 US_LINK=static
 MUSL_TARGET=riscv64-linux
 MUSL_WRAPPER=1
+AIC_BT=0
 source "$COMMON/kernel.sh"
 source "$COMMON/aic8800.sh"
 source "$HERE/g2d.sh"
