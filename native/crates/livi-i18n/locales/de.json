@@ -65,6 +65,8 @@
     "cycleSession": "Session wechseln",
     "clusterLayout": "Cluster-Layout",
     "clusterView": "Cluster-Ansicht",
+    "zoomIn": "Karte vergrößern",
+    "zoomOut": "Karte verkleinern",
     "playPause": "Play/Pause",
     "play": "Play",
     "pause": "Pause",

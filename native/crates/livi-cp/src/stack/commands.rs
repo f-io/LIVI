@@ -231,6 +231,7 @@ impl<M: Media> Conn<M> {
                 let rest = hid::knob_report(KnobState::default());
                 self.send_hid(hid::CLUSTER_KNOB_HID_UID, &rest).await;
             }
+            StackCmd::MapZoom { zoom_in } => self.change_map_zoom(zoom_in).await,
             StackCmd::Siri => {
                 if self.event.is_none() {
                     println!("[cpStack] invokeSiri: no active event connection, ignoring");

@@ -580,14 +580,14 @@ async fn carplay_keeps_the_media_keys_while_the_radio_plays() {
     rig.drain();
     while radio.try_recv().is_ok() {}
 
-    rig.p.input(press("KeyN"));
+    rig.p.input(press("n"));
     assert_eq!(rig.drain(), [stack(1, StackCmd::Media(media_button::NEXT))]);
 
     rig.hub.update(|s| {
         s.dab.active = true;
         s.dab.playing = true;
     });
-    rig.p.input(press("KeyN"));
+    rig.p.input(press("n"));
     assert_eq!(rig.drain(), [stack(1, StackCmd::Media(media_button::NEXT))]);
     assert!(
         radio.try_recv().is_err(),
@@ -598,24 +598,16 @@ async fn carplay_keeps_the_media_keys_while_the_radio_plays() {
 #[tokio::test]
 async fn keys_follow_the_bindings() {
     let mut rig = Rig::new();
-    rig.p.input(press("KeyN"));
+    rig.p.input(press("n"));
     assert!(rig.drain().is_empty());
     rig.connect(1, true);
     rig.drain();
 
-    for code in [
-        "ArrowLeft",
-        "Digit1",
-        "KeyN",
-        "KeyA",
-        "KeyV",
-        "KeyH",
-        "KeyQ",
-    ] {
+    for code in ["ArrowLeft", "1", "n", "a", "v", "h", "KeyQ"] {
         rig.p.input(press(code));
     }
     rig.p.input(Input::Key {
-        code: "KeyV".into(),
+        code: "v".into(),
         down: false,
     });
     assert_eq!(
@@ -682,7 +674,7 @@ async fn keys_follow_the_bindings() {
             }),
         ),
         ("Backspace", knob(KnobState { back: true, ..none })),
-        ("KeyH", home()),
+        ("h", home()),
         (
             "KeyJ",
             knob(KnobState {
@@ -694,13 +686,13 @@ async fn keys_follow_the_bindings() {
         ("KeyU", StackCmd::KnobSelect(false)),
         ("KeyI", StackCmd::KnobSelect(true)),
         ("KeyE", StackCmd::KnobSelect(false)),
-        ("KeyP", StackCmd::Media(media_button::PLAY_PAUSE)),
+        ("p", StackCmd::Media(media_button::PLAY_PAUSE)),
         ("KeyX", StackCmd::Media(media_button::PLAY)),
         ("KeyY", StackCmd::Media(media_button::PAUSE)),
-        ("KeyB", StackCmd::Media(media_button::PREV)),
-        ("KeyR", StackCmd::Telephony(telephony_button::DROP)),
-        ("Digit0", StackCmd::Telephony(telephony_button::KEY0)),
-        ("Digit9", StackCmd::Telephony(telephony_button::KEY0 + 9)),
+        ("b", StackCmd::Media(media_button::PREV)),
+        ("r", StackCmd::Telephony(telephony_button::DROP)),
+        ("0", StackCmd::Telephony(telephony_button::KEY0)),
+        ("9", StackCmd::Telephony(telephony_button::KEY0 + 9)),
         ("KeyM", StackCmd::Telephony(telephony_button::STAR)),
         ("KeyG", StackCmd::Telephony(telephony_button::POUND)),
         ("KeyO", StackCmd::Telephony(telephony_button::HOOK_SWITCH)),
@@ -711,7 +703,7 @@ async fn keys_follow_the_bindings() {
     }
     rig.p.input(press("KeyC"));
     assert_eq!(rig.hub.watch().borrow().cluster.layout, "livi.clusterOnly");
-    rig.p.input(press("KeyS"));
+    rig.p.input(press("s"));
     rig.p.input(press("KeyW"));
     assert!(rig.drain().is_empty());
 }
@@ -787,7 +779,7 @@ async fn the_cluster_follows_the_phone_and_tells_it_livis_own_choice() {
     let mut rig = Rig::new();
     rig.connect(1, true);
     rig.drain();
-    rig.p.input(press("KeyT"));
+    rig.p.input(press("t"));
     assert!(
         rig.drain().is_empty(),
         "the phone draws no theme, it gets no layout"
@@ -821,7 +813,7 @@ async fn the_cluster_follows_the_phone_and_tells_it_livis_own_choice() {
         "only the session in front counts"
     );
 
-    rig.p.input(press("KeyT"));
+    rig.p.input(press("t"));
     assert_eq!(cluster(&rig).layout, "livi.clusterFull");
     let to_phone = StackCmd::ClusterLayout(ui_sync::Layout {
         id: "livi.clusterFull".into(),
@@ -841,6 +833,30 @@ async fn a_select_key_clicks() {
     assert_eq!(rig.drain(), [stack(1, StackCmd::KnobSelect(true))]);
     tokio::time::sleep(SELECT_RELEASE * 2).await;
     assert_eq!(rig.drain(), [stack(1, StackCmd::KnobSelect(false))]);
+}
+
+#[tokio::test]
+async fn the_telemetry_presses_a_binding_by_its_name() {
+    let mut rig = Rig::new();
+    rig.connect(1, true);
+    rig.want(Front::Projection);
+    rig.drain();
+    let mut cfg = rig.hub.config();
+    cfg.bindings.zoom_in = String::new();
+    rig.p.on_config(&cfg);
+    rig.drain();
+    rig.want(Front::Cluster);
+    rig.drain();
+    rig.p.press_named("zoomIn");
+    rig.p.press_named("zoomOut");
+    rig.p.press_named("nothing");
+    assert_eq!(
+        rig.drain(),
+        [
+            stack(1, StackCmd::MapZoom { zoom_in: true }),
+            stack(1, StackCmd::MapZoom { zoom_in: false }),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -1551,18 +1567,18 @@ async fn android_auto_touches_land_on_its_stream_and_the_voice_key_is_held() {
         )]
     );
 
-    rig.p.input(press("KeyV"));
+    rig.p.input(press("v"));
     rig.p.input(Input::Key {
-        code: "KeyV".into(),
+        code: "v".into(),
         down: false,
     });
     rig.p.input(Input::Key {
-        code: "KeyN".into(),
+        code: "n".into(),
         down: false,
     });
     for code in [
-        "Digit7",
-        "Digit0",
+        "7",
+        "0",
         "KeyQ",
         "ArrowLeft",
         "ArrowRight",
@@ -1571,16 +1587,7 @@ async fn android_auto_touches_land_on_its_stream_and_the_voice_key_is_held() {
     ] {
         rig.p.input(press(code));
     }
-    for code in [
-        "Backspace",
-        "KeyH",
-        "KeyP",
-        "KeyN",
-        "KeyB",
-        "KeyA",
-        "KeyR",
-        "KeyS",
-    ] {
+    for code in ["Backspace", "h", "p", "n", "b", "a", "r", "s"] {
         rig.p.input(press(code));
     }
     rig.p.media(MediaControl::Pause);
@@ -2055,8 +2062,8 @@ async fn media_keys_reach_the_airplay_sender() {
     rig.p.media(MediaControl::PlayPause);
     rig.p.media(MediaControl::Next);
     rig.p.media(MediaControl::Prev);
-    rig.p.key("KeyN", true);
-    rig.p.key("KeyN", false);
+    rig.p.key("n", true);
+    rig.p.key("n", false);
     rig.p.seek(61_500);
     let mut sent = Vec::new();
     while let Ok(c) = commands.try_recv() {

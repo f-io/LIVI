@@ -221,6 +221,8 @@ enum Key {
     CycleSession,
     ClusterLayout,
     ClusterContent,
+    ZoomIn,
+    ZoomOut,
     PlayPause,
     Play,
     Pause,
@@ -246,6 +248,8 @@ impl Key {
                 | Key::AcceptPhone
                 | Key::RejectPhone
                 | Key::VoiceAssistant
+                | Key::ZoomIn
+                | Key::ZoomOut
         )
     }
 
@@ -261,51 +265,71 @@ impl Key {
     }
 }
 
-fn bound(b: &KeyBindings, code: &str) -> Option<Key> {
+fn keys(b: &KeyBindings) -> [(&'static str, &String, Key); 39] {
     use telephony_button as t;
-    let table = [
-        (&b.up, Key::Up),
-        (&b.down, Key::Down),
-        (&b.left, Key::Left),
-        (&b.right, Key::Right),
-        (&b.select_up, Key::SelectUp),
-        (&b.select_down, Key::SelectDown),
-        (&b.back, Key::Back),
-        (&b.knob_left, Key::KnobLeft),
-        (&b.knob_right, Key::KnobRight),
-        (&b.knob_up, Key::KnobUp),
-        (&b.knob_down, Key::KnobDown),
-        (&b.home, Key::Home),
-        (&b.cycle_session, Key::CycleSession),
-        (&b.cluster_layout, Key::ClusterLayout),
-        (&b.cluster_content, Key::ClusterContent),
-        (&b.play_pause, Key::PlayPause),
-        (&b.play, Key::Play),
-        (&b.pause, Key::Pause),
-        (&b.next, Key::Next),
-        (&b.prev, Key::Prev),
-        (&b.accept_phone, Key::AcceptPhone),
-        (&b.reject_phone, Key::RejectPhone),
-        (&b.phone_key0, Key::Phone(t::KEY0)),
-        (&b.phone_key1, Key::Phone(t::KEY0 + 1)),
-        (&b.phone_key2, Key::Phone(t::KEY0 + 2)),
-        (&b.phone_key3, Key::Phone(t::KEY0 + 3)),
-        (&b.phone_key4, Key::Phone(t::KEY0 + 4)),
-        (&b.phone_key5, Key::Phone(t::KEY0 + 5)),
-        (&b.phone_key6, Key::Phone(t::KEY0 + 6)),
-        (&b.phone_key7, Key::Phone(t::KEY0 + 7)),
-        (&b.phone_key8, Key::Phone(t::KEY0 + 8)),
-        (&b.phone_key9, Key::Phone(t::KEY0 + 9)),
-        (&b.phone_key_star, Key::Phone(t::STAR)),
-        (&b.phone_key_hash, Key::Phone(t::POUND)),
-        (&b.phone_key_hook_switch, Key::Phone(t::HOOK_SWITCH)),
-        (&b.voice_assistant, Key::VoiceAssistant),
-        (&b.voice_assistant_release, Key::VoiceAssistantRelease),
-    ];
-    table
+    [
+        ("up", &b.up, Key::Up),
+        ("down", &b.down, Key::Down),
+        ("left", &b.left, Key::Left),
+        ("right", &b.right, Key::Right),
+        ("selectUp", &b.select_up, Key::SelectUp),
+        ("selectDown", &b.select_down, Key::SelectDown),
+        ("back", &b.back, Key::Back),
+        ("knobLeft", &b.knob_left, Key::KnobLeft),
+        ("knobRight", &b.knob_right, Key::KnobRight),
+        ("knobUp", &b.knob_up, Key::KnobUp),
+        ("knobDown", &b.knob_down, Key::KnobDown),
+        ("home", &b.home, Key::Home),
+        ("cycleSession", &b.cycle_session, Key::CycleSession),
+        ("clusterLayout", &b.cluster_layout, Key::ClusterLayout),
+        ("clusterContent", &b.cluster_content, Key::ClusterContent),
+        ("zoomIn", &b.zoom_in, Key::ZoomIn),
+        ("zoomOut", &b.zoom_out, Key::ZoomOut),
+        ("playPause", &b.play_pause, Key::PlayPause),
+        ("play", &b.play, Key::Play),
+        ("pause", &b.pause, Key::Pause),
+        ("next", &b.next, Key::Next),
+        ("prev", &b.prev, Key::Prev),
+        ("acceptPhone", &b.accept_phone, Key::AcceptPhone),
+        ("rejectPhone", &b.reject_phone, Key::RejectPhone),
+        ("phoneKey0", &b.phone_key0, Key::Phone(t::KEY0)),
+        ("phoneKey1", &b.phone_key1, Key::Phone(t::KEY0 + 1)),
+        ("phoneKey2", &b.phone_key2, Key::Phone(t::KEY0 + 2)),
+        ("phoneKey3", &b.phone_key3, Key::Phone(t::KEY0 + 3)),
+        ("phoneKey4", &b.phone_key4, Key::Phone(t::KEY0 + 4)),
+        ("phoneKey5", &b.phone_key5, Key::Phone(t::KEY0 + 5)),
+        ("phoneKey6", &b.phone_key6, Key::Phone(t::KEY0 + 6)),
+        ("phoneKey7", &b.phone_key7, Key::Phone(t::KEY0 + 7)),
+        ("phoneKey8", &b.phone_key8, Key::Phone(t::KEY0 + 8)),
+        ("phoneKey9", &b.phone_key9, Key::Phone(t::KEY0 + 9)),
+        ("phoneKeyStar", &b.phone_key_star, Key::Phone(t::STAR)),
+        ("phoneKeyHash", &b.phone_key_hash, Key::Phone(t::POUND)),
+        (
+            "phoneKeyHookSwitch",
+            &b.phone_key_hook_switch,
+            Key::Phone(t::HOOK_SWITCH),
+        ),
+        ("voiceAssistant", &b.voice_assistant, Key::VoiceAssistant),
+        (
+            "voiceAssistantRelease",
+            &b.voice_assistant_release,
+            Key::VoiceAssistantRelease,
+        ),
+    ]
+}
+
+fn bound(b: &KeyBindings, code: &str) -> Option<Key> {
+    keys(b)
         .into_iter()
-        .find(|(c, _)| !c.is_empty() && c.as_str() == code)
-        .map(|(_, key)| key)
+        .find(|(_, c, _)| !c.is_empty() && c.as_str() == code)
+        .map(|(_, _, key)| key)
+}
+
+fn named(b: &KeyBindings, binding: &str) -> Option<Key> {
+    keys(b)
+        .into_iter()
+        .find(|(name, _, _)| *name == binding)
+        .map(|(_, _, key)| key)
 }
 
 fn reversing(telemetry: &Map<String, Value>) -> Option<bool> {
@@ -434,6 +458,7 @@ pub enum UiCommand {
     ForgetDevice(String),
     CameraFound(bool),
     OpenApp(String),
+    PressKey(String),
 }
 
 fn kept_cluster(cfg: &Config, theme: Theme) -> Cluster {
@@ -696,6 +721,7 @@ impl Projection {
                     UiCommand::ForgetDevice(id) => self.forget_device(&id),
                     UiCommand::CameraFound(found) => self.camera_found(found),
                     UiCommand::OpenApp(target) => self.open_app(&target),
+                    UiCommand::PressKey(binding) => self.press_named(&binding),
                 },
                 Some(input) = asks.input.recv() => self.input(input),
                 Some(done) = asks.goodbye.recv() => self.goodbye(done),

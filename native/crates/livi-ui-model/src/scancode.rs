@@ -158,13 +158,13 @@ mod tests {
     }
 
     #[test]
-    fn every_default_binding_has_a_scancode() {
+    fn every_default_binding_is_a_typed_character_or_has_a_scancode() {
         let bindings = serde_json::to_value(livi_core_proto::config::defaults().bindings).unwrap();
         let known: Vec<&str> = (0..=u16::MAX).filter_map(code).collect();
         for (name, value) in bindings.as_object().unwrap() {
             let bound = value.as_str().unwrap();
             assert!(
-                bound.is_empty() || known.contains(&bound),
+                bound.is_empty() || bound.chars().count() == 1 || known.contains(&bound),
                 "{name}: {bound}"
             );
         }

@@ -65,6 +65,8 @@
     "cycleSession": "Cycle Session",
     "clusterLayout": "Cluster Layout",
     "clusterView": "Cluster View",
+    "zoomIn": "Map Zoom In",
+    "zoomOut": "Map Zoom Out",
     "playPause": "Play/Pause",
     "play": "Play",
     "pause": "Pause",

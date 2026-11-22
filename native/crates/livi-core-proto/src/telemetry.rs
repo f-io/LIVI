@@ -35,6 +35,7 @@
 //! | appearanceSetting                   | ·    | ·            | ✓               | ✓             |
 //! | darkMode                            | ✓    | ·            | ·               | ·             |
 //! | path                                | ✓    | ·            | ·               | ·             |
+//! | key                                 | ✓    | ✓            | ✓               | ✓             |
 //! | volume                              | ✓    | ·            | ·               | ✓             |
 //! | fuelPct                             | ✓    | ✓            | ✓ (warning, %)  | ✓             |
 //! | rangeKm                             | ✓    | ✓            | ✓               | ✓             |
@@ -194,6 +195,9 @@ pub struct TelemetrySnapshot {
     /// `/projection/mobilephone`, `/projection/comgooglemaps://?daddr=…`), for Android Auto the
     /// known categories (maps, nowplaying, radio, mobilephone) map to its hard keys.
     pub path: Option<String>,
+    /// The name of a key binding such as `zoomIn`, `zoomOut`, `next` or `home`, pressed once on
+    /// every push as if its key were pressed, bound to a key or not.
+    pub key: Option<String>,
     /// The head unit's level, 0 to 1. It sets `huVolume`, which drives the amplifier and, while
     /// linked, the system mixer.
     pub volume: Option<f64>,

@@ -9,22 +9,31 @@ use serde_json::Value;
 use crate::settings::value::patch;
 use crate::settings::view::{Row, RowKind, Tool};
 
-pub fn key_label(code: &str) -> String {
-    if let Some(rest) = code
+pub fn key_label(binding: &str) -> String {
+    let mut chars = binding.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        let mut upper = c.to_uppercase();
+        return match (upper.next(), upper.next()) {
+            (Some(u), None) => u.to_string(),
+            _ => c.to_string(),
+        };
+    }
+    if let Some(rest) = binding
         .strip_prefix("Key")
-        .or_else(|| code.strip_prefix("Digit"))
+        .or_else(|| binding.strip_prefix("Digit"))
     {
         return rest.to_string();
     }
-    match code {
+    match binding {
         "ArrowUp" => "↑".into(),
         "ArrowDown" => "↓".into(),
         "ArrowLeft" => "←".into(),
         "ArrowRight" => "→".into(),
         "Enter" | "NumpadEnter" => "Enter".into(),
         "Escape" => "Esc".into(),
-        "Space" => "Space".into(),
-        _ => code.to_string(),
+        "NumpadAdd" => "Num +".into(),
+        "NumpadSubtract" => "Num −".into(),
+        _ => binding.to_string(),
     }
 }
 
@@ -96,9 +105,13 @@ mod tests {
 
     #[test]
     fn keys_read_like_the_keyboard() {
+        assert_eq!(key_label("p"), "P");
+        assert_eq!(key_label("+"), "+");
+        assert_eq!(key_label("ß"), "ß");
         assert_eq!(key_label("KeyP"), "P");
         assert_eq!(key_label("Digit7"), "7");
         assert_eq!(key_label("ArrowLeft"), "←");
+        assert_eq!(key_label("NumpadAdd"), "Num +");
         assert_eq!(key_label("MediaPlayPause"), "MediaPlayPause");
     }
 
@@ -112,7 +125,7 @@ mod tests {
         );
         assert_eq!(row.value, "X");
         assert!(row.tools[0].enabled && row.tools[1].enabled);
-        assert_eq!(row.tools[1].action, set_binding("playPause", "KeyP"));
+        assert_eq!(row.tools[1].action, set_binding("playPause", "p"));
         let unbound = binding_row("x".into(), None, "playPause", &json!({ "bindings": {} }));
         assert_eq!(unbound.value, "---");
         assert!(!unbound.tools[0].enabled);

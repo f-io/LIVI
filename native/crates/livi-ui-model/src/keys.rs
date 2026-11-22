@@ -79,6 +79,29 @@ pub fn bound_to(config: &Value, code: &str) -> Option<String> {
         .map(|(k, _)| k.clone())
 }
 
+pub fn typed_name(typed: &str) -> Option<String> {
+    let mut chars = typed.chars();
+    let c = chars.next()?;
+    if chars.next().is_none() {
+        return (!c.is_control() && !c.is_whitespace()).then(|| c.to_lowercase().collect());
+    }
+    (typed != "Unidentified" && typed.chars().all(|c| c.is_ascii_alphanumeric()))
+        .then(|| typed.to_string())
+}
+
+pub fn resolve(code: &str, typed: Option<&str>, config: &Value) -> String {
+    typed
+        .and_then(typed_name)
+        .filter(|name| bound_to(config, name).is_some())
+        .unwrap_or_else(|| code.to_string())
+}
+
+pub fn binding_value(code: &str, typed: Option<&str>) -> String {
+    typed
+        .and_then(typed_name)
+        .unwrap_or_else(|| code.to_string())
+}
+
 fn or<'a>(v: &'a str, fallback: &'a str) -> &'a str {
     if v.is_empty() { fallback } else { v }
 }
@@ -485,5 +508,21 @@ mod tests {
     fn push_to_talk_releases() {
         assert_eq!(released("KeyV", &config()), Some("KeyV".into()));
         assert_eq!(released("KeyP", &config()), None);
+    }
+
+    #[test]
+    fn a_key_goes_by_what_it_types_when_a_binding_names_that() {
+        let config = json!({ "bindings": { "zoomIn": "+", "home": "h", "back": "KeyB" } });
+        assert_eq!(resolve("BracketRight", Some("+"), &config), "+");
+        assert_eq!(resolve("Equal", Some("+"), &config), "+");
+        assert_eq!(resolve("KeyH", Some("H"), &config), "h");
+        assert_eq!(resolve("KeyB", Some("b"), &config), "KeyB");
+        assert_eq!(resolve("Space", Some(" "), &config), "Space");
+        assert_eq!(resolve("ArrowUp", Some("ArrowUp"), &config), "ArrowUp");
+        assert_eq!(binding_value("BracketRight", Some("+")), "+");
+        assert_eq!(binding_value("KeyZ", Some("Y")), "y");
+        assert_eq!(binding_value("F5", Some("F5")), "F5");
+        assert_eq!(binding_value("Space", Some(" ")), "Space");
+        assert_eq!(binding_value("Fn", None), "Fn");
     }
 }

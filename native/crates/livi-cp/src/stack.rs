@@ -194,6 +194,9 @@ pub enum StackCmd {
     Media(u8),
     Telephony(u8),
     Siri,
+    MapZoom {
+        zoom_in: bool,
+    },
     Appearance(Surface, bool),
     LimitedUi(bool),
     VideoAllowed(bool),

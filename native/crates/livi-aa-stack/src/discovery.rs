@@ -71,7 +71,7 @@ pub struct Discovery {
 
 const LOCATION_CHARACTERIZATION: u32 = 256 | 4 | 2 | 8 | 64;
 
-const KEYCODES: [Keycode; 50] = [
+const KEYCODES: [Keycode; 52] = [
     Keycode::Home,
     Keycode::Back,
     Keycode::Call,
@@ -122,6 +122,8 @@ const KEYCODES: [Keycode; 50] = [
     Keycode::Navigation,
     Keycode::Radio,
     Keycode::Tel,
+    Keycode::ZoomIn,
+    Keycode::ZoomOut,
 ];
 
 const SENSORS: [SensorType; 21] = [

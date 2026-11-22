@@ -89,9 +89,21 @@ impl Projection {
     }
 
     pub(super) fn key(&mut self, code: &str, down: bool) {
-        let Some(key) = bound(&self.bindings, code) else {
+        if let Some(key) = bound(&self.bindings, code) {
+            self.press(key, down);
+        }
+    }
+
+    pub(super) fn press_named(&mut self, binding: &str) {
+        let Some(key) = named(&self.bindings, binding) else {
+            println!("[core] the telemetry pressed {binding:?}, no key binding has that name");
             return;
         };
+        self.press(key, true);
+        self.press(key, false);
+    }
+
+    fn press(&mut self, key: Key, down: bool) {
         if key == Key::ClusterLayout {
             if down && self.cluster.step(1) {
                 self.cluster_changed();
@@ -171,6 +183,8 @@ impl Projection {
                 ..none
             }),
             Key::KnobRight => knob(KnobState { wheel: 1.0, ..none }),
+            Key::ZoomIn => StackCmd::MapZoom { zoom_in: true },
+            Key::ZoomOut => StackCmd::MapZoom { zoom_in: false },
             Key::PlayPause => StackCmd::Media(media_button::PLAY_PAUSE),
             Key::Play => StackCmd::Media(media_button::PLAY),
             Key::Pause => StackCmd::Media(media_button::PAUSE),
@@ -210,6 +224,8 @@ impl Projection {
             (Key::Home, _) => Command::Home,
             (Key::KnobLeft, _) => Command::KnobLeft,
             (Key::KnobRight, _) => Command::KnobRight,
+            (Key::ZoomIn, _) => Command::ZoomIn,
+            (Key::ZoomOut, _) => Command::ZoomOut,
             (Key::PlayPause, _) => Command::PlayPause,
             (Key::Play, _) => Command::Play,
             (Key::Pause, _) => Command::Pause,

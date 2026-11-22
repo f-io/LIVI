@@ -558,6 +558,8 @@ fn key_bindings() -> Node {
             binding("settings.cycleSession", "Cycle Session", "cycleSession"),
             binding("settings.clusterLayout", "Cluster Layout", "clusterLayout"),
             binding("settings.clusterView", "Cluster View", "clusterContent"),
+            binding("settings.zoomIn", "Map Zoom In", "zoomIn"),
+            binding("settings.zoomOut", "Map Zoom Out", "zoomOut"),
             binding("settings.playPause", "Play/Pause", "playPause"),
             binding("settings.play", "Play", "play"),
             binding("settings.pause", "Pause", "pause"),

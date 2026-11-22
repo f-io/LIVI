@@ -93,7 +93,13 @@ fn forward_keys(window: &slint::Window) {
             return EventResult::Propagate;
         };
         let down = event.state == winit::event::ElementState::Pressed;
-        crate::key(&format!("{physical:?}"), down, event.repeat);
+        let printed = crate::keys_ui::printed(event);
+        crate::key(
+            &format!("{physical:?}"),
+            printed.as_deref(),
+            down,
+            event.repeat,
+        );
         EventResult::PreventDefault
     });
 }

@@ -479,13 +479,13 @@ fn wire(ui: &AppWindow, client: &Client) {
     dashboard_ui::wire(&ui.global::<DashState>(), client);
 }
 
-pub fn key(code: &str, down: bool, repeat: bool) {
+pub fn key(code: &str, printed: Option<&str>, down: bool, repeat: bool) {
     let Some(ui) = MAIN.with_borrow(|m| m.as_ref().and_then(Weak::upgrade)) else {
         return;
     };
     CLIENT.with_borrow(|c| {
         if let Some(c) = c {
-            keys_ui::key(&ui, c, code, down, repeat);
+            keys_ui::key(&ui, c, code, printed, down, repeat);
         }
     });
 }

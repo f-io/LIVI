@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::time::Instant;
 
 use livi_core_client::Client;
@@ -10,6 +11,7 @@ use livi_core_proto::input::Input;
 use livi_core_proto::message::Action;
 use livi_ui_model::keys::{
     Context, Focused, HELD_GAP, MirrorKey, Outcome, Zone, bound_to, decide, held_factor, released,
+    resolve,
 };
 use livi_ui_model::media::pressed;
 #[cfg(winit)]
@@ -444,15 +446,24 @@ fn context(ui: &AppWindow, repeat: bool) -> Context {
     }
 }
 
-pub fn key(ui: &AppWindow, client: &Client, code: &str, down: bool, repeat: bool) -> bool {
+pub fn key(
+    ui: &AppWindow,
+    client: &Client,
+    code: &str,
+    printed: Option<&str>,
+    down: bool,
+    repeat: bool,
+) -> bool {
     ui.invoke_wake_nav();
     if crate::settings_ui::capturing() {
         if down && !repeat {
-            crate::settings_ui::captured(ui, client, code);
+            crate::settings_ui::captured(ui, client, code, printed);
         }
         return true;
     }
     let config = client.mirror().json["config"].clone();
+    let name = pressed_as(code, printed, down, &config);
+    let code = name.as_str();
     if down && crate::video_ui::mirror_on_screen(ui) {
         match livi_ui_model::keys::mirror_key(code, &config, ui.get_mirror_shown()) {
             MirrorKey::Leave => {
@@ -478,6 +489,23 @@ pub fn key(ui: &AppWindow, client: &Client, code: &str, down: bool, repeat: bool
     apply(ui, client, code, outcome)
 }
 
+thread_local! {
+    static DOWN_AS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
+
+fn pressed_as(code: &str, typed: Option<&str>, down: bool, config: &serde_json::Value) -> String {
+    DOWN_AS.with_borrow_mut(|held| {
+        if down {
+            let name = resolve(code, typed, config);
+            held.insert(code.to_string(), name.clone());
+            name
+        } else {
+            held.remove(code)
+                .unwrap_or_else(|| resolve(code, typed, config))
+        }
+    })
+}
+
 pub fn touched(ui: &AppWindow) {
     let f = ui.global::<Focus>();
     if !f.get_editing() {
@@ -489,6 +517,15 @@ pub fn touched(ui: &AppWindow) {
             ui.invoke_wake_nav();
         }
     });
+}
+
+#[cfg(winit)]
+pub(crate) fn printed(event: &winit::event::KeyEvent) -> Option<String> {
+    match &event.logical_key {
+        winit::keyboard::Key::Character(text) => Some(text.to_string()),
+        winit::keyboard::Key::Named(named) => Some(format!("{named:?}")),
+        _ => None,
+    }
 }
 
 #[cfg(winit)]
@@ -505,7 +542,9 @@ pub fn wire(ui: &AppWindow, client: &Client) {
                     return EventResult::Propagate;
                 };
                 let down = event.state == winit::event::ElementState::Pressed;
-                if key(&ui, &client, &format!("{physical:?}"), down, event.repeat) {
+                let code = format!("{physical:?}");
+                let printed = printed(event);
+                if key(&ui, &client, &code, printed.as_deref(), down, event.repeat) {
                     EventResult::PreventDefault
                 } else {
                     EventResult::Propagate

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use livi_core_client::Client;
 use livi_core_proto::message::{Action, MfiFile, Radio as CoreRadio, ToCore};
 use livi_ui_model::i18n::Strings;
+use livi_ui_model::keys::binding_value;
 use livi_ui_model::settings::calibration::{Pattern, set as calibrate, value_at};
 use livi_ui_model::settings::color::{Hsl, from_hsl, hex, rgb, to_hsl};
 use livi_ui_model::settings::custom::files::Wanted;

@@ -65,6 +65,8 @@
     "cycleSession": "Changer de session",
     "clusterLayout": "Disposition du compteur",
     "clusterView": "Vue du compteur",
+    "zoomIn": "Zoom avant carte",
+    "zoomOut": "Zoom arrière carte",
     "playPause": "Play/Pause",
     "play": "Play",
     "pause": "Pause",

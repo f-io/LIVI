@@ -594,7 +594,7 @@ pub mod tests {
         assert_eq!(next.hu_volume, 0.5);
         assert!(next.kiosk.main);
         assert_eq!(next.bindings.home, "KeyX");
-        assert_eq!(next.bindings.play_pause, "KeyP");
+        assert_eq!(next.bindings.play_pause, "p");
     }
 
     #[test]

@@ -1427,6 +1427,7 @@ async fn a_verified_session_streams_and_takes_input() {
     }
     rig.cmds.send(StackCmd::LimitedUi(true)).unwrap();
     rig.cmds.send(StackCmd::Siri).unwrap();
+    rig.cmds.send(StackCmd::MapZoom { zoom_in: true }).unwrap();
     rig.cmds
         .send(StackCmd::Media(hid::media_button::NEXT))
         .unwrap();

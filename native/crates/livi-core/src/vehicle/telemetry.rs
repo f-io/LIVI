@@ -200,6 +200,9 @@ impl Telemetry {
                 self.core.open_app(app.to_string());
             }
         }
+        if let Some(name) = patch.get("key").and_then(Value::as_str) {
+            self.core.press_key(name.to_string());
+        }
         self.night_modes_from(patch).await;
         self.appearance_setting_from(patch).await;
         let path = self.snap.get("path").cloned();
@@ -698,6 +701,31 @@ mod tests {
         assert_eq!(pages.try_recv(), Ok("/projection/maps".into()));
         assert_eq!(pages.try_recv(), Ok("/projection".into()));
         assert!(pages.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_pushed_key_is_pressed_on_every_push() {
+        let dir = TempDir::new();
+        let (senders, mut asks, ..) = crate::projection::ui_channels(PerScreen {
+            main: Front::Livi,
+            cluster: Front::Livi,
+            aux: Front::Livi,
+        });
+        let hub = Hub::new(state(defaults(), Snapshot::new()));
+        let file = ConfigFile::new(dir.0.join("config.json"), dir.0.join("backup.json"));
+        let core = Arc::new(Core::new(hub, file, 0, Arc::new(Notify::new()), senders));
+        let (_, io, _) = socket(core.hub.watch());
+        let mut t = Telemetry::new(core.clone(), io, &Saved::default());
+        t.push(&json!({ "key": "zoomIn" })).await;
+        t.push(&json!({ "key": "zoomIn" })).await;
+        t.push(&json!({ "key": 5 })).await;
+        for _ in 0..2 {
+            assert!(matches!(
+                asks.commands.try_recv(),
+                Ok(crate::projection::UiCommand::PressKey(k)) if k == "zoomIn"
+            ));
+        }
+        assert!(asks.commands.try_recv().is_err());
     }
 
     #[test]

@@ -65,6 +65,8 @@
     "cycleSession": "切换会话",
     "clusterLayout": "仪表布局",
     "clusterView": "仪表视图",
+    "zoomIn": "地图放大",
+    "zoomOut": "地图缩小",
     "playPause": "播放/暂停",
     "play": "播放",
     "pause": "暂停",

@@ -113,6 +113,10 @@ impl Core {
         let _ = self.asks.commands.send(UiCommand::OpenApp(target));
     }
 
+    pub fn press_key(&self, binding: String) {
+        let _ = self.asks.commands.send(UiCommand::PressKey(binding));
+    }
+
     pub async fn refresh_mfi(&self) -> Result<(), String> {
         let view = crate::mfi::read(&self.mfi_dir);
         let files = crate::mfi::digest(&self.mfi_dir);

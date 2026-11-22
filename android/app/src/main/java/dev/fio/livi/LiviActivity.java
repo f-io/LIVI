@@ -64,7 +64,7 @@ public class LiviActivity extends NativeActivity {
         System.loadLibrary("livi");
     }
 
-    private static native void key(int scancode, boolean down, boolean repeat);
+    private static native void key(int scancode, int typed, boolean down, boolean repeat);
 
     private static native void surface(int plane, Surface surface);
 
@@ -385,7 +385,11 @@ public class LiviActivity extends NativeActivity {
                 || (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP)) {
             return super.dispatchKeyEvent(event);
         }
-        key(event.getScanCode(), action == KeyEvent.ACTION_DOWN, event.getRepeatCount() > 0);
+        key(
+                event.getScanCode(),
+                event.getUnicodeChar(),
+                action == KeyEvent.ACTION_DOWN,
+                event.getRepeatCount() > 0);
         return true;
     }
 }

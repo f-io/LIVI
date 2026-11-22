@@ -25,6 +25,8 @@ pub enum Command {
     KnobRight = 112,
     KnobUp = 113,
     KnobDown = 114,
+    ZoomIn = 120,
+    ZoomOut = 121,
     Home = 200,
     Play = 201,
     Pause = 202,
@@ -126,6 +128,8 @@ pub fn command_action(cmd: Command) -> Action {
         C::Up => Action::Click(Keycode::DpadUp as u32),
         C::Down => Action::Click(Keycode::DpadDown as u32),
         C::Home => Action::Click(Keycode::Home as u32),
+        C::ZoomIn => Action::Click(Keycode::ZoomIn as u32),
+        C::ZoomOut => Action::Click(Keycode::ZoomOut as u32),
         C::Back => Action::Click(Keycode::Back as u32),
         C::AcceptPhone => Action::Click(Keycode::Call as u32),
         C::RejectPhone => Action::Click(Keycode::Endcall as u32),
@@ -306,6 +310,8 @@ mod tests {
             }
         );
         assert_eq!(command_action(Command::Up), Action::Click(19));
+        assert_eq!(command_action(Command::ZoomIn), Action::Click(168));
+        assert_eq!(command_action(Command::ZoomOut), Action::Click(169));
         assert_eq!(command_action(Command::PhoneKeyHash), Action::Click(18));
         assert_eq!(command_action(Command::Frame), Action::VideoFocus);
         assert_eq!(

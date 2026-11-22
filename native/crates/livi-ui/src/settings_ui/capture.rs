@@ -24,7 +24,7 @@ pub fn capturing() -> bool {
     with(|c| c.capturing.is_some()).unwrap_or(false)
 }
 
-pub fn captured(ui: &AppWindow, client: &Client, code: &str) {
+pub fn captured(ui: &AppWindow, client: &Client, code: &str, printed: Option<&str>) {
     if MODIFIERS.contains(&code) {
         return;
     }
@@ -34,6 +34,6 @@ pub fn captured(ui: &AppWindow, client: &Client, code: &str) {
         return;
     }
     if let Some(binding) = binding {
-        client.act(set_binding(binding, code));
+        client.act(set_binding(binding, &binding_value(code, printed)));
     }
 }

@@ -236,6 +236,7 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_key<'caller>(
     _env: EnvUnowned<'caller>,
     _class: JClass<'caller>,
     scancode: jint,
+    typed: jint,
     down: jboolean,
     repeat: jboolean,
 ) {
@@ -245,5 +246,11 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_key<'caller>(
     else {
         return;
     };
-    let _ = slint::invoke_from_event_loop(move || livi_ui::key(code, down, repeat));
+    let typed = u32::try_from(typed)
+        .ok()
+        .filter(|c| *c != 0)
+        .and_then(char::from_u32)
+        .map(String::from);
+    let _ =
+        slint::invoke_from_event_loop(move || livi_ui::key(code, typed.as_deref(), down, repeat));
 }
