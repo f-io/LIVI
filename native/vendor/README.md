@@ -25,6 +25,7 @@
 ## i-slint-renderer-software 1.19.0
 
 - Rasterised SVGs are cached by image and size. Upstream runs resvg for every icon in every frame, a quarter of the frame time when scrolling the settings on the F133.
+- The cache keeps up to 512 KiB, the icons of several screens. SVGs over 256×256 are not cached.
 - `set_swapped_buffer_count`: `SwappedBuffers` for more than two buffers, each redrawn wherever a frame since it was last drawn into changed.
 - Drop the copy once upstream caches SVGs and knows more than two buffers.
 

@@ -1673,10 +1673,10 @@ fn hook_can_draw(rounded_clips: &[RoundedClip], geometry: impl FnOnce() -> Physi
     rounded_clips.is_empty() || shape_clips(rounded_clips, &geometry()).next().is_none()
 }
 
-/// How many rasterised SVGs stay around, enough for every icon on a screen.
+/// How many bytes of rasterised SVGs stay around, room for the icons of several screens.
 #[cfg(feature = "std")]
-const SVG_CACHE: usize = 64;
-/// Larger pictures are rare and would hold too much memory.
+const SVG_CACHE_BYTES: usize = 512 * 1024;
+/// Larger pictures are rare and would push the icons out.
 #[cfg(feature = "std")]
 const SVG_CACHE_MAX_PIXELS: u32 = 256 * 256;
 
@@ -1703,7 +1703,15 @@ fn render_cached(
         }
         let buffer = image.render_to_buffer(Some(size))?;
         rendered.push_front((image.clone(), size, buffer.clone()));
-        rendered.truncate(SVG_CACHE);
+        let bytes = |b: &SharedImageBuffer| {
+            let pixel = if matches!(b, SharedImageBuffer::RGB8(_)) { 3 } else { 4 };
+            b.width() as usize * b.height() as usize * pixel
+        };
+        let mut total: usize = rendered.iter().map(|(_, _, b)| bytes(b)).sum();
+        while total > SVG_CACHE_BYTES {
+            let Some((_, _, b)) = rendered.pop_back() else { break };
+            total -= bytes(&b);
+        }
         Some(buffer)
     })
 }
