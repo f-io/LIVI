@@ -13,7 +13,7 @@ use foreign_types::ForeignType;
 use openssl::ex_data::Index;
 use openssl::ssl::{Ssl, SslContext, SslMethod, SslVerifyMode, SslVersion};
 use openssl_sys as ffi;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
 
@@ -146,20 +146,7 @@ impl ProxyOffer {
         );
         tls.write_all(ask.as_bytes()).await?;
         let mut head = Vec::new();
-        let end = loop {
-            if let Some(at) = head.windows(4).position(|w| w == b"\r\n\r\n") {
-                break at + 4;
-            }
-            if head.len() > MAX_HEAD {
-                return Err(io::Error::other("CONNECT answer without end"));
-            }
-            let mut chunk = [0u8; 1024];
-            let n = tls.read(&mut chunk).await?;
-            if n == 0 {
-                return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
-            }
-            head.extend_from_slice(&chunk[..n]);
-        };
+        let end = crate::net::read_head(&mut tls, &mut head, MAX_HEAD).await? + 4;
         let line = head.split(|&b| b == b'\r').next().unwrap_or_default();
         if line.split(|&b| b == b' ').nth(1) != Some(b"200") {
             let line = String::from_utf8_lossy(line).into_owned();
@@ -176,7 +163,7 @@ mod tests {
     use std::sync::Arc;
 
     use rustls::ClientConfig;
-    use tokio::io::{AsyncRead, AsyncWrite};
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
     use tokio::net::TcpListener;
 
     use crate::bplist::{Value, dict};

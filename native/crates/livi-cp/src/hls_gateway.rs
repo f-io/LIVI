@@ -13,6 +13,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::task::{JoinHandle, JoinSet};
 
 use crate::hls::{self, Client, Conn, Dialer, FETCH_TIMEOUT, Playlist, Target, header};
+use crate::net;
 
 const BLOCKING: [&str; 3] = ["CAN-BLOCK-RELOAD", "CAN-SKIP-UNTIL", "CAN-SKIP-DATERANGES"];
 const MAX_HEAD: usize = 16 * 1024;
@@ -302,7 +303,7 @@ async fn ask_source(
     };
     conn.write_all(request.as_bytes()).await?;
     let mut all = Vec::new();
-    let end = tokio::time::timeout(FETCH_TIMEOUT, read_head(&mut conn, &mut all))
+    let end = tokio::time::timeout(FETCH_TIMEOUT, net::read_head(&mut conn, &mut all, MAX_HEAD))
         .await
         .map_err(|_| timed_out(format!("connected, no answer after {FETCH_TIMEOUT:?}")))??;
     let early = all.split_off(end + 4);
@@ -590,25 +591,8 @@ struct Request {
     range: String,
 }
 
-async fn read_head<S: AsyncRead + Unpin>(sock: &mut S, buf: &mut Vec<u8>) -> io::Result<usize> {
-    let mut chunk = [0u8; 4096];
-    loop {
-        if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-            return Ok(end);
-        }
-        if buf.len() > MAX_HEAD {
-            return Err(io::Error::other("a head without end"));
-        }
-        let n = sock.read(&mut chunk).await?;
-        if n == 0 {
-            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
-        }
-        buf.extend_from_slice(&chunk[..n]);
-    }
-}
-
 async fn read_request<S: AsyncRead + Unpin>(sock: &mut S, buf: &mut Vec<u8>) -> Option<Request> {
-    let end = read_head(sock, buf).await.ok()?;
+    let end = net::read_head(sock, buf, MAX_HEAD).await.ok()?;
     let head = String::from_utf8_lossy(&buf[..end]).into_owned();
     buf.drain(..end + 4);
     let mut lines = head.lines();

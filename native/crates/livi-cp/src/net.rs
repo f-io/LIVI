@@ -6,6 +6,7 @@ use std::io;
 use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 
 use socket2::{Domain, Protocol, Socket, Type};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::net::{TcpListener, UdpSocket};
 
 fn any(kind: Type, proto: Protocol) -> io::Result<Socket> {
@@ -63,6 +64,27 @@ pub fn route_of(addr: &SocketAddr) -> String {
             format!("{}%{}", a.ip(), a.scope_id())
         }
         _ => host_of(addr),
+    }
+}
+
+pub(crate) async fn read_head<S: AsyncRead + Unpin>(
+    sock: &mut S,
+    buf: &mut Vec<u8>,
+    max: usize,
+) -> io::Result<usize> {
+    let mut chunk = [0u8; 4096];
+    loop {
+        if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            return Ok(end);
+        }
+        if buf.len() > max {
+            return Err(io::Error::other("a head without end"));
+        }
+        let n = sock.read(&mut chunk).await?;
+        if n == 0 {
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+        }
+        buf.extend_from_slice(&chunk[..n]);
     }
 }
 
