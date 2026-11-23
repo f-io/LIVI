@@ -19,15 +19,12 @@ fn main() -> ExitCode {
             }
         },
         Some("livi-helperd") => livi_helperd::main(),
-        Some(
-            "livid" | "livi-bt-up" | "livi-btd" | "livi-httpd" | "livi-ledd" | "livi-mdnsd"
-            | "livi-mfid" | "livi-netd" | "livi-wifid",
-        ) => livid::main(),
         Some("livi-output") => {
             livi_output::main();
             ExitCode::SUCCESS
         }
-        _ => livi_core::main(),
+        Some(name) => livid::applet(name).unwrap_or_else(livi_core::main),
+        None => livi_core::main(),
     }
 }
 
