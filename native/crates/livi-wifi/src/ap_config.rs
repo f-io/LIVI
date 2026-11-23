@@ -5,7 +5,7 @@
 use crate::security::{self, Security};
 use crate::{Band, BandOffer, Channel, Radio};
 
-pub const BASE: &str = include_str!("../../../../scripts/livi-link/common/rootfs/etc/hostapd.conf");
+pub const BASE: &str = include_str!("../../../../scripts/firmware/rootfs/etc/hostapd.conf");
 
 pub const HOST_CONF: &str = "/tmp/livi-hostapd.conf";
 

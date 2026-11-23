@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn the_bootstrap_announces_the_product_our_system_announces() {
-        let ours = include_str!("../../../../scripts/livi-link/common/initramfs/net-up");
+        let ours = include_str!("../../../../scripts/firmware/initramfs/net-up");
         assert!(BOOTSTRAP.contains("printf 'LIVI Link' > \"$A/iProduct\""));
         assert!(ours.contains("echo \"LIVI Link\" > $G/strings/0x409/product"));
     }

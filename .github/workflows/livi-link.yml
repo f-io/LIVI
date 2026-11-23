@@ -89,7 +89,7 @@ jobs:
           dd if=/dev/zero bs=1 count=1024 >> "$TOP/out/livi-link-v821b-mtd3.bin"
 
       - name: Run pack-bundle
-        run: bash scripts/livi-link/common/pack-bundle.sh scripts/livi-link/riscv/v821b
+        run: bash scripts/firmware/pack-bundle.sh scripts/livi-link/riscv/v821b
 
       - name: Verify bundle structure
         shell: bash
@@ -158,7 +158,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: bash scripts/livi-link/common/bindshell/build.sh "${{ matrix.arch }}" "$ASSET_DIR/${{ matrix.arch }}"
+        run: bash scripts/livi-link/bindshell/build.sh "${{ matrix.arch }}" "$ASSET_DIR/${{ matrix.arch }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -196,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           export LIVI_BUILD="${GITHUB_SHA::8}"
-          source scripts/livi-link/version.sh
+          source scripts/firmware/version.sh
           echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
           echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
 
@@ -262,7 +262,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          nightly=$(<scripts/livi-link/common/rust-nightly)
+          nightly=$(<scripts/livi-link/rust-nightly)
           "$HOME/.cargo/bin/rustup" toolchain install "$nightly" --profile minimal --component rust-src
           "$HOME/.cargo/bin/rustc" "+$nightly" --version
 
@@ -272,7 +272,7 @@ jobs:
         uses: ./.github/actions/cargo-cache/restore
         with:
           name: livi-link-riscv32
-          toolchain: scripts/livi-link/common/rust-nightly
+          toolchain: scripts/livi-link/rust-nightly
 
       - name: Build v821b firmware bundle
         if: matrix.target == 'v821b_aic8800d80'
@@ -283,15 +283,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$TOP"
-          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
+          bash scripts/firmware/build-userspace.sh "$BOARD_DIR"
           bash "$BOARD_DIR/build.sh"
-          bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
-          bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
+          bash scripts/firmware/build-rootfs.sh "$BOARD_DIR"
+          bash scripts/firmware/pack-bundle.sh "$BOARD_DIR"
 
           BUNDLE=$(source "$BOARD_DIR/board.sh" && echo "$BUNDLE")
           mkdir -p "assets/livi-link/${{ matrix.target }}"
           cp "$BUNDLE" "assets/livi-link/${{ matrix.target }}/"
-          source scripts/livi-link/version.sh
+          source scripts/firmware/version.sh
           livi_firmware_json "assets/livi-link/${{ matrix.target }}/$(basename "$BUNDLE")"
 
       - name: Install arm-linux-gnueabihf cross toolchain (armv7)
@@ -324,15 +324,15 @@ jobs:
           set -euo pipefail
           if [[ $TARGET == imx6ul_* ]]; then export RADIO=${TARGET#imx6ul_}; fi
           mkdir -p "$TOP"
-          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
+          bash scripts/firmware/build-userspace.sh "$BOARD_DIR"
           bash "$BOARD_DIR/build.sh"
-          bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
-          bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
+          bash scripts/firmware/build-rootfs.sh "$BOARD_DIR"
+          bash scripts/firmware/pack-bundle.sh "$BOARD_DIR"
 
           BUNDLE=$(source "$BOARD_DIR/board.sh" && echo "$BUNDLE")
           mkdir -p "assets/livi-link/${{ matrix.target }}"
           cp "$BUNDLE" "assets/livi-link/${{ matrix.target }}/"
-          source scripts/livi-link/version.sh
+          source scripts/firmware/version.sh
           livi_firmware_json "assets/livi-link/${{ matrix.target }}/$(basename "$BUNDLE")"
 
       - name: Save downloads

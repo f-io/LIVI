@@ -1,4 +1,4 @@
-# i.MX6ULL: what the shared initramfs init (common/initramfs/init) does on this board.
+# i.MX6ULL: what the shared initramfs init (firmware/initramfs/init) does on this board.
 BOARD_NAME="LIVI Link i.MX6ULL"
 RESCUE_USB_DELAY=0
 

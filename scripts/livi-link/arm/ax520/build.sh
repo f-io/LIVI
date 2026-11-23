@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # LIVI-Link AX520+AIC8800D80 dongle kernel build.
-# Order: ../../common/build-userspace.sh <this dir>, build.sh, ../../common/build-rootfs.sh <this dir>,
-# ../../common/pack-bundle.sh <this dir>.
+# Order: ../../../firmware/build-userspace.sh <this dir>, build.sh, ../../../firmware/build-rootfs.sh <this dir>,
+# ../../../firmware/pack-bundle.sh <this dir>.
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/board.sh"

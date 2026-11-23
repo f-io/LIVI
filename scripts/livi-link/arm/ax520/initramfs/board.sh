@@ -1,4 +1,4 @@
-# AX520: what the shared initramfs init (common/initramfs/init) does on this board.
+# AX520: what the shared initramfs init (firmware/initramfs/init) does on this board.
 BOARD_NAME=AX520
 RESCUE_USB_DELAY=15
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Assemble a board's rootfs squashfs: the shared overlay (common/rootfs), busybox, hostapd and livid
-# laid out the same way on every board, the product's overlay (PRODUCT, default LIVI Link), then
+# Assemble a board's rootfs squashfs: the shared overlay (firmware/rootfs), busybox, hostapd and livid
+# laid out the same way on every board, the product's overlay (PRODUCT, default the board's product folder), then
 # what the board adds on top (<board dir>/rootfs and its rootfs_payload).
 #   build-rootfs.sh <board dir>
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 COMMON=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 LOG_TAG=rootfs
 source "$(cd "${1:?usage: build-rootfs.sh <board dir>}" && pwd)/board.sh"
-PRODUCT=${PRODUCT:-$(cd "$COMMON/.." && pwd)}
+PRODUCT=${PRODUCT:-$(cd "$1/../.." && pwd)}
 PRODUCT_APPLETS=${PRODUCT_APPLETS:-livid livi-netd livi-httpd livi-wifid livi-ledd livi-bt-up livi-mfid livi-btd}
 
 need() { [[ -e $1 ]] || { log "missing $1 — $2"; exit 1; }; }
@@ -37,7 +37,7 @@ for a in $BB_SBIN_APPLETS;      do ln -sf ../bin/busybox    "$WORK/sbin/$a";    
 for a in $BB_USR_BIN_APPLETS;   do ln -sf ../../bin/busybox "$WORK/usr/bin/$a";  done
 for a in $BB_USR_SBIN_APPLETS;  do ln -sf ../../bin/busybox "$WORK/usr/sbin/$a"; done
 
-log "overlay: common/rootfs, $PRODUCT/rootfs (rcS, ...), then the board's rootfs (board.sh, ...)"
+log "overlay: firmware/rootfs, $PRODUCT/rootfs (rcS, ...), then the board's rootfs (board.sh, ...)"
 cp -a "$COMMON/rootfs/." "$WORK/"
 cp -a "$PRODUCT/rootfs/." "$WORK/"
 [[ -d $HERE/rootfs ]] && cp -a "$HERE/rootfs/." "$WORK/"

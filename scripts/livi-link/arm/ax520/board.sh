@@ -1,4 +1,4 @@
-# AX520 + AIC8800D80: what the shared rootfs and bundle scripts (common/) take from this board.
+# AX520 + AIC8800D80: what the shared rootfs and bundle scripts (scripts/firmware) take from this board.
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BOARD=ax520
 source "$HERE/../common.sh"

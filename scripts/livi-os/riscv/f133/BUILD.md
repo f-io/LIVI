@@ -29,7 +29,7 @@ rustup target add riscv64gc-unknown-linux-musl
 From this directory:
 
 ```bash
-../../../livi-link/common/build-userspace.sh .
+../../../firmware/build-userspace.sh .
 ```
 
 ```bash
@@ -37,7 +37,7 @@ From this directory:
 ```
 
 ```bash
-../../../livi-link/common/build-rootfs.sh .
+../../../firmware/build-rootfs.sh .
 ```
 
 `build.sh` also builds GStreamer (`gst.sh`, static, with `gst-patches/`) and `livi`
@@ -58,7 +58,7 @@ The LIVI OS rcS (`scripts/livi-os/rootfs`) starts LIVI at boot after `board_star
 | 2   | `livi-os-f133-mtd2.bin`  | rootfs                                    |
 | 3   |                          | data, jffs2 formats it on the first mount |
 
-`../../../livi-link/common/pack-bundle.sh .` packs mtd1 and mtd2 into `livi-os-f133.lfwb` for the
+`../../../firmware/pack-bundle.sh .` packs mtd1 and mtd2 into `livi-os-f133.lfwb` for the
 unit's web page.
 
 From a running system, with the image in `/tmp`:

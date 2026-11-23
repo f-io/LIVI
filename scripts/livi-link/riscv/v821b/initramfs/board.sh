@@ -1,4 +1,4 @@
-# V821B: what the shared initramfs init (common/initramfs/init) does on this board.
+# V821B: what the shared initramfs init (firmware/initramfs/init) does on this board.
 BOARD_NAME=V821B
 RESCUE_USB_DELAY=0
 

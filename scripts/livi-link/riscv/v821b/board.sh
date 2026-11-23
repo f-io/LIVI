@@ -1,4 +1,4 @@
-# V821B + AIC8800D80: what the shared rootfs and bundle scripts (common/) take from this board.
+# V821B + AIC8800D80: what the shared rootfs and bundle scripts (scripts/firmware) take from this board.
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BOARD=v821b
 source "$HERE/../common.sh"

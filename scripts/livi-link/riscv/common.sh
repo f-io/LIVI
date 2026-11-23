@@ -1,6 +1,6 @@
 : "${BOARD:?set BOARD before sourcing riscv/common.sh}"
 RISCV=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMMON=$(cd "$RISCV/../common" && pwd)
+COMMON=$(cd "$RISCV/../../firmware" && pwd)
 REPO=$(cd "$RISCV/../../.." && pwd)
 TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
@@ -17,7 +17,7 @@ MUSL_WRAPPER=1
 MUSL_LDSO=ld-musl-riscv32.so.1
 LIBNL_HOST=riscv32-linux-musl
 
-RUST_NIGHTLY=$(<"$COMMON/rust-nightly")
+RUST_NIGHTLY=$(<"$RISCV/../rust-nightly")
 
 source "$COMMON/kernel.sh"
 

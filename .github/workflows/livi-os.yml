@@ -73,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           export LIVI_BUILD="${GITHUB_SHA::8}"
-          source scripts/livi-link/version.sh
+          source scripts/firmware/version.sh
           echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
           echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
 
@@ -88,7 +88,7 @@ jobs:
             build/${{ matrix.target }}/sha256sums.asc
             build/${{ matrix.target }}/radxa-aic8800
             build/${{ matrix.target }}/radxa-allwinner-bsp
-          key: livi-os-dl-${{ matrix.target }}-${{ hashFiles('scripts/livi-os/riscv/**', 'scripts/livi-link/common/**') }}
+          key: livi-os-dl-${{ matrix.target }}-${{ hashFiles('scripts/livi-os/riscv/**', 'scripts/firmware/**') }}
           restore-keys: livi-os-dl-${{ matrix.target }}-
 
       # gst.sh rebuilds the prefix when its stamp does not match.
@@ -128,15 +128,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$TOP"
-          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
+          bash scripts/firmware/build-userspace.sh "$BOARD_DIR"
           bash "$BOARD_DIR/build.sh"
-          bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
-          bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
+          bash scripts/firmware/build-rootfs.sh "$BOARD_DIR"
+          bash scripts/firmware/pack-bundle.sh "$BOARD_DIR"
 
           BUNDLE=$(source "$BOARD_DIR/board.sh" && echo "$BUNDLE")
           mkdir -p "assets/livi-os/${{ matrix.target }}"
           cp "$BUNDLE" "assets/livi-os/${{ matrix.target }}/"
-          source scripts/livi-link/version.sh
+          source scripts/firmware/version.sh
           livi_firmware_json "assets/livi-os/${{ matrix.target }}/$(basename "$BUNDLE")"
 
       - name: Save downloads
