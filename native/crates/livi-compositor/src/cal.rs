@@ -7,16 +7,12 @@ use livi_output_proto::display::Correction;
 use crate::state::CalState;
 
 pub fn curves(cal: &CalState, size: usize) -> [Vec<u16>; 3] {
-    let correction = Correction {
+    Correction {
         gamma: f64::from(cal.gamma),
         contrast: f64::from(cal.contrast),
         gain: cal.gain.map(f64::from),
-    };
-    correction.curves(size).map(|c| {
-        c.iter()
-            .map(|v| (v * f64::from(u16::MAX)).round() as u16)
-            .collect()
-    })
+    }
+    .table(size)
 }
 
 #[cfg(test)]

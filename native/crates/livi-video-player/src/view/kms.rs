@@ -20,6 +20,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
+use livi_output_proto::display::Correction;
 
 use g2d::G2d;
 
@@ -531,11 +532,11 @@ fn lock<T>(shared: &Mutex<T>) -> MutexGuard<'_, T> {
     shared.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-static CURVES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+static CORRECTION: Mutex<Option<Correction>> = Mutex::new(None);
 
 /// The CRTC's gamma table corrects UI and video alike at no cost per frame.
-pub fn curves(handle: usize, rgb: &[f32]) {
-    *lock(&CURVES) = rgb.to_vec();
+pub fn correct(handle: usize, correction: Correction) {
+    *lock(&CORRECTION) = Some(correction);
     if set_curves(handle) {
         return;
     }
@@ -569,21 +570,8 @@ fn set_curves(handle: usize) -> bool {
         eprintln!("[video] the display has no gamma table, no colour correction");
         return true;
     }
-    let rgb = lock(&CURVES).clone();
-    let points = rgb.len() / 3;
-    let channel = |c: usize| -> Vec<u16> {
-        (0..size)
-            .map(|i| {
-                let v = if points < 2 {
-                    i as f32 / (size - 1) as f32
-                } else {
-                    rgb[i * (points - 1) / (size - 1) * 3 + c]
-                };
-                (v.clamp(0.0, 1.0) * f32::from(u16::MAX)).round() as u16
-            })
-            .collect()
-    };
-    let (r, g, b) = (channel(0), channel(1), channel(2));
+    let correction = *lock(&CORRECTION);
+    let [r, g, b] = correction.unwrap_or_default().table(size);
     if let Err(e) = busy_retry(|| card.set_gamma(crtc, &r, &g, &b)) {
         eprintln!("[video] the display refused the gamma table: {e}");
     }

@@ -47,6 +47,14 @@ impl Correction {
     pub fn curves(&self, size: usize) -> [Vec<f64>; 3] {
         [0, 1, 2].map(|c| self.curve(c, size))
     }
+
+    pub fn table(&self, size: usize) -> [Vec<u16>; 3] {
+        self.curves(size).map(|c| {
+            c.iter()
+                .map(|v| (v * f64::from(u16::MAX)).round() as u16)
+                .collect()
+        })
+    }
 }
 
 #[cfg(test)]

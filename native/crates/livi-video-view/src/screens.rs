@@ -31,7 +31,17 @@ mod window {
         unsafe { livi_prepare_window(window) };
     }
 
-    pub fn curves(window: usize, rgb: &[f32]) {
+    const CURVE_POINTS: usize = 256;
+
+    pub fn correct(window: usize, correction: super::Correction) {
+        let rgb: Vec<f32> = if correction.neutral() {
+            Vec::new()
+        } else {
+            let [r, g, b] = correction.curves(CURVE_POINTS);
+            (0..CURVE_POINTS)
+                .flat_map(|i| [r[i] as f32, g[i] as f32, b[i] as f32])
+                .collect()
+        };
         let count = i32::try_from(rgb.len() / 3).unwrap_or(0);
         let rgb = if count == 0 {
             std::ptr::null()
@@ -49,24 +59,13 @@ mod window {
 
     pub fn prepare(_window: usize) {}
 
-    pub fn curves(window: usize, rgb: &[f32]) {
-        livi_video_player::set_curves(window, rgb);
+    pub fn correct(window: usize, correction: super::Correction) {
+        livi_video_player::correct(window, correction);
     }
 }
 
-const CURVE_POINTS: usize = 256;
-
 fn correct(window: usize, v: [f64; 5]) {
-    let correction = Correction::from_line(v);
-    if correction.neutral() {
-        window::curves(window, &[]);
-        return;
-    }
-    let [r, g, b] = correction.curves(CURVE_POINTS);
-    let rgb: Vec<f32> = (0..CURVE_POINTS)
-        .flat_map(|i| [r[i] as f32, g[i] as f32, b[i] as f32])
-        .collect();
-    window::curves(window, &rgb);
+    window::correct(window, Correction::from_line(v));
 }
 
 pub trait View: Send + Sync {

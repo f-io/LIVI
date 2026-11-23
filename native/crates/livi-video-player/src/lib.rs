@@ -785,11 +785,11 @@ pub fn reserve_scanout(handle: usize) {
     let _ = handle;
 }
 
-pub fn set_curves(handle: usize, rgb: &[f32]) {
+pub fn correct(handle: usize, correction: livi_output_proto::display::Correction) {
     #[cfg(all(livi_os, not(in_process)))]
-    view::curves(handle, rgb);
+    view::correct(handle, correction);
     #[cfg(not(all(livi_os, not(in_process))))]
-    let _ = (handle, rgb);
+    let _ = (handle, correction);
 }
 
 pub fn plays_urls() -> bool {
