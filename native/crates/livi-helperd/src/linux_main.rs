@@ -6,15 +6,8 @@ use std::process::ExitCode;
 
 use livi_core_proto::helper::HelperSockets;
 use livi_helper::in_process::Host;
-use livi_helper::{DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE};
 use livi_wifi::{Band, Channel};
-
-fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
+use serde_json::Value;
 
 pub(crate) fn config_path() -> std::path::PathBuf {
     if let Some(dir) =
@@ -33,56 +26,47 @@ pub(crate) fn config_path() -> std::path::PathBuf {
     std::path::Path::new(&home).join(".config/LIVI/config.json")
 }
 
-pub struct DeviceConfig {
-    json: serde_json::Value,
+/// The config file with core's defaults behind it, so a missing or empty key reads as core reads it.
+struct DeviceConfig {
+    file: Value,
+    defaults: Value,
 }
 
 impl DeviceConfig {
-    pub fn load() -> Self {
-        let json = std::fs::read_to_string(config_path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(serde_json::Value::Null);
-        Self { json }
-    }
-
-    pub fn string(&self, json_key: &str, env_key: &str, default: &str) -> String {
-        if let Some(s) = self.json.get(json_key).and_then(|v| v.as_str())
-            && !s.is_empty()
-        {
-            return s.to_string();
+    fn load() -> Self {
+        Self {
+            file: std::fs::read_to_string(config_path())
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(Value::Null),
+            defaults: serde_json::to_value(livi_core_proto::config::defaults())
+                .unwrap_or(Value::Null),
         }
-        std::env::var(env_key)
-            .ok()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| default.to_string())
     }
 
-    pub fn int<T: std::str::FromStr + std::convert::TryFrom<i64>>(
-        &self,
-        json_key: &str,
-        env_key: &str,
-        default: T,
-    ) -> T {
-        if let Some(n) = self.json.get(json_key).and_then(|v| v.as_i64())
-            && let Ok(v) = T::try_from(n)
-        {
-            return v;
-        }
-        env_or(env_key, default)
+    fn text(&self, key: &str) -> String {
+        [&self.file, &self.defaults]
+            .into_iter()
+            .find_map(|v| v.get(key)?.as_str().filter(|s| !s.is_empty()))
+            .unwrap_or_default()
+            .to_string()
     }
-}
 
-fn configured_channel(dc: &DeviceConfig) -> Channel {
-    let band = Band::of_setting(&dc.string("wifiType", "LIVI_WIFI_TYPE", "5ghz"));
-    Channel::of_setting(
-        band.unwrap_or(Band::Ghz5),
-        dc.int("wifiChannel", "LIVI_CHANNEL", DEFAULT_CHANNEL),
-    )
-}
+    fn number(&self, key: &str) -> u32 {
+        [&self.file, &self.defaults]
+            .into_iter()
+            .find_map(|v| u32::try_from(v.get(key)?.as_u64()?).ok())
+            .unwrap_or_default()
+    }
 
-fn ap_iface(dc: &DeviceConfig) -> String {
-    livi_helper::ap_iface(&dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0"))
+    fn channel(&self) -> Channel {
+        let band = Band::of_setting(&self.text("wifiType")).unwrap_or(Band::Ghz5);
+        Channel::of_setting(band, self.number("wifiChannel"))
+    }
+
+    fn ap_iface(&self) -> String {
+        livi_helper::ap_iface(&self.text("wifiInterface"))
+    }
 }
 
 pub fn host() -> Host {
@@ -98,12 +82,12 @@ pub fn host() -> Host {
 pub fn run_wifi_ap() -> ExitCode {
     let dc = DeviceConfig::load();
     let cfg = livi_helper_stack::wifi_ap::ApConfig {
-        iface: ap_iface(&dc),
-        ssid: dc.string("carName", "LIVI_CP_NAME", DEFAULT_NAME),
-        passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", DEFAULT_PASSPHRASE),
-        channel: configured_channel(&dc),
-        width: dc.int("wifiChannelWidth", "LIVI_CHANNEL_WIDTH", 40u32),
-        country: dc.string("country", "LIVI_COUNTRY", "DE"),
+        iface: dc.ap_iface(),
+        ssid: dc.text("carName"),
+        passphrase: dc.text("wifiPassword"),
+        channel: dc.channel(),
+        width: dc.number("wifiChannelWidth"),
+        country: dc.text("country"),
         ap_ip: std::env::var("LIVI_AP_IP").unwrap_or_else(|_| "10.10.0.1".into()),
     };
     livi_helper_stack::wifi_ap::run(cfg)
@@ -111,7 +95,7 @@ pub fn run_wifi_ap() -> ExitCode {
 
 pub fn run_wifi_ap_status() -> ExitCode {
     let dc = DeviceConfig::load();
-    print!("{}", livi_helper_stack::wifi_ap::status(&ap_iface(&dc)));
+    print!("{}", livi_helper_stack::wifi_ap::status(&dc.ap_iface()));
     ExitCode::SUCCESS
 }
 
@@ -173,15 +157,13 @@ pub fn run_install_gvfs_guard(script: Option<String>, rule: Option<String>) -> E
 }
 
 pub fn run_wifi_ap_claim() -> ExitCode {
-    let dc = DeviceConfig::load();
-    livi_helper_stack::wifi_ap::release_iface_from_nm(&ap_iface(&dc));
+    livi_helper_stack::wifi_ap::release_iface_from_nm(&DeviceConfig::load().ap_iface());
     ExitCode::SUCCESS
 }
 
 pub fn run_wifi_ap_teardown() -> ExitCode {
-    let iface = livi_helper_stack::wifi_ap::unmanaged_iface().unwrap_or_else(|| {
-        DeviceConfig::load().string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0")
-    });
+    let iface = livi_helper_stack::wifi_ap::unmanaged_iface()
+        .unwrap_or_else(|| DeviceConfig::load().text("wifiInterface"));
     livi_helper_stack::wifi_ap::teardown(&iface);
     ExitCode::SUCCESS
 }
