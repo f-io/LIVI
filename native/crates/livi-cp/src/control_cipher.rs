@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_crypto::{chacha_open, chacha_seal, nonce64};
+use livi_crypto::{ChaCha, TAG_LEN, nonce64};
 
 const MAX_PAYLOAD: usize = 0x4000;
 
@@ -10,8 +10,8 @@ const MAX_PAYLOAD: usize = 0x4000;
 pub struct AuthFailed;
 
 pub struct ControlCipher {
-    read_key: [u8; 32],
-    write_key: [u8; 32],
+    read: ChaCha,
+    write: ChaCha,
     read_ctr: u64,
     write_ctr: u64,
 }
@@ -19,49 +19,50 @@ pub struct ControlCipher {
 impl ControlCipher {
     pub fn new(read_key: [u8; 32], write_key: [u8; 32]) -> Self {
         Self {
-            read_key,
-            write_key,
+            read: ChaCha::new(&read_key),
+            write: ChaCha::new(&write_key),
             read_ctr: 0,
             write_ctr: 0,
         }
     }
 
-    pub fn decrypt(&mut self, buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), AuthFailed> {
-        let mut out = Vec::new();
+    /// Opens the whole records at the front of `sealed` in place onto `plain`, a partial one stays.
+    pub fn open(&mut self, sealed: &mut Vec<u8>, plain: &mut Vec<u8>) -> Result<(), AuthFailed> {
         let mut off = 0;
-        while buf.len() - off >= 2 {
-            let len = usize::from(u16::from_le_bytes([buf[off], buf[off + 1]]));
-            let end = off + 2 + len + 16;
-            if buf.len() < end {
+        while let Some(head) = sealed.get(off..off + 2) {
+            let header = [head[0], head[1]];
+            let end = off + 2 + usize::from(u16::from_le_bytes(header)) + TAG_LEN;
+            let Some(record) = sealed.get_mut(off + 2..end) else {
                 break;
-            }
-            let plain = chacha_open(
-                &self.read_key,
-                &nonce64(self.read_ctr),
-                &buf[off + 2..end],
-                &buf[off..off + 2],
-            )
-            .ok_or(AuthFailed)?;
-            out.extend_from_slice(&plain);
+            };
+            let opened = self
+                .read
+                .open_in_place(&nonce64(self.read_ctr), record, &header)
+                .ok_or(AuthFailed)?;
+            plain.extend_from_slice(opened);
             self.read_ctr += 1;
             off = end;
         }
-        Ok((out, buf[off..].to_vec()))
+        sealed.drain(..off);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn decrypt(&mut self, buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), AuthFailed> {
+        let (mut sealed, mut plain) = (buf.to_vec(), Vec::new());
+        self.open(&mut sealed, &mut plain)?;
+        Ok((plain, sealed))
     }
 
     pub fn encrypt(&mut self, plain: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
+        let mut out =
+            Vec::with_capacity(plain.len() + (plain.len() / MAX_PAYLOAD + 1) * (2 + TAG_LEN));
         let mut i = 0;
         loop {
             let chunk = &plain[i..(i + MAX_PAYLOAD).min(plain.len())];
             let header = (chunk.len() as u16).to_le_bytes();
             out.extend_from_slice(&header);
-            out.extend(chacha_seal(
-                &self.write_key,
-                &nonce64(self.write_ctr),
-                chunk,
-                &header,
-            ));
+            out.extend(self.write.seal(&nonce64(self.write_ctr), chunk, &header));
             self.write_ctr += 1;
             i += MAX_PAYLOAD;
             if i >= plain.len() {

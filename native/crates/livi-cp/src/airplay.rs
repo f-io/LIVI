@@ -317,11 +317,9 @@ impl Conn {
     async fn on_bytes(&mut self, chunk: &[u8], wr: &mut OwnedWriteHalf) -> io::Result<()> {
         if let Some(cipher) = self.cipher.as_mut() {
             self.sealed.extend_from_slice(chunk);
-            let (data, rest) = cipher
-                .decrypt(&self.sealed)
+            cipher
+                .open(&mut self.sealed, &mut self.plain)
                 .map_err(|_| io::Error::other("control channel decrypt failed"))?;
-            self.sealed = rest;
-            self.plain.extend(data);
         } else {
             self.plain.extend_from_slice(chunk);
         }
@@ -760,12 +758,10 @@ async fn events(
                     Ok(n) => n,
                 };
                 sealed.extend_from_slice(&buf[..n]);
-                let Ok((data, rest)) = cipher.decrypt(&sealed) else {
+                if cipher.open(&mut sealed, &mut plain).is_err() {
                     println!("{TAG} event channel decrypt failed");
                     return;
-                };
-                sealed = rest;
-                plain.extend(data);
+                }
                 let Ok((messages, rest)) = rtsp::parse(&plain) else {
                     return;
                 };

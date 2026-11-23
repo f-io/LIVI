@@ -12,11 +12,9 @@ impl<M: Media> Conn<M> {
     ) -> io::Result<()> {
         if let Some(cipher) = self.cipher.as_mut() {
             self.sealed.extend_from_slice(chunk);
-            let (data, rest) = cipher
-                .decrypt(&self.sealed)
+            cipher
+                .open(&mut self.sealed, &mut self.plain)
                 .map_err(|_| io::Error::other("control channel decrypt failed"))?;
-            self.sealed = rest;
-            self.plain.extend(data);
         } else {
             self.plain.extend_from_slice(chunk);
         }

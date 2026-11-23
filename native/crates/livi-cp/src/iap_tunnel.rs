@@ -151,15 +151,9 @@ async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::Sender<
             Ok(n) => n,
         };
         sealed.extend_from_slice(&buf[..n]);
-        match cipher.decrypt(&sealed) {
-            Ok((data, rest)) => {
-                plain.extend(data);
-                sealed = rest;
-            }
-            Err(_) => {
-                println!("[cpIapTunnel] stream decrypt failed");
-                return;
-            }
+        if cipher.open(&mut sealed, &mut plain).is_err() {
+            println!("[cpIapTunnel] stream decrypt failed");
+            return;
         }
         loop {
             match next_package(&mut plain) {
@@ -207,15 +201,9 @@ async fn duplex(
                     Ok(n) => n,
                 };
                 sealed.extend_from_slice(&buf[..n]);
-                match cipher.decrypt(&sealed) {
-                    Ok((data, rest)) => {
-                        plain.extend(data);
-                        sealed = rest;
-                    }
-                    Err(_) => {
-                        println!("[cpIapTunnel] {name} stream decrypt failed");
-                        return;
-                    }
+                if cipher.open(&mut sealed, &mut plain).is_err() {
+                    println!("[cpIapTunnel] {name} stream decrypt failed");
+                    return;
                 }
                 loop {
                     match next_package(&mut plain) {

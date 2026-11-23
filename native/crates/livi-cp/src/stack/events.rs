@@ -31,15 +31,9 @@ impl<M: Media> Conn<M> {
             return;
         };
         ev.sealed.extend_from_slice(chunk);
-        match ev.cipher.decrypt(&ev.sealed) {
-            Ok((data, rest)) => {
-                ev.sealed = rest;
-                ev.plain.extend(data);
-            }
-            Err(_) => {
-                println!("[cpStack] event channel decrypt failed");
-                return;
-            }
+        if ev.cipher.open(&mut ev.sealed, &mut ev.plain).is_err() {
+            println!("[cpStack] event channel decrypt failed");
+            return;
         }
         let Ok((messages, rest)) = rtsp::parse(&ev.plain) else {
             println!("[cpStack] event message too large, event channel dropped");
