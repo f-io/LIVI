@@ -12,7 +12,7 @@ imx6ul-uboot.workspace = true
 md-5 = "0.11"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls.workspace = true
 ureq = { version = "3", default-features = false, features = [
   "gzip",
   "json",

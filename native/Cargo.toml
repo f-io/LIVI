@@ -44,6 +44,7 @@ lzokay-native = "0.2.1"
 nusb = "0.2.9"
 nusb-android = { package = "nusb", git = "https://github.com/f-io/nusb", rev = "10895e1a7c762498324cb1c36a4b67cf60083235" }
 prost = "0.14.6"
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 serde = "1.0.229"
 serde_json = "1.0.154"
 slint = { version = "1.19.0", default-features = false }

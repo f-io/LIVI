@@ -20,7 +20,7 @@ num-bigint = "0.5.1"
 openssl = { version = "0.10.82", optional = true }
 openssl-sys = { version = "0.9.118", optional = true }
 p256 = "0.14.0"
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }

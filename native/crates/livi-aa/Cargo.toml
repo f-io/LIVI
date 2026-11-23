@@ -10,7 +10,7 @@ livi-output-proto.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true
 prost.workspace = true
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls.workspace = true
 rustls-pemfile = "2"
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
