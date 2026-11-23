@@ -2,136 +2,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+mod frame;
+
 use std::collections::VecDeque;
+use std::fmt;
+
+pub use frame::{
+    CONTROL_ACK, CONTROL_EAK, CONTROL_RST, CONTROL_SYN, DETECT_MARKER, FrameHeader, HEADER_LEN,
+    SessionInfo, SyncParams, checksum, checksum_ok,
+};
+
+use frame::{SOP, encode};
 
 pub const CONTROL_SESSION_ID: u8 = 10;
 pub const EA_SESSION_ID: u8 = 11;
 pub const FILE_TRANSFER_SESSION_ID: u8 = 12;
 
-pub const IAP2_MARKER: [u8; 6] = [0xFF, 0x55, 0x02, 0x00, 0xEE, 0x10];
+const DETECT_INTERVAL_MS: u64 = 1000;
+const DETECT_TRIES: u8 = 30;
+const SYN_INTERVAL_MS: u64 = 500;
+const SYN_TRIES: u8 = 20;
 
-const LINK_START: u16 = 0xFF5A;
-const CONTROL_SYN: u8 = 0x80;
-const CONTROL_ACK: u8 = 0x40;
-const CONTROL_EAK: u8 = 0x20;
-const CONTROL_RST: u8 = 0x10;
+const PSN_HALF: u8 = 128;
 
-const DETECT_RESEND_MS: u64 = 1000;
-const NEGOTIATE_RESEND_MS: u64 = 500;
-
-pub fn gen_checksum(data: &[u8]) -> u8 {
-    let sum = data.iter().fold(0u8, |a, b| a.wrapping_add(*b));
-    sum.wrapping_neg()
-}
-
-pub fn check_checksum(data: &[u8]) -> bool {
-    data.iter().fold(0u8, |a, b| a.wrapping_add(*b)) == 0
-}
-
-fn distance(a: u8, b: Option<u8>) -> u16 {
-    match b {
-        None => 0,
-        Some(b) => a.wrapping_sub(b) as u16,
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LinkPacketHeader {
-    pub length: u16,
-    pub control: u8,
-    pub seq: u8,
-    pub ack: u8,
-    pub session_id: u8,
-}
-
-impl LinkPacketHeader {
-    pub fn parse(bytes: &[u8; 9]) -> Option<Self> {
-        if !check_checksum(bytes) {
-            return None;
-        }
-        if u16::from_be_bytes([bytes[0], bytes[1]]) != LINK_START {
-            return None;
-        }
-        Some(Self {
-            length: u16::from_be_bytes([bytes[2], bytes[3]]),
-            control: bytes[4],
-            seq: bytes[5],
-            ack: bytes[6],
-            session_id: bytes[7],
-        })
-    }
-
-    pub fn pack(&self) -> [u8; 9] {
-        let mut out = [0u8; 9];
-        out[..2].copy_from_slice(&LINK_START.to_be_bytes());
-        out[2..4].copy_from_slice(&self.length.to_be_bytes());
-        out[4] = self.control;
-        out[5] = self.seq;
-        out[6] = self.ack;
-        out[7] = self.session_id;
-        out[8] = gen_checksum(&out[..8]);
-        out
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LspSession {
-    pub id: u8,
-    pub kind: u8,
-    pub version: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinkSynchronizationPayload {
-    pub max_outgoing: u8,
-    pub max_len: u16,
-    pub retransmission_timeout: u16,
-    pub ack_timeout: u16,
-    pub max_retransmissions: u8,
-    pub max_ack: u8,
-    pub sessions: Vec<LspSession>,
-}
-
-impl LinkSynchronizationPayload {
-    const VERSION: u8 = 0x01;
-
-    pub fn parse(payload: &[u8]) -> Option<Self> {
-        if payload.len() < 10 || payload[0] != Self::VERSION {
-            return None;
-        }
-        let sessions = payload[10..]
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .map(|c| LspSession {
-                id: c[0],
-                kind: c[1],
-                version: c[2],
-            })
-            .collect();
-        Some(Self {
-            max_outgoing: payload[1],
-            max_len: u16::from_be_bytes([payload[2], payload[3]]),
-            retransmission_timeout: u16::from_be_bytes([payload[4], payload[5]]),
-            ack_timeout: u16::from_be_bytes([payload[6], payload[7]]),
-            max_retransmissions: payload[8],
-            max_ack: payload[9],
-            sessions,
-        })
-    }
-
-    pub fn pack(&self) -> Vec<u8> {
-        let mut out = vec![Self::VERSION, self.max_outgoing];
-        out.extend_from_slice(&self.max_len.to_be_bytes());
-        out.extend_from_slice(&self.retransmission_timeout.to_be_bytes());
-        out.extend_from_slice(&self.ack_timeout.to_be_bytes());
-        out.push(self.max_retransmissions);
-        out.push(self.max_ack);
-        for s in &self.sessions {
-            out.extend_from_slice(&[s.id, s.kind, s.version]);
-        }
-        out
-    }
+fn ahead(from: u8, to: u8) -> u8 {
+    to.wrapping_sub(from)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,76 +38,140 @@ pub enum LinkState {
     Dead,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkError {
+    NotIap2,
+    NoMarker,
+    NegotiationTimeout,
+    Reset,
+    Unacknowledged { psn: u8 },
+}
+
+impl fmt::Display for LinkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotIap2 => f.write_str("peer does not speak iAP2"),
+            Self::NoMarker => f.write_str("no iAP2 marker from the peer"),
+            Self::NegotiationTimeout => f.write_str("link synchronisation timed out"),
+            Self::Reset => f.write_str("peer reset the link"),
+            Self::Unacknowledged { psn } => write!(f, "packet {psn} never acknowledged"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Control(Vec<u8>),
     Ea { stream_id: u16, data: Vec<u8> },
     FileTransfer(Vec<u8>),
     Writable(bool),
-    Dead { reason: Option<String> },
+    Dead { reason: Option<LinkError> },
 }
 
 #[derive(Debug, Clone)]
 pub struct LinkConfig {
-    pub max_outgoing: u8,
-    pub max_outgoing_delta: u16,
+    pub max_outstanding: u8,
+    pub max_packet_len: u16,
+    pub retransmit_timeout_ms: u16,
     pub ack_timeout_ms: u16,
-    pub zero_ack: bool,
+    pub max_retransmits: u8,
+    pub max_cumulative_acks: u8,
     pub control_version: u8,
+    pub zero_ack: bool,
+    pub initial_psn: u8,
 }
 
 impl Default for LinkConfig {
     fn default() -> Self {
         Self {
-            max_outgoing: 30,
-            max_outgoing_delta: 0,
-            ack_timeout_ms: 500,
-            zero_ack: false,
+            max_outstanding: 4,
+            max_packet_len: u16::MAX,
+            retransmit_timeout_ms: 1500,
+            ack_timeout_ms: 100,
+            max_retransmits: 5,
+            max_cumulative_acks: 2,
             control_version: 1,
+            zero_ack: false,
+            initial_psn: 0,
         }
     }
 }
 
-#[derive(Debug, Clone)]
-struct Packet {
+impl LinkConfig {
+    fn params(&self) -> SyncParams {
+        let z = self.zero_ack;
+        SyncParams {
+            max_outstanding: self.max_outstanding,
+            max_packet_len: self.max_packet_len,
+            retransmit_timeout_ms: if z { 0 } else { self.retransmit_timeout_ms },
+            ack_timeout_ms: if z { 0 } else { self.ack_timeout_ms },
+            max_retransmits: if z { 0 } else { self.max_retransmits },
+            max_cumulative_acks: if z { 0 } else { self.max_cumulative_acks },
+            sessions: vec![
+                SessionInfo {
+                    id: CONTROL_SESSION_ID,
+                    kind: 0,
+                    version: self.control_version,
+                },
+                SessionInfo {
+                    id: EA_SESSION_ID,
+                    kind: 2,
+                    version: 1,
+                },
+                SessionInfo {
+                    id: FILE_TRANSFER_SESSION_ID,
+                    kind: 1,
+                    version: 2,
+                },
+            ],
+        }
+    }
+}
+
+struct InFlight {
     psn: u8,
     session_id: u8,
     data: Vec<u8>,
-    counter: u8,
-    timeout: u64,
+    deadline: u64,
+    retries: u8,
 }
 
-#[derive(Debug)]
-enum RxState {
+struct Received {
+    psn: u8,
+    session_id: u8,
+    data: Vec<u8>,
+}
+
+#[derive(PartialEq, Eq)]
+enum RxMode {
     Marker,
-    Header,
-    Payload(LinkPacketHeader),
+    Frames,
 }
 
 pub struct LinkEngine {
     state: LinkState,
-    pub lsp: LinkSynchronizationPayload,
-    max_outgoing_delta: u16,
-
-    sent_psn: u8,
-    last_sent_acknowledged_psn: Option<u8>,
-    unack_packets: Vec<Packet>,
-    queued_packets: VecDeque<Packet>,
-
-    last_received_in_sequence_psn: u8,
-    last_acked_psn: Option<u8>,
-    received_out_of_sequence: Vec<Packet>,
-    cumulative_received: u32,
-
+    local: SyncParams,
+    link: SyncParams,
     writable: bool,
-    rx_state: RxState,
-    rx_buf: Vec<u8>,
-    eof: bool,
 
-    detect_deadline: Option<u64>,
-    negotiate_deadline: Option<u64>,
-    send_ack_deadline: Option<u64>,
-    recv_ack_deadline: Option<u64>,
+    rx_mode: RxMode,
+    rx_buf: Vec<u8>,
+
+    tx_psn: u8,
+    tx_acked: u8,
+    in_flight: VecDeque<InFlight>,
+    queue: VecDeque<(u8, Vec<u8>)>,
+
+    rx_psn: u8,
+    rx_synced: bool,
+    rx_pending: Vec<Received>,
+    rx_unacked: u8,
+    ack_at: Option<u64>,
+
+    detect_at: Option<u64>,
+    detect_tries: u8,
+    syn_at: Option<u64>,
+    syn_tries: u8,
 
     output: Vec<u8>,
     events: VecDeque<Event>,
@@ -220,51 +179,27 @@ pub struct LinkEngine {
 
 impl LinkEngine {
     pub fn new(cfg: LinkConfig) -> Self {
-        let z = cfg.zero_ack;
+        let local = cfg.params();
         Self {
             state: LinkState::Idle,
-            lsp: LinkSynchronizationPayload {
-                max_outgoing: cfg.max_outgoing,
-                max_len: 65535,
-                retransmission_timeout: if z { 0 } else { 4000 },
-                ack_timeout: if z { 0 } else { cfg.ack_timeout_ms },
-                max_retransmissions: if z { 0 } else { 4 },
-                max_ack: if z { 0 } else { 3 },
-                sessions: vec![
-                    LspSession {
-                        id: CONTROL_SESSION_ID,
-                        kind: 0,
-                        version: cfg.control_version,
-                    },
-                    LspSession {
-                        id: EA_SESSION_ID,
-                        kind: 2,
-                        version: 1,
-                    },
-                    LspSession {
-                        id: FILE_TRANSFER_SESSION_ID,
-                        kind: 1,
-                        version: 2,
-                    },
-                ],
-            },
-            max_outgoing_delta: cfg.max_outgoing_delta,
-            sent_psn: 99,
-            last_sent_acknowledged_psn: None,
-            unack_packets: Vec::new(),
-            queued_packets: VecDeque::new(),
-            last_received_in_sequence_psn: 0,
-            last_acked_psn: None,
-            received_out_of_sequence: Vec::new(),
-            cumulative_received: 0,
+            link: local.clone(),
+            local,
             writable: false,
-            rx_state: RxState::Marker,
+            rx_mode: RxMode::Marker,
             rx_buf: Vec::new(),
-            eof: false,
-            detect_deadline: None,
-            negotiate_deadline: None,
-            send_ack_deadline: None,
-            recv_ack_deadline: None,
+            tx_psn: cfg.initial_psn,
+            tx_acked: cfg.initial_psn,
+            in_flight: VecDeque::new(),
+            queue: VecDeque::new(),
+            rx_psn: 0,
+            rx_synced: false,
+            rx_pending: Vec::new(),
+            rx_unacked: 0,
+            ack_at: None,
+            detect_at: None,
+            detect_tries: 0,
+            syn_at: None,
+            syn_tries: 0,
             output: Vec::new(),
             events: VecDeque::new(),
         }
@@ -278,6 +213,14 @@ impl LinkEngine {
         self.writable
     }
 
+    pub fn local_params(&self) -> &SyncParams {
+        &self.local
+    }
+
+    pub fn link_params(&self) -> &SyncParams {
+        &self.link
+    }
+
     pub fn take_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.output)
     }
@@ -287,15 +230,11 @@ impl LinkEngine {
     }
 
     pub fn next_deadline(&self) -> Option<u64> {
-        [
-            self.detect_deadline,
-            self.negotiate_deadline,
-            self.send_ack_deadline,
-            self.recv_ack_deadline,
-        ]
-        .into_iter()
-        .flatten()
-        .min()
+        let retransmit = self.in_flight.iter().map(|p| p.deadline).min();
+        [self.detect_at, self.syn_at, self.ack_at, retransmit]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     pub fn start(&mut self, initiate_negotiate: bool, now: u64) {
@@ -303,17 +242,16 @@ impl LinkEngine {
             return;
         }
         self.state = LinkState::DetectIap2Support;
-        self.output.extend_from_slice(&IAP2_MARKER);
-        self.detect_deadline = Some(now + DETECT_RESEND_MS);
+        self.output.extend_from_slice(&DETECT_MARKER);
+        self.detect_at = Some(now + DETECT_INTERVAL_MS);
         if initiate_negotiate {
-            self.rx_state = RxState::Header;
+            self.rx_mode = RxMode::Frames;
             self.enter_negotiate(now);
         }
     }
 
     pub fn feed_eof(&mut self) {
-        self.eof = true;
-        self.bailout(None);
+        self.die(None);
     }
 
     pub fn feed(&mut self, data: &[u8], now: u64) {
@@ -321,404 +259,396 @@ impl LinkEngine {
             return;
         }
         self.rx_buf.extend_from_slice(data);
-        loop {
-            match &self.rx_state {
-                RxState::Marker => {
-                    if self.rx_buf.len() < IAP2_MARKER.len() {
-                        return;
-                    }
-                    if self.rx_buf[..IAP2_MARKER.len()] != IAP2_MARKER {
-                        self.bailout(Some("IAP2 not supported".into()));
-                        return;
-                    }
-                    self.rx_buf.drain(..IAP2_MARKER.len());
-                    self.rx_state = RxState::Header;
-                    self.enter_negotiate(now);
-                }
-                RxState::Header => {
-                    while self.rx_buf.len() >= 2
-                        && u16::from_be_bytes([self.rx_buf[0], self.rx_buf[1]]) != LINK_START
-                    {
-                        self.rx_buf.remove(0);
-                    }
-                    if self.rx_buf.len() < 9 {
-                        return;
-                    }
-                    let header_bytes: [u8; 9] = self.rx_buf[..9].try_into().unwrap();
-                    self.rx_buf.drain(..9);
-                    let Some(header) = LinkPacketHeader::parse(&header_bytes) else {
-                        continue;
-                    };
-                    if header.length > 9 {
-                        self.rx_state = RxState::Payload(header);
-                    } else {
-                        self.process_frame(header, None, now);
-                        if self.state == LinkState::Dead {
-                            return;
-                        }
-                    }
-                }
-                RxState::Payload(header) => {
-                    let header = *header;
-                    let need = header.length as usize - 9;
-                    if self.rx_buf.len() < need {
-                        return;
-                    }
-                    let payload_with_checksum: Vec<u8> = self.rx_buf.drain(..need).collect();
-                    self.rx_state = RxState::Header;
-                    if !check_checksum(&payload_with_checksum) {
-                        continue;
-                    }
-                    let payload = &payload_with_checksum[..payload_with_checksum.len() - 1];
-                    self.process_frame(header, Some(payload.to_vec()), now);
-                    if self.state == LinkState::Dead {
-                        return;
-                    }
+        let mut pos = 0;
+        if self.rx_mode == RxMode::Marker {
+            if self.rx_buf.len() < DETECT_MARKER.len() {
+                return;
+            }
+            if self.rx_buf[..DETECT_MARKER.len()] != DETECT_MARKER {
+                self.die(Some(LinkError::NotIap2));
+                return;
+            }
+            pos = DETECT_MARKER.len();
+            self.rx_mode = RxMode::Frames;
+            self.enter_negotiate(now);
+        }
+        while let Some((consumed, frame)) = next_frame(&self.rx_buf[pos..]) {
+            pos += consumed;
+            if let Some((header, payload)) = frame {
+                self.process(header, payload, now);
+                if self.state == LinkState::Dead {
+                    self.rx_buf.clear();
+                    return;
                 }
             }
         }
+        self.rx_buf.drain(..pos);
     }
 
     pub fn advance_time(&mut self, now: u64) {
-        loop {
-            let Some(deadline) = self.next_deadline() else {
-                return;
-            };
-            if deadline > now {
+        if self.state == LinkState::Dead {
+            return;
+        }
+        if self.detect_at.is_some_and(|t| t <= now) {
+            if self.detect_tries >= DETECT_TRIES {
+                self.die(Some(LinkError::NoMarker));
                 return;
             }
-            if self.detect_deadline.is_some_and(|d| d <= now) {
-                self.detect_deadline = None;
-                if self.state == LinkState::DetectIap2Support {
-                    self.output.extend_from_slice(&IAP2_MARKER);
-                    self.detect_deadline = Some(now + DETECT_RESEND_MS);
-                }
-            } else if self.negotiate_deadline.is_some_and(|d| d <= now) {
-                self.negotiate_deadline = None;
-                if self.state == LinkState::Negotiate {
-                    self.send_negotiate();
-                    self.negotiate_deadline = Some(now + NEGOTIATE_RESEND_MS);
-                }
-            } else if self.send_ack_deadline.is_some_and(|d| d <= now) {
-                self.send_ack_deadline = None;
-                if self.state == LinkState::Normal {
-                    self.last_acked_psn = Some(self.last_received_in_sequence_psn);
-                    self.send_ack();
-                }
-            } else if self.recv_ack_deadline.is_some_and(|d| d <= now) {
-                self.recv_ack_deadline = None;
-                self.on_expect_ack_timer(now);
+            self.detect_tries += 1;
+            self.output.extend_from_slice(&DETECT_MARKER);
+            self.detect_at = Some(now + DETECT_INTERVAL_MS);
+        }
+        if self.syn_at.is_some_and(|t| t <= now) {
+            if self.syn_tries >= SYN_TRIES {
+                self.die(Some(LinkError::NegotiationTimeout));
+                return;
             }
+            self.syn_tries += 1;
+            self.send_syn(now);
+        }
+        if self.ack_at.is_some_and(|t| t <= now) {
+            self.send_ack();
+        }
+        self.retransmit(now, |p| p.deadline <= now);
+    }
+
+    fn retransmit(&mut self, now: u64, due: impl Fn(&InFlight) -> bool) {
+        let rto = u64::from(self.link.retransmit_timeout_ms);
+        let mut resent = false;
+        let mut failed = None;
+        for p in self.in_flight.iter_mut().filter(|p| due(p)) {
+            if p.retries >= self.link.max_retransmits {
+                failed = Some(p.psn);
+                break;
+            }
+            p.retries += 1;
+            p.deadline = now + rto;
+            encode(
+                &mut self.output,
+                CONTROL_ACK,
+                p.psn,
+                self.rx_psn,
+                p.session_id,
+                Some(&p.data),
+            );
+            resent = true;
+        }
+        if let Some(psn) = failed {
+            self.die(Some(LinkError::Unacknowledged { psn }));
+        } else if resent {
+            self.acked_now();
         }
     }
 
     pub fn send(&mut self, session_id: u8, data: Vec<u8>, now: u64) {
-        self.send_packet(
-            Packet {
-                psn: 0,
-                session_id,
-                data,
-                counter: 0,
-                timeout: 0,
-            },
-            now,
-        );
+        if self.state == LinkState::Dead || data.is_empty() {
+            return;
+        }
+        self.queue.push_back((session_id, data));
+        self.flush(now);
+        self.update_writable();
     }
 
     pub fn send_ea(&mut self, stream_id: u16, data: &[u8], now: u64) {
-        let mut framed = stream_id.to_be_bytes().to_vec();
-        framed.extend_from_slice(data);
-        self.send(EA_SESSION_ID, framed, now);
+        let chunk = self.link.max_payload().saturating_sub(2).max(1);
+        for part in data.chunks(chunk) {
+            let mut framed = Vec::with_capacity(part.len() + 2);
+            framed.extend_from_slice(&stream_id.to_be_bytes());
+            framed.extend_from_slice(part);
+            self.queue.push_back((EA_SESSION_ID, framed));
+        }
+        self.flush(now);
+        self.update_writable();
     }
 
     fn enter_negotiate(&mut self, now: u64) {
         self.state = LinkState::Negotiate;
-        self.detect_deadline = None;
-        self.send_negotiate();
-        self.negotiate_deadline = Some(now + NEGOTIATE_RESEND_MS);
+        self.detect_at = None;
+        self.send_syn(now);
     }
 
-    fn write_packet(&mut self, payload: Option<&[u8]>, seq: u8, control: u8, session_id: u8) {
-        if self.state == LinkState::Dead {
-            return;
-        }
-        self.cumulative_received = 0;
-        let length = match payload {
-            Some(p) => p.len() as u16 + 10,
-            None => 9,
-        };
-        let header = LinkPacketHeader {
-            length,
-            control,
-            seq,
-            ack: self.last_received_in_sequence_psn,
-            session_id,
-        };
-        self.output.extend_from_slice(&header.pack());
-        if let Some(p) = payload {
-            self.output.extend_from_slice(p);
-            self.output.push(gen_checksum(p));
-        }
+    fn send_syn(&mut self, now: u64) {
+        let params = self.local.to_bytes();
+        encode(
+            &mut self.output,
+            CONTROL_SYN,
+            self.tx_psn,
+            self.rx_psn,
+            0,
+            Some(&params),
+        );
+        self.syn_at = Some(now + SYN_INTERVAL_MS);
     }
 
     fn send_ack(&mut self) {
-        self.write_packet(None, self.sent_psn, CONTROL_ACK, 0);
+        encode(
+            &mut self.output,
+            CONTROL_ACK,
+            self.tx_psn,
+            self.rx_psn,
+            0,
+            None,
+        );
+        self.acked_now();
     }
 
-    fn send_eak(&mut self, missing: &[u8]) {
-        self.write_packet(Some(missing), self.sent_psn, CONTROL_EAK, 0);
+    fn acked_now(&mut self) {
+        self.rx_unacked = 0;
+        self.ack_at = None;
     }
 
-    fn send_data(&mut self, psn: u8, session_id: u8, data: &[u8]) {
-        self.write_packet(Some(data), psn, CONTROL_ACK, session_id);
+    fn die(&mut self, reason: Option<LinkError>) {
+        if self.state == LinkState::Dead {
+            return;
+        }
+        self.state = LinkState::Dead;
+        self.detect_at = None;
+        self.syn_at = None;
+        self.ack_at = None;
+        self.in_flight.clear();
+        self.queue.clear();
+        self.update_writable();
+        self.events.push_back(Event::Dead { reason });
     }
 
-    fn send_negotiate(&mut self) {
-        let lsp_bytes = self.lsp.pack();
-        self.write_packet(Some(&lsp_bytes), self.sent_psn, CONTROL_SYN, 0);
-    }
-
-    fn set_writable(&mut self, writable: bool) {
-        if self.writable != writable {
+    fn update_writable(&mut self) {
+        let writable = self.state == LinkState::Normal && self.queue.is_empty();
+        if writable != self.writable {
             self.writable = writable;
             self.events.push_back(Event::Writable(writable));
         }
     }
 
-    fn bailout(&mut self, reason: Option<String>) {
-        if self.state == LinkState::Dead {
-            return;
-        }
-        self.send_ack_deadline = None;
-        self.recv_ack_deadline = None;
-        self.detect_deadline = None;
-        self.negotiate_deadline = None;
-        self.state = LinkState::Dead;
-        self.set_writable(false);
-        self.events.push_back(Event::Dead { reason });
-    }
-
-    fn send_packet(&mut self, mut p: Packet, now: u64) {
-        if distance(self.sent_psn, self.last_sent_acknowledged_psn) > self.lsp.max_outgoing as u16
-            || self.state != LinkState::Normal
-        {
-            self.queued_packets.push_back(p);
-            self.set_writable(false);
-            return;
-        }
-
-        self.sent_psn = self.sent_psn.wrapping_add(1);
-        p.counter = 0;
-        p.psn = self.sent_psn;
-        p.timeout = now + self.lsp.retransmission_timeout as u64;
-        self.send_ack_deadline = None;
-        self.send_data(p.psn, p.session_id, &p.data);
-        self.last_acked_psn = Some(self.last_received_in_sequence_psn);
-        if self.lsp.max_retransmissions > 0 {
-            self.recv_ack_deadline = Some(p.timeout);
-            self.unack_packets.push(p);
-        } else {
-            self.last_sent_acknowledged_psn = Some(self.sent_psn);
-        }
-    }
-
-    fn process_frame(&mut self, header: LinkPacketHeader, payload: Option<Vec<u8>>, now: u64) {
-        if header.control & CONTROL_RST != 0 {
-            self.bailout(Some("device sent reset message".into()));
-        }
-        if header.control & CONTROL_SYN != 0 {
-            let Some(lsp) = payload
-                .as_deref()
-                .and_then(LinkSynchronizationPayload::parse)
-            else {
-                return;
-            };
-            self.handle_syn(lsp, header.seq);
-        }
-        if header.control & CONTROL_ACK != 0 {
-            self.cumulative_received += 1;
-            self.handle_ack(header.ack, now);
-        }
-        if header.control & CONTROL_EAK != 0
-            && let Some(p) = &payload
-        {
-            self.handle_eak(p.clone());
-        }
-        if header.control & !CONTROL_ACK == 0
-            && let Some(data) = payload
-        {
-            self.handle_data(
-                Packet {
-                    psn: header.seq,
-                    session_id: header.session_id,
-                    data,
-                    counter: 0,
-                    timeout: 0,
-                },
-                now,
-            );
-        }
-        if self.lsp.max_ack > 0 && self.cumulative_received >= self.lsp.max_ack as u32 {
-            self.cumulative_received = 0;
-            self.last_acked_psn = Some(self.last_received_in_sequence_psn);
-            self.send_ack();
-        }
-    }
-
-    fn handle_syn(&mut self, lsp: LinkSynchronizationPayload, psn: u8) {
-        if self.state != LinkState::Negotiate {
-            return;
-        }
-        self.lsp = lsp;
-        self.last_received_in_sequence_psn = psn;
-        self.last_acked_psn = Some(psn);
-        self.send_ack();
-    }
-
-    fn handle_ack(&mut self, num: u8, now: u64) {
-        if self.state == LinkState::Negotiate {
-            self.state = LinkState::Normal;
-            self.negotiate_deadline = None;
-            self.set_writable(true);
-        }
-        self.last_sent_acknowledged_psn = Some(num);
-
-        let mut rearmed = false;
-        while let Some(first) = self.unack_packets.first() {
-            let d = distance(first.psn, self.last_sent_acknowledged_psn);
-            if d > 0 && d <= self.lsp.max_ack as u16 + 10 {
-                self.recv_ack_deadline = Some(first.timeout);
-                rearmed = true;
-                break;
-            }
-            self.unack_packets.remove(0);
-        }
-        if !rearmed {
-            self.recv_ack_deadline = None;
-        }
-
-        while distance(self.sent_psn, self.last_sent_acknowledged_psn)
-            < self.lsp.max_outgoing as u16
-        {
-            let Some(p) = self.queued_packets.pop_front() else {
-                break;
-            };
-            self.send_packet(p, now);
-            self.set_writable(true);
-        }
-    }
-
-    fn on_expect_ack_timer(&mut self, now: u64) {
-        if self.unack_packets.is_empty() || self.state != LinkState::Normal {
-            return;
-        }
-        let mut order: Vec<usize> = (0..self.unack_packets.len()).collect();
-        order.sort_by_key(|&i| self.unack_packets[i].timeout);
-        let second_timeout = order.get(1).map(|&i| self.unack_packets[i].timeout);
-        let first = order[0];
-        self.unack_packets[first].timeout = now + self.lsp.retransmission_timeout as u64;
-        self.unack_packets[first].counter += 1;
-        let (psn, session_id, data, counter, timeout) = {
-            let p = &self.unack_packets[first];
-            (p.psn, p.session_id, p.data.clone(), p.counter, p.timeout)
-        };
-        if counter == self.lsp.max_retransmissions {
-            self.bailout(Some(format!("unacknowledged packet psn={psn}")));
-            return;
-        }
-        self.send_data(psn, session_id, &data);
-        self.recv_ack_deadline = Some(second_timeout.unwrap_or(timeout));
-    }
-
-    fn handle_eak(&mut self, missing: Vec<u8>) {
+    fn flush(&mut self, now: u64) {
         if self.state != LinkState::Normal {
             return;
         }
-        for i in 0..self.unack_packets.len() {
-            if !missing.contains(&self.unack_packets[i].psn) {
-                continue;
-            }
-            self.unack_packets[i].counter += 1;
-            if self.unack_packets[i].counter == self.lsp.max_retransmissions {
-                let psn = self.unack_packets[i].psn;
-                self.bailout(Some(format!("unacknowledged packet psn={psn}")));
-                continue;
-            }
-            let (psn, session_id, data, timeout) = {
-                let p = &self.unack_packets[i];
-                (p.psn, p.session_id, p.data.clone(), p.timeout)
-            };
-            self.send_data(psn, session_id, &data);
-            self.send_ack_deadline = None;
-            self.recv_ack_deadline = Some(timeout);
-        }
-    }
-
-    fn handle_data(&mut self, p: Packet, now: u64) {
-        let d = distance(p.psn, Some(self.last_received_in_sequence_psn));
-        if d > self.lsp.max_outgoing as u16 + 10 || d == 0 {
-            self.send_ack();
-            return;
-        }
-
-        if d > 1 {
-            let trigger_psn = p.psn;
-            self.received_out_of_sequence.push(p);
-            if d >= self.lsp.max_outgoing as u16 {
-                let mut eak = Vec::new();
-                let mut x = self.last_received_in_sequence_psn;
-                while distance(trigger_psn, Some(x)) > 1 {
-                    x = x.wrapping_add(1);
-                    eak.push(x);
-                }
-                self.send_ack_deadline = None;
-                self.send_eak(&eak);
-            }
-            return;
-        }
-
-        self.received_out_of_sequence.push(p);
-        self.received_out_of_sequence
-            .sort_by_key(|x| distance(x.psn, Some(self.last_received_in_sequence_psn)));
-        while !self.received_out_of_sequence.is_empty() {
-            let d = distance(
-                self.received_out_of_sequence[0].psn,
-                Some(self.last_received_in_sequence_psn),
-            );
-            if d > 1 {
+        let window = self.link.max_outstanding;
+        let max_payload = self.link.max_payload();
+        while ahead(self.tx_acked, self.tx_psn) < window {
+            let Some((session_id, mut data)) = self.queue.pop_front() else {
                 break;
+            };
+            if session_id != EA_SESSION_ID && data.len() > max_payload {
+                let rest = data.split_off(max_payload);
+                self.queue.push_front((session_id, rest));
             }
-            let pp = self.received_out_of_sequence.remove(0);
-            self.last_received_in_sequence_psn = pp.psn;
-            self.deliver(pp);
-        }
-
-        if self.lsp.max_ack == 0 {
-            return;
-        }
-        if distance(self.last_received_in_sequence_psn, self.last_acked_psn)
-            >= self.lsp.max_outgoing as u16 - self.max_outgoing_delta
-        {
-            self.send_ack_deadline = None;
-            self.last_acked_psn = Some(self.last_received_in_sequence_psn);
-            self.send_ack();
-        } else {
-            self.send_ack_deadline = Some(now + self.lsp.ack_timeout as u64);
+            self.transmit(session_id, data, now);
         }
     }
 
-    fn deliver(&mut self, p: Packet) {
-        match p.session_id {
-            CONTROL_SESSION_ID => self.events.push_back(Event::Control(p.data)),
-            EA_SESSION_ID if p.data.len() >= 2 => {
-                let stream_id = u16::from_be_bytes([p.data[0], p.data[1]]);
-                self.events.push_back(Event::Ea {
-                    stream_id,
-                    data: p.data[2..].to_vec(),
-                });
+    fn transmit(&mut self, session_id: u8, data: Vec<u8>, now: u64) {
+        self.tx_psn = self.tx_psn.wrapping_add(1);
+        encode(
+            &mut self.output,
+            CONTROL_ACK,
+            self.tx_psn,
+            self.rx_psn,
+            session_id,
+            Some(&data),
+        );
+        self.acked_now();
+        if self.link.reliable() {
+            self.in_flight.push_back(InFlight {
+                psn: self.tx_psn,
+                session_id,
+                data,
+                deadline: now + u64::from(self.link.retransmit_timeout_ms),
+                retries: 0,
+            });
+        } else {
+            self.tx_acked = self.tx_psn;
+        }
+    }
+
+    fn process(&mut self, header: FrameHeader, payload: Option<Vec<u8>>, now: u64) {
+        if header.control & CONTROL_RST != 0 {
+            self.die(Some(LinkError::Reset));
+            return;
+        }
+        if header.control & CONTROL_SYN != 0 {
+            if let Some(params) = payload.as_deref().and_then(SyncParams::parse) {
+                self.handle_syn(params, header.seq);
             }
-            FILE_TRANSFER_SESSION_ID => self.events.push_back(Event::FileTransfer(p.data)),
+            if header.control & CONTROL_ACK != 0 {
+                self.handle_ack(header.ack, now);
+            }
+            return;
+        }
+        if header.control & CONTROL_ACK != 0 {
+            self.handle_ack(header.ack, now);
+        }
+        if header.control & CONTROL_EAK != 0 {
+            if let Some(missing) = &payload {
+                self.handle_eak(missing, now);
+            }
+            return;
+        }
+        if let Some(data) = payload
+            && self.state == LinkState::Normal
+        {
+            self.handle_data(header.seq, header.session_id, data, now);
+        }
+    }
+
+    fn handle_syn(&mut self, mut params: SyncParams, psn: u8) {
+        // in Normal the peer still waits for our ACK of its SYN, either it got lost or the
+        // peer's first SYN did and only our own SYN was acknowledged
+        let adopt = match self.state {
+            LinkState::Negotiate => true,
+            LinkState::Normal if !self.rx_synced => true,
+            LinkState::Normal if psn == self.rx_psn => false,
+            _ => return,
+        };
+        if adopt {
+            params.max_outstanding = params.max_outstanding.clamp(1, PSN_HALF - 1);
+            self.link = params;
+            self.rx_psn = psn;
+            self.rx_synced = true;
+        }
+        self.send_ack();
+    }
+
+    fn handle_ack(&mut self, ack: u8, now: u64) {
+        match self.state {
+            LinkState::Negotiate if ack == self.tx_psn => {
+                self.state = LinkState::Normal;
+                self.syn_at = None;
+                self.flush(now);
+                self.update_writable();
+            }
+            LinkState::Normal => {
+                let acked = ahead(self.tx_acked, ack);
+                if acked == 0 || acked > ahead(self.tx_acked, self.tx_psn) {
+                    return;
+                }
+                self.tx_acked = ack;
+                let done = (acked as usize).min(self.in_flight.len());
+                self.in_flight.drain(..done);
+                self.flush(now);
+                self.update_writable();
+            }
             _ => {}
         }
     }
+
+    fn handle_eak(&mut self, missing: &[u8], now: u64) {
+        if self.state == LinkState::Normal {
+            self.retransmit(now, |p| missing.contains(&p.psn));
+        }
+    }
+
+    fn handle_data(&mut self, psn: u8, session_id: u8, data: Vec<u8>, now: u64) {
+        if !self.rx_synced {
+            self.rx_psn = psn.wrapping_sub(1);
+            self.rx_synced = true;
+        }
+        let distance = ahead(self.rx_psn, psn);
+        if distance == 0 || distance >= PSN_HALF || distance > self.link.max_outstanding {
+            self.send_ack();
+            return;
+        }
+        if distance > 1 {
+            if self.rx_pending.iter().any(|r| r.psn == psn) {
+                return;
+            }
+            let newest = self
+                .rx_pending
+                .iter()
+                .map(|r| ahead(self.rx_psn, r.psn))
+                .max()
+                .unwrap_or(0);
+            self.rx_pending.push(Received {
+                psn,
+                session_id,
+                data,
+            });
+            // only a newly opened gap is reported, every EAK costs the sender a retry
+            if distance > newest + 1 {
+                self.send_eak(psn);
+            }
+            return;
+        }
+
+        self.deliver(session_id, data);
+        self.rx_psn = psn;
+        self.rx_unacked = self.rx_unacked.saturating_add(1);
+        while let Some(i) = self
+            .rx_pending
+            .iter()
+            .position(|r| r.psn == self.rx_psn.wrapping_add(1))
+        {
+            let r = self.rx_pending.swap_remove(i);
+            self.rx_psn = r.psn;
+            self.rx_unacked = self.rx_unacked.saturating_add(1);
+            self.deliver(r.session_id, r.data);
+        }
+        let rx_psn = self.rx_psn;
+        self.rx_pending
+            .retain(|r| (1..PSN_HALF).contains(&ahead(rx_psn, r.psn)));
+
+        if self.link.max_cumulative_acks == 0 {
+            return;
+        }
+        if self.rx_unacked >= self.link.max_cumulative_acks || self.link.ack_timeout_ms == 0 {
+            self.send_ack();
+        } else if self.ack_at.is_none() {
+            self.ack_at = Some(now + u64::from(self.link.ack_timeout_ms));
+        }
+    }
+
+    fn send_eak(&mut self, newest: u8) {
+        let missing: Vec<u8> = (1..ahead(self.rx_psn, newest))
+            .map(|i| self.rx_psn.wrapping_add(i))
+            .filter(|psn| !self.rx_pending.iter().any(|r| r.psn == *psn))
+            .collect();
+        encode(
+            &mut self.output,
+            CONTROL_ACK | CONTROL_EAK,
+            self.tx_psn,
+            self.rx_psn,
+            0,
+            Some(&missing),
+        );
+        self.acked_now();
+    }
+
+    fn deliver(&mut self, session_id: u8, data: Vec<u8>) {
+        let event = match session_id {
+            CONTROL_SESSION_ID => Event::Control(data),
+            EA_SESSION_ID if data.len() >= 2 => Event::Ea {
+                stream_id: u16::from_be_bytes([data[0], data[1]]),
+                data: data[2..].to_vec(),
+            },
+            FILE_TRANSFER_SESSION_ID => Event::FileTransfer(data),
+            _ => return,
+        };
+        self.events.push_back(event);
+    }
+}
+
+type Frame = Option<(FrameHeader, Option<Vec<u8>>)>;
+
+fn next_frame(buf: &[u8]) -> Option<(usize, Frame)> {
+    let Some(start) = buf.windows(2).position(|w| w == SOP) else {
+        let keep = usize::from(buf.last() == Some(&SOP[0]));
+        return (buf.len() > keep).then(|| (buf.len() - keep, None));
+    };
+    if start > 0 {
+        return Some((start, None));
+    }
+    let header_bytes: &[u8; HEADER_LEN] = buf.get(..HEADER_LEN)?.try_into().ok()?;
+    let Some(header) = FrameHeader::parse(header_bytes) else {
+        return Some((1, None));
+    };
+    let len = header.length as usize;
+    let frame = buf.get(..len)?;
+    if len == HEADER_LEN {
+        return Some((len, Some((header, None))));
+    }
+    let body = &frame[HEADER_LEN..];
+    if !checksum_ok(body) {
+        return Some((len, None));
+    }
+    Some((len, Some((header, Some(body[..body.len() - 1].to_vec())))))
 }

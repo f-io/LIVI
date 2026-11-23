@@ -251,7 +251,7 @@ fn run_tunnel<A>(
     };
     let fd: OwnedFd = std_stream.into();
     let link_cfg = LinkConfig {
-        max_outgoing: 4,
+        max_outstanding: 4,
         control_version: 2,
         zero_ack: true,
         ..LinkConfig::default()
@@ -299,7 +299,7 @@ pub fn run_bluetooth<A>(
     }
     println!("[bt] phone connected mac={peer}");
     let (channel, art_rx) = link(LinkConfig {
-        max_outgoing: 4,
+        max_outstanding: 4,
         control_version: 2,
         ..LinkConfig::default()
     });

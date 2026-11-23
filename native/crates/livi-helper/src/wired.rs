@@ -427,7 +427,7 @@ async fn run_wired_session<S>(
         identity.bt_mac = mac;
     }
     let link = LinkConfig {
-        max_outgoing: 4,
+        max_outstanding: 4,
         control_version: 2,
         zero_ack: true,
         ..LinkConfig::default()
