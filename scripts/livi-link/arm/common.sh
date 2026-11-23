@@ -1,6 +1,6 @@
 : "${BOARD:?set BOARD before sourcing arm/common.sh}"
 ARM=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMMON=$(cd "$ARM/../common" && pwd)
+COMMON=$(cd "$ARM/../../firmware" && pwd)
 REPO=$(cd "$ARM/../../.." && pwd)
 TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
@@ -21,7 +21,7 @@ build_livid() {
     export "CARGO_TARGET_$(echo "$rtarget" | tr 'a-z-' 'A-Z_')_LINKER=${CROSS_COMPILE}gcc"
     export "CC_${rtarget//-/_}=${CROSS_COMPILE}gcc"
     export "AR_${rtarget//-/_}=${CROSS_COMPILE}ar"
-    cargo build --profile embedded -p livid --target "$rtarget"
+    cargo build --profile embedded -p livid --target "$rtarget" ${LIVID_FEATURES:+--features "$LIVID_FEATURES"}
   )
   livid=${CARGO_TARGET_DIR:-$native/target}/$rtarget/embedded/livid
   [[ -x $livid ]] || { log "missing $livid"; exit 4; }

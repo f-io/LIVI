@@ -14,7 +14,7 @@ mod bt_up;
 mod btd;
 #[cfg(target_os = "linux")]
 mod config;
-#[cfg(all(target_os = "linux", not(target_arch = "riscv32")))]
+#[cfg(all(target_os = "linux", feature = "imx6ul"))]
 mod imx6ul;
 #[cfg(target_os = "linux")]
 mod ledd;
@@ -37,7 +37,7 @@ fn board() -> (&'static str, &'static str) {
     if has(b"livi,f133b-xfh") {
         return ("F133-XFH", "f133b_xfh");
     }
-    #[cfg(not(target_arch = "riscv32"))]
+    #[cfg(feature = "imx6ul")]
     if has(b"livi,link-imx6ull") {
         return imx6ul::module();
     }
@@ -99,7 +99,7 @@ fn web_caps(args: &[String]) -> livi_web::WebCaps {
                 ..Default::default()
             },
         ),
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(feature = "imx6ul")]
         t if t.starts_with("imx6ul_") => (
             false,
             livi_web::Flash {

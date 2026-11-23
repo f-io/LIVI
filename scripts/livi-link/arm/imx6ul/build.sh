@@ -2,8 +2,8 @@
 # LIVI-Link i.MX6ULL dongle kernel for the module RADIO names (board.sh): zImage with the initramfs
 # built in and our DTB appended, which the provisioner stages for the vendor U-Boot (dongle arm
 # imx6ul kernel <image> --write), and the Bluetooth modules and livid for the rootfs.
-# Order: ../../common/build-userspace.sh <this dir>, build.sh, ../../common/build-rootfs.sh <this dir>,
-# ../../common/pack-bundle.sh <this dir>.
+# Order: ../../../firmware/build-userspace.sh <this dir>, build.sh, ../../../firmware/build-rootfs.sh <this dir>,
+# ../../../firmware/pack-bundle.sh <this dir>.
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/board.sh"
@@ -274,4 +274,4 @@ log "zImage $(stat -c%s "$ZIMAGE") B + DTB $(stat -c%s "$DTB") B = $SIZE B of $K
 (( SIZE <= KERNEL_MAX )) || { log "image is $((SIZE - KERNEL_MAX)) B too large for the vendor U-Boot"; exit 6; }
 log "done: $KERNEL_IMG"
 
-build_livid
+LIVID_FEATURES=imx6ul build_livid

@@ -66,10 +66,11 @@ jobs:
         run: |
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo test --workspace --locked
+          cargo test -p livid --features imx6ul --locked
 
       - name: Check the dongle daemon for armv7 (clippy)
         working-directory: native
-        run: cargo clippy -p livid --target armv7-unknown-linux-musleabihf --locked -- -D warnings
+        run: cargo clippy -p livid --features imx6ul --target armv7-unknown-linux-musleabihf --locked -- -D warnings
 
       - name: Save cargo cache
         if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
