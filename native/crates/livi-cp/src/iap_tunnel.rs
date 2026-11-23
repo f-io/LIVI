@@ -33,11 +33,21 @@ pub struct IapTunnel {
 
 impl IapTunnel {
     pub fn listen(shared: &[u8; 32], seed: &str, out: mpsc::Sender<Vec<u8>>) -> io::Result<Self> {
-        Self::listen_as("iAP", shared, seed, out)
+        Self::open("iAP", false, shared, seed, out)
     }
 
     pub fn listen_as(
         name: &'static str,
+        shared: &[u8; 32],
+        seed: &str,
+        out: mpsc::Sender<Vec<u8>>,
+    ) -> io::Result<Self> {
+        Self::open(name, true, shared, seed, out)
+    }
+
+    fn open(
+        name: &'static str,
+        log_skips: bool,
         shared: &[u8; 32],
         seed: &str,
         out: mpsc::Sender<Vec<u8>>,
@@ -52,7 +62,7 @@ impl IapTunnel {
                 if let Some(old) = current.take() {
                     old.abort();
                 }
-                current = Some(tokio::spawn(read(name, sock, key, out.clone())));
+                current = Some(tokio::spawn(read(name, log_skips, sock, key, out.clone())));
             }
         });
         Ok(Self { port, task })
@@ -140,7 +150,13 @@ fn package(kind: u32, message_type: u32, reply_token: u64, body: &[u8]) -> Vec<u
     p
 }
 
-async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::Sender<Vec<u8>>) {
+async fn read(
+    name: &str,
+    log_skips: bool,
+    mut sock: TcpStream,
+    key: [u8; 32],
+    out: mpsc::Sender<Vec<u8>>,
+) {
     let mut cipher = ControlCipher::new(key, [0; 32]);
     let mut sealed = Vec::new();
     let mut plain = Vec::new();
@@ -161,7 +177,7 @@ async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::Sender<
                     let _ = out.send(p.body).await;
                 }
                 Ok(Some(p)) => {
-                    if name != "iAP" {
+                    if log_skips {
                         let tag =
                             String::from_utf8_lossy(&p.message_type.to_be_bytes()).into_owned();
                         println!(
