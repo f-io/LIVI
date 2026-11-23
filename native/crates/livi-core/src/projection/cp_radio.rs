@@ -171,9 +171,12 @@ pub async fn run(hub: Arc<Hub>, cp: CpHandle) {
     loop {
         let now = {
             let s = state.borrow_and_update();
-            (s.dab.clone(), s.fm.clone())
+            let same = seen
+                .as_ref()
+                .is_some_and(|(dab, fm)| *dab == s.dab && *fm == s.fm);
+            (!same).then(|| (s.dab.clone(), s.fm.clone()))
         };
-        if seen.as_ref() != Some(&now) {
+        if let Some(now) = now {
             let r = radio(&now.0, &now.1, on);
             on = r.band;
             cp.send(CpCmd::Radio(Box::new(r)));

@@ -172,32 +172,38 @@ pub async fn follow(core: Arc<Core>) {
     let mut read_at: Option<Instant> = None;
     let mut last: Option<f64> = None;
     loop {
-        let (cfg, muted) = {
+        let (level, linked, device, muted) = {
             let s = state.borrow_and_update();
-            (s.config.clone(), s.system.muted)
+            let c = &s.config;
+            let device = (c.hu_volume_link_system
+                && following.as_ref() != Some(&c.audio_output_device))
+            .then(|| c.audio_output_device.clone());
+            (c.hu_volume, c.hu_volume_link_system, device, s.system.muted)
         };
-        let target = if muted { 0.0 } else { cfg.hu_volume };
-        if !cfg.hu_volume_link_system {
+        let target = if muted { 0.0 } else { level };
+        if !linked {
             if following.take().is_some() {
                 watcher = None;
                 println!("[volume] the system volume goes its own way");
             }
-        } else if following.as_ref() != Some(&cfg.audio_output_device) {
-            following = Some(cfg.audio_output_device.clone());
+        } else if let Some(device) = device {
             if watcher.is_none() {
                 watcher = Some(output::watch(tx.clone()));
                 println!("[volume] watching the output for changes made outside LIVI");
             }
-            let level = mixer.get(cfg.audio_output_device.as_deref()).await;
+            let level = mixer.get(device.as_deref()).await;
             match level {
                 Some(level) => take_system_level(&core, level, "starts from the system").await,
-                None => mixer.set(target, cfg.audio_output_device.as_deref()).await,
+                None => mixer.set(target, device.as_deref()).await,
             }
+            following = Some(device);
             applied = Some(level.unwrap_or(target));
             last = level;
         } else if applied.is_none_or(|a| (target - a).abs() >= SAME) {
             applied = Some(target);
-            mixer.set(target, cfg.audio_output_device.as_deref()).await;
+            mixer
+                .set(target, following.as_ref().and_then(|d| d.as_deref()))
+                .await;
         }
         let deadline = read_at;
         let debounce = async move {
@@ -230,7 +236,7 @@ pub async fn follow(core: Arc<Core>) {
                 if mixer.own_echo() || watcher.is_none() {
                     continue;
                 }
-                let Some(level) = mixer.get(cfg.audio_output_device.as_deref()).await else {
+                let Some(level) = mixer.get(following.as_ref().and_then(|d| d.as_deref())).await else {
                     continue;
                 };
                 if last.is_some_and(|l| (level - l).abs() < SAME) {

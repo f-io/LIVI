@@ -234,14 +234,22 @@ pub async fn run(core: Arc<Core>, car_data: mpsc::UnboundedSender<Value>) {
     loop {
         let now = {
             let s = state.borrow_and_update();
-            (
-                s.now_playing.clone(),
-                s.navigation.clone(),
-                s.config.language.clone(),
-                s.config.display_brightness,
-            )
+            let same = seen.as_ref().is_some_and(|(np, nav, lang, b)| {
+                *np == s.now_playing
+                    && *nav == s.navigation
+                    && *lang == s.config.language
+                    && *b == s.config.display_brightness
+            });
+            (!same).then(|| {
+                (
+                    s.now_playing.clone(),
+                    s.navigation.clone(),
+                    s.config.language.clone(),
+                    s.config.display_brightness,
+                )
+            })
         };
-        if seen.as_ref() != Some(&now) {
+        if let Some(now) = now {
             let (np, navigation, language, brightness) = &now;
             let language = Language::of(language);
             rows.set("name", "LIVI");
