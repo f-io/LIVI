@@ -174,7 +174,7 @@ async fn open(gst: &Output, device: &str) -> Option<Stream> {
         clock_rate: RATE,
         channels: CHANNELS,
         latency_ms: 0,
-        realtime: true,
+        realtime: Some(true),
         fed: true,
         device: device.to_string(),
     };
@@ -338,6 +338,7 @@ mod tests {
             front: livi,
             sessions: Default::default(),
             now_playing: Default::default(),
+            audio: None,
             video_playback: None,
             navigation: Default::default(),
             system: Default::default(),

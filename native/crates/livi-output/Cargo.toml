@@ -22,6 +22,13 @@ libc.workspace = true
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 livi-video-view.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSProcessInfo",
+  "NSString",
+] }
+
 [build-dependencies]
 livi-cfg.workspace = true
 

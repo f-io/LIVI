@@ -182,6 +182,7 @@ mod tests {
             },
             sessions: Default::default(),
             now_playing: Default::default(),
+            audio: None,
             video_playback: None,
             telemetry: Default::default(),
             navigation: Default::default(),

@@ -42,7 +42,7 @@ impl Audio {
             clock_rate: f.rate,
             channels: f.channels,
             latency_ms: 0,
-            realtime: false,
+            realtime: None,
             fed: true,
             device,
         };

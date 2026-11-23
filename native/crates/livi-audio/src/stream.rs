@@ -17,6 +17,7 @@ pub trait AudioSink {
 pub struct AudioStream {
     key: ChaCha,
     started: bool,
+    next_seq: Option<u16>,
     sink: Box<dyn AudioSink + Send>,
 }
 
@@ -25,12 +26,14 @@ impl AudioStream {
         Self {
             key: ChaCha::new(&key),
             started: false,
+            next_seq: None,
             sink,
         }
     }
 
     pub fn reset(&mut self) {
         self.started = false;
+        self.next_seq = None;
     }
 
     pub fn push(&mut self, packet: &[u8]) {
@@ -52,6 +55,7 @@ impl AudioStream {
         };
 
         let sample = u32::from_be_bytes([packet[4], packet[5], packet[6], packet[7]]);
+        self.check_seq(u16::from_be_bytes([packet[2], packet[3]]));
         if !self.started {
             self.started = true;
             self.sink.on_started(sample);
@@ -61,6 +65,19 @@ impl AudioStream {
         rtp.extend_from_slice(&packet[..RTP_HEADER_LEN]);
         rtp.extend_from_slice(&payload);
         self.sink.on_rtp(&rtp, sample);
+    }
+
+    fn check_seq(&mut self, seq: u16) {
+        let gap = self
+            .next_seq
+            .map_or(0, |next| seq.wrapping_sub(next) as i16);
+        if gap > 0 {
+            eprintln!("[cp_audio] {gap} packets lost before {seq}");
+        } else if gap < 0 {
+            eprintln!("[cp_audio] packet {seq} late by {}", -gap);
+            return;
+        }
+        self.next_seq = Some(seq.wrapping_add(1));
     }
 }
 
@@ -80,10 +97,10 @@ fn aac_freq_index(clock_rate: u32) -> u16 {
 }
 
 pub fn lpcm_caps(codec: Codec, clock_rate: u32, channels: u8) -> String {
-    let format = if codec == Codec::PcmLe {
-        "S16LE"
-    } else {
-        "S16BE"
+    let format = match codec {
+        Codec::PcmLe => "S16LE",
+        Codec::Pcm24 => "S24BE",
+        _ => "S16BE",
     };
     format!("audio/x-raw,format={format},layout=interleaved,rate={clock_rate},channels={channels}")
 }
@@ -125,7 +142,7 @@ pub fn aac_raw_caps(asc: &[u8], clock_rate: u32, channels: u8) -> String {
 }
 
 pub fn rtp_caps(codec: Codec, payload_type: u8, clock_rate: u32, channels: u8) -> String {
-    if codec == Codec::Pcm || codec == Codec::PcmLe {
+    if matches!(codec, Codec::Pcm | Codec::PcmLe | Codec::Pcm24) {
         return lpcm_caps(codec, clock_rate, channels);
     }
     if codec == Codec::Opus {
@@ -347,6 +364,7 @@ mod wire {
     fn carplay_samples_are_big_endian_and_handed_over_ones_are_not() {
         assert!(rtp_caps(Codec::Pcm, 0, 44100, 2).contains("format=S16BE"));
         assert!(rtp_caps(Codec::PcmLe, 0, 44100, 2).contains("format=S16LE"));
+        assert!(rtp_caps(Codec::Pcm24, 0, 48000, 2).contains("format=S24BE"));
     }
 
     #[test]
@@ -409,7 +427,7 @@ pub mod receiver {
                 std::thread::Builder::new()
                     .name("cp-audio-rx".into())
                     .spawn(move || {
-                        set_realtime();
+                        crate::realtime::promote("cp-audio-rx");
                         let mut stream = stream;
                         let mut buf = [0u8; DATAGRAM];
                         while !data_stop.load(Ordering::Relaxed) {
@@ -442,18 +460,6 @@ pub mod receiver {
             for t in self.threads.drain(..) {
                 let _ = t.join();
             }
-        }
-    }
-
-    fn set_realtime() {
-        // SAFETY: an all-zero sched_param is valid.
-        let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
-        param.sched_priority = 10;
-        // SAFETY: param is a valid sched_param for the calling thread.
-        let rc =
-            unsafe { libc::pthread_setschedparam(libc::pthread_self(), libc::SCHED_FIFO, &param) };
-        if rc != 0 {
-            eprintln!("[cp_audio_rx] real-time priority denied (rc={rc}); normal priority");
         }
     }
 }

@@ -32,6 +32,8 @@ struct Stored {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     instance_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    controller_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
@@ -77,8 +79,8 @@ impl Entry {
             usb_udid: s.usb_udid.clone(),
             usb_serial: s.usb_serial.clone(),
             instance_id: s.instance_id.clone(),
+            controller_id: s.controller_id.clone(),
             ip: self.current_ip.clone(),
-            ..Default::default()
         }
     }
 
@@ -90,6 +92,7 @@ impl Entry {
             &s.usb_serial,
             &s.wifi_mac,
             &s.instance_id,
+            &s.controller_id,
         ]
         .into_iter()
         .flatten()
@@ -114,6 +117,7 @@ impl Entry {
         match self.stored.protocol.as_deref() {
             Some("carplay") => Some(Protocol::Carplay),
             Some("androidauto") => Some(Protocol::Androidauto),
+            Some("airplay") => Some(Protocol::Airplay),
             _ => None,
         }
     }
@@ -124,7 +128,8 @@ impl Entry {
             || s.usb_udid.is_some()
             || s.usb_serial.is_some()
             || s.wifi_mac.is_some()
-            || s.instance_id.is_some();
+            || s.instance_id.is_some()
+            || s.controller_id.is_some();
         stable && (s.protocol.is_some() || s.name.is_some())
     }
 
@@ -245,12 +250,16 @@ impl Registry {
             }
             let p = &mut self.entries[first];
             let (ps, os) = (&mut p.stored, o.stored);
+            if ps.protocol.as_deref() == Some("airplay") && os.protocol.is_some() {
+                ps.protocol = None;
+            }
             for (field, other) in [
                 (&mut ps.bt_mac, os.bt_mac),
                 (&mut ps.wifi_mac, os.wifi_mac),
                 (&mut ps.usb_udid, os.usb_udid),
                 (&mut ps.usb_serial, os.usb_serial),
                 (&mut ps.instance_id, os.instance_id),
+                (&mut ps.controller_id, os.controller_id),
                 (&mut ps.name, os.name),
                 (&mut ps.model, os.model),
                 (&mut ps.hostname, os.hostname),
@@ -304,6 +313,7 @@ impl Registry {
             (&mut s.usb_udid, &ids.usb_udid),
             (&mut s.usb_serial, &ids.usb_serial),
             (&mut s.instance_id, &ids.instance_id),
+            (&mut s.controller_id, &ids.controller_id),
             (&mut s.model, &seen.model),
         ] {
             if v.is_some() {
@@ -330,6 +340,60 @@ impl Registry {
         }
         s.last_seen = Some(unix_ms().floor());
         self.persist();
+    }
+
+    pub fn note_airplay(&mut self, controller_id: &str, name: Option<&str>, model: Option<&str>) {
+        let ids = Ids {
+            controller_id: Some(controller_id.to_string()),
+            ..Default::default()
+        };
+        let i = self.find(&ids).unwrap_or_else(|| {
+            self.entries.push(Entry {
+                stored: Stored {
+                    controller_id: ids.controller_id.clone(),
+                    protocol: Some("airplay".into()),
+                    last_transport: Some("wifi".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            self.entries.len() - 1
+        });
+        let s = &mut self.entries[i].stored;
+        if s.name.is_none() {
+            s.name = real_name(name);
+        }
+        if s.model.is_none() {
+            s.model = model.map(str::to_string);
+        }
+        s.last_seen = Some(unix_ms().floor());
+        self.persist();
+    }
+
+    pub fn note_controller(&mut self, ids: &Ids) -> bool {
+        let Some(controller) = ids.controller_id.clone().filter(|c| !c.is_empty()) else {
+            return false;
+        };
+        let ids = Ids {
+            ip: None,
+            ..ids.clone()
+        };
+        let before = self.entries.len();
+        let Some(i) = self.find(&ids) else {
+            return false;
+        };
+        let folded = before != self.entries.len();
+        let s = &mut self.entries[i].stored;
+        if !folded && s.controller_id.as_ref() == Some(&controller) {
+            return false;
+        }
+        s.controller_id = Some(controller);
+        self.persist();
+        true
+    }
+
+    pub fn by_ids(&self, ids: &Ids) -> Option<&Entry> {
+        self.entries.iter().find(|e| ids.overlaps(&e.ids()))
     }
 
     pub fn note_wifi(&mut self, ids: &Ids, up: bool) {
@@ -377,6 +441,7 @@ impl Registry {
                 || s.usb_serial.as_deref() == Some(id)
                 || s.wifi_mac.as_deref() == Some(nid.as_str())
                 || s.instance_id.as_deref() == Some(id)
+                || s.controller_id.as_deref() == Some(id)
         })?;
         let removed = self.entries.remove(i);
         self.persist();
@@ -997,5 +1062,43 @@ mod tests {
         assert_eq!(reg.entries()[0].current_ip.as_deref(), Some("10.0.0.9"));
         reg.clear_presence(&wifi);
         assert_eq!(reg.entries()[0].present, Present::default());
+    }
+
+    #[test]
+    fn carplay_folds_in_the_airplay_entry_of_its_controller() {
+        let dir = TempDir::new();
+        let path = dir.0.join("devices.json");
+        let mut reg = Registry::load(&path);
+        reg.note_airplay("c1", Some("LaPhone"), None);
+        reg.note_device(&Seen {
+            ids: Ids {
+                bt_mac: Some("aa:00:00:00:00:01".into()),
+                ..Default::default()
+            },
+            protocol: Some(Protocol::Carplay),
+            ..Default::default()
+        });
+        assert_eq!(reg.entries().len(), 2);
+        reg.note_controller(&Ids {
+            bt_mac: Some("aa:00:00:00:00:01".into()),
+            controller_id: Some("c1".into()),
+            ..Default::default()
+        });
+        assert_eq!(reg.entries().len(), 1);
+        let e = &reg.entries()[0];
+        assert_eq!(
+            (e.id().as_str(), e.name(), e.view_protocol()),
+            (
+                "aa:00:00:00:00:01",
+                Some("LaPhone"),
+                Some(Protocol::Carplay)
+            )
+        );
+        let reread = Registry::load(&path);
+        assert_eq!(reread.entries().len(), 1);
+        assert_eq!(
+            reread.entries()[0].ids().controller_id.as_deref(),
+            Some("c1")
+        );
     }
 }

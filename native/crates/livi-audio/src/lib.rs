@@ -3,5 +3,6 @@
 // Additional terms: see NOTICE
 
 pub mod player;
+pub mod realtime;
 pub mod stream;
 pub mod uplink;

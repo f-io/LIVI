@@ -15,8 +15,9 @@ pub mod view;
 
 use node::{Label, Node};
 
-pub const STATE_READ: [&str; 11] = [
+pub const STATE_READ: [&str; 12] = [
     "config",
+    "audio",
     "system",
     "telemetry",
     "mfi",
@@ -137,7 +138,7 @@ mod tests {
             all.iter()
                 .filter(|n| matches!(n.kind, Kind::Custom(_)))
                 .count()
-                == 20
+                == 21
         );
     }
 }

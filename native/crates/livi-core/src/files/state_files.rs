@@ -358,6 +358,7 @@ mod tests {
             },
             sessions: Default::default(),
             now_playing: Default::default(),
+            audio: None,
             video_playback: None,
             telemetry: telemetry.as_object().cloned().unwrap_or_default(),
             navigation: Default::default(),

@@ -41,3 +41,4 @@ pub const REPLY_FEED: u8 = 7;
 pub const REPLY_URL_STATUS: u8 = 8;
 pub const REPLY_AUDIO_DELAY: u8 = 9;
 pub const REPLY_CAMERAS: u8 = 10;
+pub const REPLY_AUDIO_INFO: u8 = 11;

@@ -260,7 +260,7 @@ impl<M: Media> Conn<M> {
             clock_rate: if is_opus { 48000 } else { sample_rate },
             channels,
             latency_ms: if latency_ms > 0 { latency_ms } else { 1000 },
-            realtime: profile.kind != AudioKind::Media,
+            realtime: kind != STREAM_MAIN_HIGH_AUDIO,
             device,
         };
         let opened = self.ctx.media.open_audio(key, request).await;

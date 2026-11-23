@@ -27,6 +27,7 @@ pub struct PairVerify {
     enc_key: Option<[u8; 32]>,
     keys: Option<ControlKeys>,
     controller: Option<String>,
+    offered: Option<String>,
     transcript: Vec<u8>,
 }
 
@@ -42,6 +43,10 @@ impl PairVerify {
 
     pub fn controller_id(&self) -> Option<&str> {
         self.controller.as_deref()
+    }
+
+    pub fn offered_id(&self) -> Option<&str> {
+        self.offered.as_deref()
     }
 
     pub fn control_keys(&self) -> Option<ControlKeys> {
@@ -149,6 +154,7 @@ impl PairVerify {
             return Err((4, "M3 lacks identifier or signature".into()));
         };
         let controller = String::from_utf8_lossy(ctrl_id).into_owned();
+        self.offered = Some(controller.clone());
         let ltpk = pairings
             .get(&controller)
             .ok_or((4, format!("unknown controller {controller}")))?;

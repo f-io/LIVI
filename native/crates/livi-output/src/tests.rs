@@ -101,6 +101,7 @@ struct SpeakerLog {
     visualizer_on: Option<bool>,
     visualizer: Vec<u8>,
     output_delay_ms: Option<u32>,
+    ahead_ms: Option<u32>,
 }
 
 #[derive(Default, Clone)]
@@ -121,6 +122,10 @@ impl FakeSpeaker {
 
     fn set_output_delay(&self, ms: u32) {
         self.0.lock().unwrap().output_delay_ms = Some(ms);
+    }
+
+    fn set_ahead(&self, ms: u32) {
+        self.0.lock().unwrap().ahead_ms = Some(ms);
     }
 
     fn visualizer_on(&self) -> Option<bool> {
@@ -174,6 +179,14 @@ impl Speaker for FakeSpeaker {
 
     fn output_delay_ms(&self) -> Option<u32> {
         self.0.lock().unwrap().output_delay_ms
+    }
+
+    fn ahead_ms(&self) -> Option<u32> {
+        self.0.lock().unwrap().ahead_ms
+    }
+
+    fn decoded(&self) -> Option<(u32, u8)> {
+        None
     }
 }
 
@@ -312,7 +325,7 @@ impl Outside for Fake {
             cfg.clock_rate,
             cfg.channels,
             cfg.latency_ms,
-            cfg.realtime,
+            cfg.realtime == Some(true),
             cfg.device.clone(),
         ));
         w.audio_codec_data.push(cfg.codec_data.clone());
@@ -1510,7 +1523,7 @@ fn audio_body(codec: u8, realtime: bool, device: &str) -> Vec<u8> {
     v.extend_from_slice(&44100u32.to_le_bytes());
     v.push(2);
     v.extend_from_slice(&1000u32.to_le_bytes());
-    v.push(u8::from(realtime));
+    v.push(u8::from(realtime) | 4);
     v.extend_from_slice(&[5u8; 32]);
     v.extend_from_slice(device.as_bytes());
     v
@@ -1787,6 +1800,48 @@ fn a_stream_tells_its_output_delay_once_it_changes() {
     assert!(
         told.len() >= 2 && *told.last().unwrap() >= 70,
         "a lasting change gets through: {told:?}"
+    );
+}
+
+#[test]
+fn the_info_follows_the_stream_activated_last() {
+    const CALL: u32 = 0x7b00_0002;
+    let mut f = Fixture::new();
+    f.send(OP_AUDIO_OPEN, MUSIC, &audio_body(6, false, ""));
+    f.send(OP_AUDIO_OPEN, CALL, &audio_body(2, true, ""));
+    f.speaker(0).set_ahead(200);
+    f.speaker(1).set_ahead(40);
+    let told = |f: &Fixture| -> Vec<(u32, Option<(bool, u32)>)> {
+        f.replies()
+            .into_iter()
+            .filter(|(op, _, _)| *op == REPLY_AUDIO_INFO)
+            .map(|(_, id, rest)| {
+                let info = livi_output_proto::audio::parse_audio_info(&rest);
+                (id, info.map(|i| (i.realtime == Some(true), i.ahead_ms)))
+            })
+            .collect()
+    };
+
+    f.host.pump_audio_info();
+    assert!(told(&f).is_empty(), "nothing heard, nothing to clear");
+    f.send(OP_AUDIO_ACTIVE, MUSIC, &[1]);
+    f.host.pump_audio_info();
+    f.send(OP_AUDIO_ACTIVE, CALL, &[1]);
+    f.host.pump_audio_info();
+    f.send(OP_AUDIO_ACTIVE, CALL, &[0]);
+    f.host.pump_audio_info();
+    f.send(OP_AUDIO_ACTIVE, MUSIC, &[0]);
+    f.host.pump_audio_info();
+    f.host.pump_audio_info();
+
+    assert_eq!(
+        told(&f),
+        [
+            (MUSIC, Some((false, 200))),
+            (CALL, Some((true, 40))),
+            (MUSIC, Some((false, 200))),
+            (0, None),
+        ]
     );
 }
 

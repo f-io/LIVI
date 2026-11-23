@@ -70,6 +70,7 @@ impl Rig {
             front: livi(),
             sessions: Default::default(),
             now_playing: Default::default(),
+            audio: None,
             video_playback: None,
             telemetry: Default::default(),
             navigation: Default::default(),
@@ -2039,6 +2040,15 @@ async fn an_iphone_mac_is_not_taken_for_an_unnamed_android_auto_session() {
 }
 
 fn airplay(rig: &mut Rig, id: u64, name: &str) -> UnboundedReceiver<AirplayCommand> {
+    airplay_from(rig, id, name, None)
+}
+
+fn airplay_from(
+    rig: &mut Rig,
+    id: u64,
+    name: &str,
+    controller: Option<&str>,
+) -> UnboundedReceiver<AirplayCommand> {
     let (remote, commands) = AirplayRemote::channel();
     rig.p.on_ap(ApEvent::Started {
         id,
@@ -2046,6 +2056,7 @@ fn airplay(rig: &mut Rig, id: u64, name: &str) -> UnboundedReceiver<AirplayComma
         peer: AirplaySender {
             name: Some(name.into()),
             model: None,
+            controller_id: controller.map(str::to_string),
         },
         remote,
     });
@@ -2125,4 +2136,75 @@ async fn a_mirror_shows_what_carplay_on_the_same_phone_plays() {
     assert_eq!(rig.now_playing().title.as_deref(), Some("Car"));
     rig.meta(1, json!({ "type": "nowplaying", "title": "Next" }));
     assert_eq!(rig.now_playing().title.as_deref(), Some("Next"));
+}
+
+#[tokio::test]
+async fn an_airplay_phone_is_one_entry_that_outlives_its_session() {
+    use livi_core_proto::state::DeviceStatus;
+
+    let mut rig = Rig::new();
+    airplay_from(&mut rig, 1, "LaPhone", Some("c1"));
+    let list = listed(&rig);
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (
+            list[0].id.as_str(),
+            list[0].name.as_deref(),
+            list[0].protocol
+        ),
+        ("c1", Some("LaPhone"), Some(Protocol::Airplay))
+    );
+    assert_eq!(list[0].session, Some(1));
+
+    rig.p.on_ap(ApEvent::Ended { id: 1 });
+    let list = listed(&rig);
+    assert_eq!(list.len(), 1);
+    assert_eq!(
+        (list[0].status, list[0].session),
+        (DeviceStatus::Offline, None)
+    );
+
+    airplay_from(&mut rig, 2, "LaPhone", Some("c1"));
+    assert_eq!(listed(&rig).len(), 1);
+    rig.p.select_device("c1");
+    assert!(rig.p.sessions[0].active);
+}
+
+#[tokio::test]
+async fn airplay_joins_the_phone_carplay_paired() {
+    let mut rig = Rig::new();
+    rig.p.on_event(CpEvent::Connected {
+        id: 1,
+        wired: false,
+        controller_id: Some("c1".into()),
+    });
+    rig.device(1, false, "AA:BB:CC:DD:EE:01", "cc:dd:ee:ff:00:01");
+    rig.p.on_event(CpEvent::Disconnected { id: 1 });
+
+    airplay_from(&mut rig, 7, "LaPhone", Some("c1"));
+    let list = listed(&rig);
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!(
+        (list[0].id.as_str(), list[0].protocol, list[0].session),
+        ("aa:bb:cc:dd:ee:01", Some(Protocol::Carplay), Some(1))
+    );
+}
+
+#[tokio::test]
+async fn carplay_folds_in_the_entry_airplay_started() {
+    let mut rig = Rig::new();
+    airplay_from(&mut rig, 7, "LaPhone", Some("c1"));
+    rig.p.on_ap(ApEvent::Ended { id: 7 });
+    rig.p.on_event(CpEvent::Connected {
+        id: 1,
+        wired: false,
+        controller_id: Some("c1".into()),
+    });
+    rig.device(1, false, "AA:BB:CC:DD:EE:01", "cc:dd:ee:ff:00:01");
+    let list = listed(&rig);
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!(
+        (list[0].id.as_str(), list[0].protocol),
+        ("aa:bb:cc:dd:ee:01", Some(Protocol::Carplay))
+    );
 }

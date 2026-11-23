@@ -65,6 +65,8 @@ impl<O: Outside> Host<O> {
                 active,
                 told_delay_ms: None,
                 smoothed_delay_ms: None,
+                activated: 0,
+                smoothed_ahead_ms: None,
                 _ears: ears,
             },
         );
@@ -218,6 +220,56 @@ impl<O: Outside> Host<O> {
             a.told_delay_ms = Some(ms);
             self.wire.reply(REPLY_AUDIO_DELAY, *id, &ms.to_le_bytes());
         }
+    }
+
+    pub fn pump_audio_info(&self) {
+        let mut streams = self.audio.borrow_mut();
+        let heard = streams
+            .iter_mut()
+            .filter(|(_, a)| a.active.load(Ordering::Relaxed))
+            .max_by_key(|(_, a)| a.activated);
+        let info = heard.and_then(|(id, a)| {
+            let speaker = a.speaker.get();
+            let now = f64::from(speaker.ahead_ms()?);
+            let smoothed = a
+                .smoothed_ahead_ms
+                .map_or(now, |s| s + DELAY_WEIGHT * (now - s));
+            a.smoothed_ahead_ms = Some(smoothed);
+            let (rate, channels) = speaker
+                .decoded()
+                .unwrap_or((a.cfg.clock_rate, a.cfg.channels));
+            let info = audio::AudioInfo {
+                codec: a.cfg.codec,
+                realtime: a.cfg.realtime,
+                rate,
+                channels,
+                ahead_ms: smoothed.round() as u32,
+            };
+            Some((*id, info))
+        });
+        let mut told = self.told_info.borrow_mut();
+        let same = match (&*told, &info) {
+            (None, None) => true,
+            (Some((was_id, was)), Some((id, now))) => {
+                was_id == id
+                    && audio::AudioInfo {
+                        ahead_ms: was.ahead_ms,
+                        ..*now
+                    } == *was
+                    && was.ahead_ms.abs_diff(now.ahead_ms) < DELAY_STEP_MS
+            }
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        match &info {
+            Some((id, i)) => self
+                .wire
+                .reply(REPLY_AUDIO_INFO, *id, &audio::encode_audio_info(i)),
+            None => self.wire.reply(REPLY_AUDIO_INFO, 0, &[]),
+        }
+        *told = info;
     }
 
     pub fn pump_url_status(&self) {

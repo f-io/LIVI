@@ -12,6 +12,7 @@ pub enum AudioCodec {
     AacEld = 5,
     Alac = 6,
     Alac24 = 7,
+    Pcm24 = 8,
 }
 
 impl AudioCodec {
@@ -25,6 +26,7 @@ impl AudioCodec {
             5 => Self::AacEld,
             6 => Self::Alac,
             7 => Self::Alac24,
+            8 => Self::Pcm24,
             _ => return None,
         })
     }
@@ -37,7 +39,8 @@ pub struct AudioOpts {
     pub clock_rate: u32,
     pub channels: u8,
     pub latency_ms: u32,
-    pub realtime: bool,
+    /// Whether the stream is realtime, as its protocol states it. None when it states nothing.
+    pub realtime: Option<bool>,
     pub fed: bool,
     pub device: String,
 }
@@ -76,7 +79,11 @@ pub fn encode_audio_open(key: &[u8; 32], o: &AudioOpts) -> Vec<u8> {
     out.extend_from_slice(&o.clock_rate.to_le_bytes());
     out.push(o.channels);
     out.extend_from_slice(&o.latency_ms.to_le_bytes());
-    out.push(u8::from(o.realtime) | (u8::from(o.fed) << 1));
+    out.push(
+        u8::from(o.realtime == Some(true))
+            | (u8::from(o.fed) << 1)
+            | (u8::from(o.realtime.is_some()) << 2),
+    );
     out.extend_from_slice(key);
     out.extend_from_slice(o.device.as_bytes());
     out
@@ -91,11 +98,43 @@ pub fn parse_audio_open(rest: &[u8]) -> Option<(AudioOpts, [u8; 32])> {
         clock_rate: u32::from_le_bytes([fixed[2], fixed[3], fixed[4], fixed[5]]),
         channels: fixed[6],
         latency_ms: u32::from_le_bytes([fixed[7], fixed[8], fixed[9], fixed[10]]),
-        realtime: fixed[11] & 1 != 0,
+        realtime: (fixed[11] & 4 != 0).then_some(fixed[11] & 1 != 0),
         fed: fixed[11] & 2 != 0,
         device: String::from_utf8(device.to_vec()).ok()?,
     };
     Some((opts, *key))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudioInfo {
+    pub codec: AudioCodec,
+    pub realtime: Option<bool>,
+    pub rate: u32,
+    pub channels: u8,
+    pub ahead_ms: u32,
+}
+
+const UNKNOWN: u8 = 2;
+
+pub fn encode_audio_info(i: &AudioInfo) -> Vec<u8> {
+    let realtime = i.realtime.map_or(UNKNOWN, u8::from);
+    let mut out = vec![i.codec as u8, realtime, i.channels];
+    out.extend_from_slice(&i.rate.to_le_bytes());
+    out.extend_from_slice(&i.ahead_ms.to_le_bytes());
+    out
+}
+
+pub fn parse_audio_info(rest: &[u8]) -> Option<AudioInfo> {
+    let (fixed, _) = rest.split_first_chunk::<11>()?;
+    let le32 =
+        |at: usize| u32::from_le_bytes([fixed[at], fixed[at + 1], fixed[at + 2], fixed[at + 3]]);
+    Some(AudioInfo {
+        codec: AudioCodec::from_wire(fixed[0])?,
+        realtime: (fixed[1] != UNKNOWN).then_some(fixed[1] != 0),
+        channels: fixed[2],
+        rate: le32(3),
+        ahead_ms: le32(7),
+    })
 }
 
 pub fn encode_mic_open(key: &[u8; 32], o: &MicOpts) -> Vec<u8> {
@@ -159,7 +198,7 @@ mod tests {
             clock_rate: 44_100,
             channels: 2,
             latency_ms: 120,
-            realtime: true,
+            realtime: Some(true),
             fed: true,
             device: "hw:1".into(),
         };
@@ -167,6 +206,20 @@ mod tests {
         let wire = encode_audio_open(&key, &opts);
         assert_eq!(parse_audio_open(&wire), Some((opts, key)));
         assert_eq!(aac_raw_asc(&key), &[0x12, 0x10]);
+    }
+
+    #[test]
+    fn audio_info_round_trips() {
+        let info = AudioInfo {
+            codec: AudioCodec::Pcm,
+            realtime: Some(true),
+            rate: 32_000,
+            channels: 1,
+            ahead_ms: 48,
+        };
+        let wire = encode_audio_info(&info);
+        assert_eq!(parse_audio_info(&wire), Some(info));
+        assert_eq!(parse_audio_info(&wire[..10]), None);
     }
 
     #[test]
@@ -194,7 +247,7 @@ mod tests {
             clock_rate: 48_000,
             channels: 2,
             latency_ms: 0,
-            realtime: false,
+            realtime: Some(false),
             fed: false,
             device: String::new(),
         };

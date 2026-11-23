@@ -279,6 +279,12 @@ impl Projection {
                 self.activate(index);
             }
             None => {
+                if let Some((position, _)) = self.ap_session_of(&ids) {
+                    let index = self.sessions[position as usize - 1].index;
+                    println!("[core] picked {id}, session #{index}");
+                    self.activate(index);
+                    return;
+                }
                 let entry = self.devices.registry.by_id(id);
                 let protocol = entry.and_then(|e| e.view_protocol());
                 let mac = entry
@@ -299,6 +305,10 @@ impl Projection {
         let Some(gone) = self.devices.registry.forget(id) else {
             return;
         };
+        if let Some((position, _)) = self.ap_session_of(&gone.ids()) {
+            let link = self.sessions[position as usize - 1].link;
+            self.tell(link, Do::Close);
+        }
         if let Some(i) = self.by_identity(&gone.ids()) {
             let session = self.sessions[i].link;
             println!(
@@ -322,7 +332,9 @@ impl Projection {
     }
 
     pub(super) fn publish(&mut self) {
-        let mut list = devices::views(&self.devices.registry, &|ids| self.session_of(ids));
+        let mut list = devices::views(&self.devices.registry, &|ids| {
+            self.session_of(ids).or_else(|| self.ap_session_of(ids))
+        });
         list.extend(self.ap_views());
         list.sort_by_key(|v| v.session.unwrap_or(u32::MAX));
         let targets = self.targets();

@@ -24,6 +24,7 @@ use livi_cp::pairings::Pairings;
 use livi_media::output::{AudioCodec, AudioOpts, Output};
 use livi_media::planes::MainPlane;
 use livi_output_proto::PLANE_AIRPLAY;
+use livi_output_proto::audio::aac_raw_key;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, mpsc};
@@ -261,6 +262,10 @@ impl ApAudio {
         take(&self.stream)
     }
 
+    fn current(&self) -> Option<u32> {
+        *self.stream.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn duck(&self, level: f64, ramp_ms: u32) {
         *self.duck.lock().unwrap_or_else(|e| e.into_inner()) = level;
         if let Some(stream) = *self.stream.lock().unwrap_or_else(|e| e.into_inner()) {
@@ -271,6 +276,30 @@ impl ApAudio {
 
 fn take(slot: &Mutex<Option<u32>>) -> Option<u32> {
     slot.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
+fn audio_opts(
+    codec: AudioCodec,
+    format: AirplayFormat,
+    latency_ms: u32,
+    realtime: bool,
+) -> AudioOpts {
+    AudioOpts {
+        codec,
+        payload_type: 96,
+        clock_rate: format.rate,
+        channels: format.channels,
+        latency_ms,
+        realtime: Some(realtime),
+        fed: !realtime,
+        device: String::new(),
+    }
+}
+
+fn aac_lc_config(rate: u32, channels: u8) -> [u8; 2] {
+    let freq: u8 = if rate == 48_000 { 3 } else { 4 };
+    let config = if channels == 8 { 7 } else { channels };
+    [(2 << 3) | (freq >> 1), ((freq & 1) << 7) | (config << 3)]
 }
 
 impl AirplayMedia for GstAirplay {
@@ -298,23 +327,19 @@ impl AirplayMedia for GstAirplay {
         &self,
         key: [u8; 32],
         format: AirplayFormat,
+        latency_ms: u32,
     ) -> Pin<Box<dyn Future<Output = (u16, u16)> + Send + '_>> {
         Box::pin(async move {
             self.close_audio();
-            let opts = AudioOpts {
-                codec: match (format.codec, format.bits) {
-                    (AirplayCodec::AacEld, _) => AudioCodec::AacEld,
-                    (AirplayCodec::Alac, 24) => AudioCodec::Alac24,
-                    (AirplayCodec::Alac, _) => AudioCodec::Alac,
-                },
-                payload_type: 96,
-                clock_rate: format.rate,
-                channels: 2,
-                latency_ms: 100,
-                realtime: true,
-                fed: false,
-                device: String::new(),
+            let codec = match (format.codec, format.bits) {
+                (AirplayCodec::AacEld, _) => AudioCodec::AacEld,
+                (AirplayCodec::AacLc, _) => AudioCodec::AacLc,
+                (AirplayCodec::Alac, 24) => AudioCodec::Alac24,
+                (AirplayCodec::Alac, _) => AudioCodec::Alac,
+                (AirplayCodec::Pcm, 24) => AudioCodec::Pcm24,
+                (AirplayCodec::Pcm, _) => AudioCodec::Pcm,
             };
+            let opts = audio_opts(codec, format, latency_ms, true);
             let (stream, data, control) = self.gst.open_audio(&key, &opts).await;
             self.gst.set_audio_active(stream, true);
             self.audio.opened(stream);
@@ -325,6 +350,33 @@ impl AirplayMedia for GstAirplay {
     fn close_audio(&self) {
         if let Some(stream) = self.audio.take() {
             self.gst.close_audio(stream);
+        }
+    }
+
+    fn open_buffered(
+        &self,
+        format: AirplayFormat,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            self.close_audio();
+            let (codec, key) = match (format.codec, format.bits) {
+                (AirplayCodec::Alac, 24) => (AudioCodec::Alac24, [0; 32]),
+                (AirplayCodec::Alac, _) => (AudioCodec::Alac, [0; 32]),
+                _ => (
+                    AudioCodec::AacRaw,
+                    aac_raw_key(&aac_lc_config(format.rate, format.channels)),
+                ),
+            };
+            let opts = audio_opts(codec, format, 0, false);
+            let (stream, _, _) = self.gst.open_audio(&key, &opts).await;
+            self.gst.set_audio_active(stream, true);
+            self.audio.opened(stream);
+        })
+    }
+
+    fn push_buffered(&self, frame: &[u8]) {
+        if let Some(stream) = self.audio.current() {
+            self.gst.push_audio(stream, frame);
         }
     }
 

@@ -52,6 +52,13 @@ impl Projection {
                 peer,
                 remote,
             } => {
+                if let Some(controller) = peer.controller_id.as_deref() {
+                    self.devices.registry.note_airplay(
+                        controller,
+                        peer.name.as_deref(),
+                        peer.model.as_deref(),
+                    );
+                }
                 self.ap_peers.insert(
                     id,
                     ApPeer {
@@ -126,12 +133,36 @@ impl Projection {
             .map_or_else(|| own.clone(), |phone| phone.now_playing.clone())
     }
 
+    fn ap_ids(&self, id: u64) -> Option<Ids> {
+        let controller_id = self.ap_peers.get(&id)?.peer.controller_id.clone()?;
+        Some(Ids {
+            controller_id: Some(controller_id),
+            ..Default::default()
+        })
+    }
+
+    fn ap_known(&self, id: u64) -> bool {
+        self.ap_ids(id)
+            .is_some_and(|ids| self.devices.registry.by_ids(&ids).is_some())
+    }
+
+    pub(super) fn ap_session_of(&self, ids: &Ids) -> Option<(u32, bool)> {
+        let i = self.sessions.iter().position(|s| match s.link {
+            Link::Ap(id) => self.ap_ids(id).is_some_and(|a| a.overlaps(ids)),
+            _ => false,
+        })?;
+        Some((i as u32 + 1, self.sessions[i].active))
+    }
+
     pub(super) fn ap_views(&self) -> Vec<DeviceView> {
         self.sessions
             .iter()
             .enumerate()
             .filter_map(|(i, s)| {
                 let Link::Ap(id) = s.link else { return None };
+                if self.ap_known(id) {
+                    return None;
+                }
                 let peer = self.ap_peers.get(&id).map(|p| &p.peer);
                 Some(DeviceView {
                     id: format!("{DEVICE_PREFIX}{id}"),

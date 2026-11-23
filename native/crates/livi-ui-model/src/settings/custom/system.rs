@@ -79,6 +79,65 @@ pub fn link_speed(state: &Value, t: &Strings) -> Vec<Row> {
     ]
 }
 
+pub fn audio(state: &Value, t: &Strings) -> Vec<Row> {
+    let stream = &state["audio"];
+    let number = |key: &str, unit: &str| match stream[key].as_u64() {
+        Some(n) => format!("{n}{unit}"),
+        None => DASH.to_string(),
+    };
+    let rate = match stream["rate"].as_f64() {
+        Some(hz) => format!("{} kHz", hz / 1000.0),
+        None => DASH.to_string(),
+    };
+    let codec = stream["codec"].as_str();
+    let kind = match stream["buffered"].as_bool() {
+        Some(true) => t.t("settings.audioBuffered", "Buffered"),
+        Some(false) => t.t("settings.audioRealtime", "Realtime"),
+        None => DASH.to_string(),
+    };
+    let bits = if stream["bits"].as_u64() == Some(0) {
+        t.t("settings.audioBitDepthVariable", "Variable")
+    } else {
+        number("bits", " bit")
+    };
+    let (buffer_key, buffer_text) = if stream["buffered"].as_bool() == Some(false) {
+        ("settings.audioLatency", "Output Latency")
+    } else {
+        ("settings.audioBuffer", "Buffer")
+    };
+    let ahead = match stream["bufferMs"].as_u64() {
+        Some(ms) => format!("{ms} ms"),
+        None => DASH.to_string(),
+    };
+    let row = |key: &str, text: &str, icon: &'static str, value: String| Row {
+        mono: true,
+        ..info(t.t(key, text), Some(icon), value)
+    };
+    vec![
+        row(
+            "settings.audioCodec",
+            "Codec",
+            "audioCodec",
+            codec.unwrap_or(DASH).to_string(),
+        ),
+        row(
+            "settings.audioSampleRate",
+            "Sample Rate",
+            "audioSampleRate",
+            rate,
+        ),
+        row("settings.audioBitDepth", "Bit Depth", "audioBitDepth", bits),
+        row(
+            "settings.audioChannels",
+            "Channels",
+            "audioChannels",
+            number("channels", ""),
+        ),
+        row("settings.audioStream", "Stream", "audioStream", kind),
+        row(buffer_key, buffer_text, "audioBuffer", ahead),
+    ]
+}
+
 fn semver(v: &str) -> Option<[u64; 3]> {
     let mut it = v.trim().split('.').map(|p| p.parse::<u64>().ok());
     let out = [it.next()??, it.next()??, it.next()??];

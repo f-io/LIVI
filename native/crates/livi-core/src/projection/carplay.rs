@@ -119,7 +119,7 @@ impl Media for GstMedia {
             clock_rate: req.clock_rate,
             channels: req.channels,
             latency_ms: req.latency_ms,
-            realtime: req.realtime,
+            realtime: Some(req.realtime),
             fed: false,
             device: req.device,
         };
@@ -961,6 +961,7 @@ mod tests {
             },
             sessions: Default::default(),
             now_playing: Default::default(),
+            audio: None,
             video_playback: None,
             telemetry: Default::default(),
             navigation: Default::default(),

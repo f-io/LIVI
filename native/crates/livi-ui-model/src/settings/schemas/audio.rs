@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use crate::settings::node::{Label, Node, OptionSource, OptionValue, Shown, choice, number_choice};
+use crate::settings::node::{
+    CustomPage, Label, Node, OptionSource, OptionValue, Shown, choice, number_choice,
+};
 
 fn volume(key: &'static str, text: &'static str, icon: &'static str, path: &'static str) -> Node {
     Node::slider(Label::new(key, text), path)
@@ -94,6 +96,16 @@ pub fn schema() -> Node {
                 "disableAudioOutput",
             )
             .icon("audioOff"),
+            Node::route(
+                "info",
+                Label::new("settings.audioInfo", "Info"),
+                vec![Node::custom(
+                    Label::new("settings.audioInfo", "Info"),
+                    "carName",
+                    CustomPage::AudioInfo,
+                )],
+            )
+            .icon("audioInfo"),
         ],
     )
     .icon("audio")

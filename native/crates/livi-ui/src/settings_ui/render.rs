@@ -129,6 +129,7 @@ pub(super) fn row_data(r: &Row, focus_at: i32) -> RowData {
 pub(super) fn custom_name(page: CustomPage) -> &'static str {
     match page {
         CustomPage::About => "About",
+        CustomPage::AudioInfo => "Audio info",
         CustomPage::CarReadings => "Car readings",
         CustomPage::ColorCalibration => "Color calibration",
         CustomPage::ContrastGammaCalibration => "Contrast / Gamma",

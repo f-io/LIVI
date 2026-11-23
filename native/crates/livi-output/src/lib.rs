@@ -47,6 +47,8 @@ pub trait Speaker: Send + Sync + 'static {
     fn set_visualizer_enabled(&self, on: bool);
     fn take_visualizer(&self) -> Option<(Vec<u8>, u32)>;
     fn output_delay_ms(&self) -> Option<u32>;
+    fn ahead_ms(&self) -> Option<u32>;
+    fn decoded(&self) -> Option<(u32, u8)>;
 }
 
 pub struct AudioConfig {
@@ -55,7 +57,7 @@ pub struct AudioConfig {
     pub clock_rate: u32,
     pub channels: u8,
     pub latency_ms: u32,
-    pub realtime: bool,
+    pub realtime: Option<bool>,
     pub device: Option<String>,
     pub key: [u8; 32],
     pub codec_data: Vec<u8>,
@@ -262,6 +264,8 @@ struct AudioStream<S, E> {
     active: Arc<AtomicBool>,
     told_delay_ms: Option<u32>,
     smoothed_delay_ms: Option<f64>,
+    activated: u64,
+    smoothed_ahead_ms: Option<f64>,
     _ears: Option<E>,
 }
 
@@ -377,6 +381,8 @@ pub struct Host<O: Outside> {
     feed_wanted: FeedWanted,
     feed_routes: FeedRoutes,
     helper_feed: Option<O::FeedEars>,
+    activations: u64,
+    told_info: RefCell<Option<(u32, livi_output_proto::audio::AudioInfo)>>,
     visualizer_enabled: bool,
     spectrum: Spectrum,
     wire: Arc<dyn Wire>,
@@ -402,6 +408,8 @@ impl<O: Outside> Host<O> {
             feed_routes: Rc::new(RefCell::new(HashMap::new())),
             helper_feed: None,
             visualizer_enabled: false,
+            activations: 0,
+            told_info: RefCell::new(None),
             spectrum: Spectrum::new(),
             wire,
         }
@@ -508,9 +516,13 @@ impl<O: Outside> Host<O> {
                 }
             }
             OP_AUDIO_ACTIVE => {
-                if let Some(a) = self.audio.borrow().get(&id) {
-                    a.active
-                        .store(rest.first().is_some_and(|b| b & 1 != 0), Ordering::Relaxed);
+                let on = rest.first().is_some_and(|b| b & 1 != 0);
+                if let Some(a) = self.audio.borrow_mut().get_mut(&id) {
+                    if on && !a.active.swap(true, Ordering::Relaxed) {
+                        self.activations += 1;
+                        a.activated = self.activations;
+                    }
+                    a.active.store(on, Ordering::Relaxed);
                 }
             }
             OP_VISUALIZER => self.set_visualizer_enabled(rest.first().is_some_and(|b| b & 1 != 0)),

@@ -38,6 +38,7 @@ pub enum OutputEvent {
         stream: u32,
         ms: u32,
     },
+    AudioHeard(Option<livi_output_proto::audio::AudioInfo>),
     Spectrum {
         bands: Vec<f32>,
     },
@@ -412,6 +413,10 @@ impl Output {
                     stream: id,
                     ms: u32_at(0),
                 });
+            }
+            REPLY_AUDIO_INFO => {
+                let info = livi_output_proto::audio::parse_audio_info(rest);
+                let _ = self.inner.events.send(OutputEvent::AudioHeard(info));
             }
             REPLY_CAMERAS => {
                 let list = livi_output_proto::parse_cameras_body(rest);
@@ -881,7 +886,7 @@ mod tests {
             clock_rate: 48000,
             channels: 1,
             latency_ms: 1000,
-            realtime: true,
+            realtime: Some(true),
             fed: false,
             device: "sink".into(),
         };
@@ -892,7 +897,7 @@ mod tests {
         let req = fake.next().await;
         assert_eq!(
             &req.rest[..12],
-            &[1, 100, 0x80, 0xbb, 0, 0, 1, 0xe8, 3, 0, 0, 1]
+            &[1, 100, 0x80, 0xbb, 0, 0, 1, 0xe8, 3, 0, 0, 5]
         );
         assert_eq!(&req.rest[44..], b"sink");
         fake.reply(REPLY_AUDIO_PORTS, req.id, &[0x10, 0x27, 0x11, 0x27])

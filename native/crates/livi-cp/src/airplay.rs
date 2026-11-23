@@ -28,23 +28,40 @@ use crate::session_keys;
 use crate::timing_sync::TimingSync;
 use crate::{auth_setup, mfi4, net, tlv8};
 
+mod buffered;
+
 const TAG: &str = "[airplay]";
 const TLV_FLAGS: u8 = 0x13;
 const FLAG_TRANSIENT: u8 = 0x10;
 const STREAM_REALTIME_AUDIO: u64 = 96;
+const STREAM_BUFFERED_AUDIO: u64 = 103;
 const STREAM_SCREEN: u64 = 110;
+/// What a realtime stream gets when its sender names no latency.
+const REALTIME_LATENCY_MS: u32 = 100;
+const CT_PCM: u64 = 1;
 const CT_ALAC: u64 = 2;
+const CT_AAC_LC: u64 = 4;
+const PCM_44K: u64 = 1 << 11;
+const PCM_44K_24: u64 = 1 << 13;
+const PCM_48K: u64 = 1 << 15;
+const PCM_48K_24: u64 = 1 << 17;
 const ALAC_44K: u64 = 1 << 18;
 const ALAC_44K_24: u64 = 1 << 19;
 const ALAC_48K: u64 = 1 << 20;
 const ALAC_48K_24: u64 = 1 << 21;
+const AAC_LC_44K: u64 = 1 << 22;
+const AAC_LC_48K: u64 = 1 << 23;
 const AAC_ELD_44K: u64 = 1 << 24;
 const AAC_ELD_48K: u64 = 1 << 25;
+const AAC_LC_48K_5_1: u64 = 1 << 39;
+const AAC_LC_48K_7_1: u64 = 1 << 40;
 const DISPLAY_UUID: &str = "4c495649-4d49-5252-4f52-000000000001";
 const CONNECT_WITHIN: Duration = Duration::from_secs(60);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 const NO_SCREEN_AFTER: Duration = Duration::from_secs(1);
 const PLIST: &str = "application/x-apple-binary-plist";
+/// What SETUP tells the sender the buffered stream may hold, as other receivers do.
+const AUDIO_BUFFER_SIZE: u64 = 8 * 1024 * 1024;
 
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
@@ -66,7 +83,9 @@ pub enum AirplayMeta {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AirplayCodec {
     AacEld,
+    AacLc,
     Alac,
+    Pcm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,22 +93,52 @@ pub struct AirplayFormat {
     pub codec: AirplayCodec,
     pub rate: u32,
     pub bits: u8,
+    pub channels: u8,
 }
 
 impl AirplayFormat {
+    const fn new(codec: AirplayCodec, rate: u32, bits: u8, channels: u8) -> Self {
+        Self {
+            codec,
+            rate,
+            bits,
+            channels,
+        }
+    }
+
+    fn of_bit(bit: u64) -> Option<Self> {
+        use AirplayCodec::*;
+        Some(match bit {
+            PCM_44K => Self::new(Pcm, 44_100, 16, 2),
+            PCM_44K_24 => Self::new(Pcm, 44_100, 24, 2),
+            PCM_48K => Self::new(Pcm, 48_000, 16, 2),
+            PCM_48K_24 => Self::new(Pcm, 48_000, 24, 2),
+            ALAC_44K => Self::new(Alac, 44_100, 16, 2),
+            ALAC_44K_24 => Self::new(Alac, 44_100, 24, 2),
+            ALAC_48K => Self::new(Alac, 48_000, 16, 2),
+            ALAC_48K_24 => Self::new(Alac, 48_000, 24, 2),
+            AAC_LC_44K => Self::new(AacLc, 44_100, 16, 2),
+            AAC_LC_48K => Self::new(AacLc, 48_000, 16, 2),
+            AAC_ELD_44K => Self::new(AacEld, 44_100, 16, 2),
+            AAC_ELD_48K => Self::new(AacEld, 48_000, 16, 2),
+            AAC_LC_48K_5_1 => Self::new(AacLc, 48_000, 16, 6),
+            AAC_LC_48K_7_1 => Self::new(AacLc, 48_000, 16, 8),
+            _ => return None,
+        })
+    }
+
     fn of(sd: &Value) -> Self {
-        let format = |codec, rate, bits| Self { codec, rate, bits };
-        match sd.get("audioFormat").and_then(Value::as_int) {
-            Some(ALAC_44K) => return format(AirplayCodec::Alac, 44_100, 16),
-            Some(ALAC_44K_24) => return format(AirplayCodec::Alac, 44_100, 24),
-            Some(ALAC_48K) => return format(AirplayCodec::Alac, 48_000, 16),
-            Some(ALAC_48K_24) => return format(AirplayCodec::Alac, 48_000, 24),
-            Some(AAC_ELD_44K) => return format(AirplayCodec::AacEld, 44_100, 16),
-            Some(AAC_ELD_48K) => return format(AirplayCodec::AacEld, 48_000, 16),
-            _ => {}
+        if let Some(format) = sd
+            .get("audioFormat")
+            .and_then(Value::as_int)
+            .and_then(Self::of_bit)
+        {
+            return format;
         }
         let codec = match sd.get("ct").and_then(Value::as_int) {
+            Some(CT_PCM) => AirplayCodec::Pcm,
             Some(CT_ALAC) => AirplayCodec::Alac,
+            Some(CT_AAC_LC) => AirplayCodec::AacLc,
             _ => AirplayCodec::AacEld,
         };
         let rate = sd
@@ -97,14 +146,23 @@ impl AirplayFormat {
             .and_then(Value::as_int)
             .and_then(|r| u32::try_from(r).ok())
             .unwrap_or(44_100);
-        format(codec, rate, 16)
+        Self::new(codec, rate, 16, 2)
     }
 }
 
 fn audio_formats(rate: u32) -> u64 {
-    let base = ALAC_44K | ALAC_44K_24 | AAC_ELD_44K;
+    let base = PCM_44K | PCM_44K_24 | ALAC_44K | ALAC_44K_24 | AAC_ELD_44K;
     if rate == 48_000 {
-        base | ALAC_48K | ALAC_48K_24 | AAC_ELD_48K
+        base | PCM_48K | PCM_48K_24 | ALAC_48K | ALAC_48K_24 | AAC_ELD_48K
+    } else {
+        base
+    }
+}
+
+fn buffered_formats(rate: u32) -> u64 {
+    let base = ALAC_44K | AAC_LC_44K;
+    if rate == 48_000 {
+        base | ALAC_48K_24 | AAC_LC_48K | AAC_LC_48K_5_1 | AAC_LC_48K_7_1
     } else {
         base
     }
@@ -114,6 +172,7 @@ fn audio_formats(rate: u32) -> u64 {
 pub struct AirplaySender {
     pub name: Option<String>,
     pub model: Option<String>,
+    pub controller_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,8 +219,12 @@ pub trait AirplayMedia: Send + Sync {
         &self,
         key: [u8; 32],
         format: AirplayFormat,
+        latency_ms: u32,
     ) -> Pin<Box<dyn Future<Output = (u16, u16)> + Send + '_>>;
     fn close_audio(&self);
+    fn open_buffered(&self, format: AirplayFormat)
+    -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+    fn push_buffered(&self, frame: &[u8]);
     fn started(&self, id: u64, close: Arc<Notify>, peer: AirplaySender, remote: AirplayRemote);
     fn ended(&self, id: u64);
     fn metadata(&self, id: u64, meta: AirplayMeta);
@@ -230,6 +293,7 @@ struct Conn {
     timing: Option<TimingSync>,
     transient: bool,
     audio: bool,
+    buffered: Option<buffered::Buffered>,
     id: u64,
     close: Arc<Notify>,
     started: bool,
@@ -259,6 +323,7 @@ async fn connection(stream: TcpStream, peer: SocketAddr, ctx: Arc<AirplayCtx>) {
         timing: None,
         transient: false,
         audio: false,
+        buffered: None,
         id: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
         close: Arc::new(Notify::new()),
         started: false,
@@ -378,7 +443,7 @@ impl Conn {
         self.ctx.media.metadata(self.id, meta);
     }
 
-    fn tick(&self) {
+    fn tick(&mut self) {
         if let Some(clock) = self.clock.filter(|c| c.running) {
             self.ctx.media.metadata(
                 self.id,
@@ -402,6 +467,9 @@ impl Conn {
             let body = self
                 .pair_verify
                 .handle(&req.body, &self.ctx.identity, &self.ctx.pairings);
+            if let Some(id) = self.pair_verify.offered_id() {
+                self.sender.controller_id = Some(id.to_string());
+            }
             return pairing(body);
         }
         if path.ends_with("/auth-setup") {
@@ -456,17 +524,49 @@ impl Conn {
                 self.tell(meta);
             }
         }
+        if req.method == "SETRATEANCHORTIME"
+            && let Some(buffered) = &self.buffered
+            && let Ok(body) = bplist::decode(&req.body)
+        {
+            let rate = match body.get("rate") {
+                Some(Value::Real(r)) => *r != 0.0,
+                Some(v) => v.as_int().is_some_and(|r| r & 1 != 0),
+                None => false,
+            };
+            let rtp = body
+                .get("rtpTime")
+                .and_then(Value::as_int)
+                .map(|t| t as u32);
+            println!("{TAG} anchor rate {rate} at rtp {rtp:?}");
+            self.ctx.media.close_audio();
+            buffered.rate(rtp.filter(|_| rate));
+            self.tell(AirplayMeta::Playing(rate));
+        }
+        if req.method == "FLUSHBUFFERED"
+            && let Some(buffered) = &self.buffered
+            && let Ok(body) = bplist::decode(&req.body)
+        {
+            let seq = |key: &str| body.get(key).and_then(Value::as_int).map(|s| s as u32);
+            if let Some(until) = seq("flushUntilSeq") {
+                println!("{TAG} flush {:?}..={until}", seq("flushFromSeq"));
+                self.ctx.media.close_audio();
+                buffered.flush(seq("flushFromSeq"), until);
+            }
+        }
         if req.method == "TEARDOWN"
             && self.audio
             && bplist::decode(&req.body).ok().is_some_and(|b| {
                 b.get("streams").and_then(Value::as_array).is_some_and(|s| {
                     s.iter().any(|sd| {
-                        sd.get("type").and_then(Value::as_int) == Some(STREAM_REALTIME_AUDIO)
+                        sd.get("type").and_then(Value::as_int).is_some_and(|t| {
+                            t == STREAM_REALTIME_AUDIO || t == STREAM_BUFFERED_AUDIO
+                        })
                     })
                 })
             })
         {
             self.audio = false;
+            self.buffered = None;
             self.ctx.media.close_audio();
             self.tell(AirplayMeta::Playing(false));
         }
@@ -567,6 +667,10 @@ impl Conn {
                 "supportedFormats",
                 dict([
                     ("audioStream", Value::Int(audio_formats(ctx.sample_rate))),
+                    (
+                        "bufferStream",
+                        Value::Int(buffered_formats(ctx.sample_rate)),
+                    ),
                     ("screenStream", Value::Int(audio_formats(ctx.sample_rate))),
                 ]),
             ),
@@ -595,6 +699,17 @@ impl Conn {
         let Ok(body) = bplist::decode(&req.body) else {
             return status(400);
         };
+        let kinds: Vec<u64> = body
+            .get("streams")
+            .and_then(Value::as_array)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|sd| sd.get("type").and_then(Value::as_int))
+            .collect();
+        println!(
+            "{TAG} SETUP timing {:?}, streams {kinds:?}",
+            body.get("timingProtocol").and_then(Value::as_str)
+        );
         if body
             .get("isScreenMirroringSession")
             .and_then(Value::as_bool)
@@ -613,7 +728,7 @@ impl Conn {
             let mut out = Vec::new();
             for sd in streams {
                 let kind = sd.get("type").and_then(Value::as_int).unwrap_or(0);
-                if kind != STREAM_REALTIME_AUDIO && kind != STREAM_SCREEN {
+                if ![STREAM_REALTIME_AUDIO, STREAM_BUFFERED_AUDIO, STREAM_SCREEN].contains(&kind) {
                     println!("{TAG} stream type {kind} is not supported");
                     continue;
                 }
@@ -636,8 +751,15 @@ impl Conn {
                 }
                 let format = AirplayFormat::of(sd);
                 self.rate = format.rate;
+                let latency_ms = sd
+                    .get("latencyMin")
+                    .and_then(Value::as_int)
+                    .filter(|frames| *frames > 0)
+                    .map_or(REALTIME_LATENCY_MS, |frames| {
+                        (frames * 1000 / u64::from(format.rate.max(1))) as u32
+                    });
                 println!(
-                    "{TAG} audio {:?} at {} Hz/{} bit (format {:?}, ct {:?}, spf {:?})",
+                    "{TAG} audio {:?} at {} Hz/{} bit, latency {latency_ms} ms (format {:?}, ct {:?}, spf {:?})",
                     format.codec,
                     format.rate,
                     format.bits,
@@ -646,8 +768,27 @@ impl Conn {
                     sd.get("spf").and_then(Value::as_int)
                 );
                 self.audio = true;
+                if kind == STREAM_BUFFERED_AUDIO {
+                    let opened = buffered::Buffered::listen(key, format, self.ctx.media.clone());
+                    let port = match opened {
+                        Ok((buffered, port)) => {
+                            self.buffered = Some(buffered);
+                            port
+                        }
+                        Err(e) => {
+                            println!("{TAG} buffered audio: {e}");
+                            continue;
+                        }
+                    };
+                    out.push(dict([
+                        ("type", Value::Int(kind)),
+                        ("dataPort", Value::Int(u64::from(port))),
+                        ("audioBufferSize", Value::Int(AUDIO_BUFFER_SIZE)),
+                    ]));
+                    continue;
+                }
                 self.tell(AirplayMeta::Playing(true));
-                let (data, control) = self.ctx.media.open_audio(key, format).await;
+                let (data, control) = self.ctx.media.open_audio(key, format, latency_ms).await;
                 out.push(dict([
                     ("type", Value::Int(kind)),
                     ("dataPort", Value::Int(u64::from(data))),
@@ -1278,6 +1419,19 @@ mod tests {
             (AirplayCodec::AacEld, 44_100, 16)
         );
         assert_eq!(of(vec![("ct", 2)]), (AirplayCodec::Alac, 44_100, 16));
-        assert_eq!(audio_formats(44_100), (1 << 18) | (1 << 19) | (1 << 24));
+        assert_eq!(of(vec![("ct", 1)]), (AirplayCodec::Pcm, 44_100, 16));
+        assert_eq!(
+            of(vec![("audioFormat", PCM_48K_24), ("ct", 1)]),
+            (AirplayCodec::Pcm, 48_000, 24)
+        );
+        assert_eq!(
+            audio_formats(44_100),
+            (1 << 11) | (1 << 13) | (1 << 18) | (1 << 19) | (1 << 24)
+        );
+        assert_eq!(
+            buffered_formats(48_000),
+            (1 << 18) | (1 << 21) | (1 << 22) | (1 << 23) | (1 << 39) | (1 << 40)
+        );
+        assert_eq!(buffered_formats(44_100), (1 << 18) | (1 << 22));
     }
 }

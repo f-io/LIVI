@@ -49,6 +49,14 @@ impl Speaker for AudioPipelinePlayer {
     fn output_delay_ms(&self) -> Option<u32> {
         AudioPipelinePlayer::output_delay(self).and_then(|d| u32::try_from(d.as_millis()).ok())
     }
+
+    fn ahead_ms(&self) -> Option<u32> {
+        AudioPipelinePlayer::ahead(self).and_then(|d| u32::try_from(d.as_millis()).ok())
+    }
+
+    fn decoded(&self) -> Option<(u32, u8)> {
+        AudioPipelinePlayer::decoded(self)
+    }
 }
 
 pub struct Gst;
@@ -130,7 +138,7 @@ impl Outside for Gst {
             clock_rate: cfg.clock_rate,
             channels: cfg.channels,
             latency_ms: cfg.latency_ms,
-            realtime: cfg.realtime,
+            realtime: cfg.realtime == Some(true),
             device: cfg.device.clone(),
             label: format!("{:?}", cfg.codec),
             codec_data: cfg.codec_data.clone(),

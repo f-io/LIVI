@@ -9,6 +9,16 @@ pub fn main() {
         return;
     }
 
+    #[cfg(target_os = "macos")]
+    let _awake = {
+        use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+        NSProcessInfo::processInfo().beginActivityWithOptions_reason(
+            NSActivityOptions::UserInitiatedAllowingIdleSystemSleep
+                | NSActivityOptions::LatencyCritical,
+            &NSString::from_str("plays projection audio and video"),
+        )
+    };
+
     crate::process::run(
         args.first().map_or("", String::as_str),
         args.get(1).map_or("", String::as_str),

@@ -17,6 +17,7 @@ impl Projection {
                     ..Default::default()
                 };
                 let index = self.upsert(Link::Cp(id), transport(wired), &ids);
+                self.note_controller(id);
                 self.auto_activate(index);
                 if let Some(layout) = self.phone_layout() {
                     self.cp.stack(id, StackCmd::ClusterLayout(layout));
@@ -169,6 +170,14 @@ impl Projection {
         }
     }
 
+    fn note_controller(&mut self, id: SessionId) {
+        if let Some(device) = self.by_link(Link::Cp(id)).map(|s| s.device.clone())
+            && self.devices.registry.note_controller(&device)
+        {
+            self.publish();
+        }
+    }
+
     pub(super) fn presence(&mut self, id: SessionId, wired: bool, presence: Presence) {
         match presence {
             Presence::Device {
@@ -209,6 +218,7 @@ impl Projection {
                     self.changed();
                 }
                 let index = self.upsert(Link::Cp(id), transport(wired), &ids);
+                self.note_controller(id);
                 self.auto_activate(index);
             }
             Presence::Active { .. } => {
