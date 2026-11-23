@@ -11,7 +11,7 @@ Fedora packages:
 ```bash
 sudo dnf install -y gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu make flex bison bc \
   openssl-devel elfutils-libelf-devel dtc lz4-libs squashfs-tools \
-  perl-IPC-Cmd perl-Time-Piece
+  meson ninja-build cmake perl-IPC-Cmd perl-Time-Piece
 ```
 
 The Perl modules are for the OpenSSL that `livi-cp` builds from source on musl.

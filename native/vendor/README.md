@@ -1,6 +1,6 @@
 # Vendored crates
 
-## femtovg 0.27.0
+## femtovg 0.28.0
 
 - Text up to 384 px goes through the glyph atlas, upstream switches to path filling above 92 px.
 - Path filling leaves a step on flat top edges of large glyphs (P, 7 in the dashboard).
