@@ -51,6 +51,11 @@ static PORT: Mutex<Option<Chip>> = Mutex::new(None);
 /// The bool: its iAP2 channel was asked for again since.
 static HELD: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
+fn debug() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("DEBUG").is_ok_and(|v| v == "1"))
+}
+
 fn address(hex: &str) -> Option<[u8; 6]> {
     livi_base::hex::decode(hex.get(hex.len().checked_sub(12)?..)?)?
         .try_into()
@@ -88,7 +93,7 @@ struct Session {
 impl Session {
     fn line(&mut self, line: &str) {
         let (code, rest) = line.split_at(line.len().min(2));
-        if code != "SI" {
+        if code != "SI" && debug() {
             println!("[ab5301] {line}");
         }
         match code {
@@ -186,7 +191,6 @@ impl Session {
     fn data(&mut self, bytes: &[u8]) {
         self.unanswered = None;
         if self.channel.is_none() {
-            println!("[ab5301] data before a channel: {bytes:02x?}");
             self.open(self.profiles.carplay.clone());
         }
         if self
@@ -274,7 +278,7 @@ fn serve(
                     .filter(|l| !l.is_empty())
                     .for_each(|l| session.line(l)),
                 (CHIP, DATA) => session.data(data),
-                _ => println!("[ab5301] {cmd:02x} {data:02x?}"),
+                _ => {}
             }
         }
         session.tick();
@@ -372,7 +376,9 @@ impl Paging for Pager {
         if !chip.at("CC") {
             return None;
         }
-        println!("[ab5301] paging {mac}");
+        if debug() {
+            println!("[ab5301] paging {mac}");
+        }
         let until = tokio::time::Instant::now() + PAGE_WAIT;
         while tokio::time::Instant::now() < until {
             tokio::time::sleep(Duration::from_millis(500)).await;

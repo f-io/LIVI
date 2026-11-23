@@ -143,7 +143,9 @@ impl Link {
             (CHIP, KEY, [_, PRESS, ..]) => self.press(PRESS, Key::Display),
             // The chip silences the amplifier itself for about 2 s on a long press.
             (CHIP, KEY, [_, LONG_PRESS, ..]) => self.press(LONG_PRESS, Key::Mute),
-            (CHIP, KEY, [_, key, ..]) => println!("[ab5301] key {key:02x}"),
+            (CHIP, KEY, [_, key, ..]) if livi_aa_stack::log::debug() => {
+                println!("[ab5301] key {key:02x}")
+            }
             (CHIP, ASKS_SOURCE, _) => self.send(CHIP, ASKS_SOURCE, &[0, 0]),
             (CHIP, cmd, _) if CLASSIC_BT.contains(&cmd) => {
                 let mut helper = self.helper.lock().unwrap_or_else(|e| e.into_inner());
