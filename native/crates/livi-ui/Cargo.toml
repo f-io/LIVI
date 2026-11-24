@@ -38,7 +38,7 @@ slint = { workspace = true, features = [
 
 [target.'cfg(livi_os)'.dependencies]
 slint = { workspace = true, features = ["backend-linuxkms"] }
-i-slint-backend-linuxkms = { version = "=1.19.0", default-features = false }
+i-slint-backend-linuxkms = { version = "=1.19.1", default-features = false }
 livi-video-view.workspace = true
 # A static binary links no fontconfig, LIVI brings its own fonts.
 fontique = { version = "0.12.0", features = ["fontconfig-dlopen"] }
@@ -48,7 +48,7 @@ slint = { workspace = true, features = ["backend-winit", "renderer-skia", "unsta
 
 [target.'cfg(target_os = "android")'.dependencies]
 slint = { workspace = true, features = ["backend-android-activity-06"] }
-i-slint-backend-android-activity = { version = "=1.19.0", default-features = false, features = ["aa-06"] }
+i-slint-backend-android-activity = { version = "=1.19.1", default-features = false, features = ["aa-06"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 livi-video-view.workspace = true

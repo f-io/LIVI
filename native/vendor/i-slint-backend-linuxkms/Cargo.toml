@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.95"
 name = "i-slint-backend-linuxkms"
-version = "1.19.0"
+version = "1.19.1"
 authors = ["Slint Developers <info@slint.dev>"]
 build = "build.rs"
 autolib = false
@@ -138,12 +138,12 @@ name = "i_slint_backend_linuxkms"
 path = "lib.rs"
 
 [dependencies.i-slint-common]
-version = "=1.19.0"
+version = "=1.19.1"
 features = ["default"]
 default-features = false
 
 [dependencies.i-slint-core]
-version = "=1.19.0"
+version = "=1.19.1"
 features = [
     "default",
     "image-decoders",
@@ -152,24 +152,24 @@ features = [
 default-features = false
 
 [dependencies.i-slint-renderer-anyrender]
-version = "=1.19.0"
+version = "=1.19.1"
 optional = true
 default-features = false
 
 [dependencies.i-slint-renderer-femtovg]
-version = "=1.19.0"
+version = "=1.19.1"
 features = ["default"]
 optional = true
 default-features = false
 
 [dependencies.i-slint-renderer-skia]
-version = "=1.19.0"
+version = "=1.19.1"
 features = ["kms"]
 optional = true
 default-features = false
 
 [dependencies.i-slint-renderer-software]
-version = "=1.19.0"
+version = "=1.19.1"
 optional = true
 default-features = false
 

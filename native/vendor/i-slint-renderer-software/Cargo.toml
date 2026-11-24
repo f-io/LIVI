@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.95"
 name = "i-slint-renderer-software"
-version = "1.19.0"
+version = "1.19.1"
 authors = ["Slint Developers <info@slint.dev>"]
 build = false
 autolib = false
@@ -116,11 +116,11 @@ version = "0.22.1"
 default-features = false
 
 [dependencies.i-slint-common]
-version = "=1.19.0"
+version = "=1.19.1"
 default-features = false
 
 [dependencies.i-slint-core]
-version = "=1.19.0"
+version = "=1.19.1"
 default-features = false
 
 [dependencies.lyon_path]

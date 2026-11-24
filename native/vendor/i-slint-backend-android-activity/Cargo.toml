@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.95"
 name = "i-slint-backend-android-activity"
-version = "1.19.0"
+version = "1.19.1"
 authors = ["Slint Developers <info@slint.dev>"]
 build = "build.rs"
 autolib = false
@@ -89,11 +89,11 @@ optional = true
 package = "android-activity"
 
 [target.'cfg(target_os = "android")'.dependencies.i-slint-common]
-version = "=1.19.0"
+version = "=1.19.1"
 default-features = false
 
 [target.'cfg(target_os = "android")'.dependencies.i-slint-core]
-version = "=1.19.0"
+version = "=1.19.1"
 features = [
     "std",
     "image-decoders",
@@ -102,7 +102,7 @@ features = [
 default-features = false
 
 [target.'cfg(target_os = "android")'.dependencies.i-slint-renderer-skia]
-version = "=1.19.0"
+version = "=1.19.1"
 default-features = false
 
 [target.'cfg(target_os = "android")'.dependencies.jni]
