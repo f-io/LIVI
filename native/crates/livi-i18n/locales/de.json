@@ -299,6 +299,7 @@
     "audioBuffered": "Gepuffert",
     "audioRealtime": "Echtzeit",
     "audioBuffer": "Puffer",
+    "audioTarget": "Ziel",
     "audioLatency": "Ausgabelatenz",
     "gpsNoHwInfo": "Noch keine Hardwaredaten",
     "gpsAntennaStatus": "Antenne",

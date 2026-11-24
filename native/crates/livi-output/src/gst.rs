@@ -139,6 +139,7 @@ impl Outside for Gst {
             channels: cfg.channels,
             latency_ms: cfg.latency_ms,
             realtime: cfg.realtime == Some(true),
+            paced: cfg.paced,
             device: cfg.device.clone(),
             label: format!("{:?}", cfg.codec),
             codec_data: cfg.codec_data.clone(),

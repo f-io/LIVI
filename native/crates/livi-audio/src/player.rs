@@ -25,6 +25,7 @@ pub struct Config {
     pub channels: u8,
     pub latency_ms: u32,
     pub realtime: bool,
+    pub paced: bool,
     pub device: Option<String>,
     pub label: String,
     pub codec_data: Vec<u8>,
@@ -138,7 +139,7 @@ fn nudge(buffer: gst::Buffer, step: i32) -> gst::Buffer {
 
 fn sink_chain(cfg: &Config) -> String {
     let (element, _device_property) = audio_sink();
-    if cfg.realtime {
+    if cfg.realtime || cfg.paced {
         format!("{element} name={SINK_NAME} sync=false buffer-time=40000 latency-time=10000")
     } else {
         format!("{element} name={SINK_NAME} sync=false buffer-time=300000 latency-time=30000")
@@ -157,12 +158,14 @@ pub fn pipeline_desc(cfg: &Config) -> String {
         }
         None => String::new(),
     };
+
     format!(
         "appsrc name=src is-live=true format=time do-timestamp={stamp} ! \
-         {head}audioconvert name=decoded ! clocksync sync=true ! volume name=vol ! \
+         {head}audioconvert name=decoded ! clocksync sync={sync} ! volume name=vol ! \
          audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! \
          queue name=out ! {sink}",
         stamp = cfg.codec != Codec::AacRaw,
+        sync = !cfg.paced,
         sink = sink_chain(cfg),
     )
 }
@@ -170,6 +173,7 @@ pub fn pipeline_desc(cfg: &Config) -> String {
 struct UnitClock {
     next: Option<gst::ClockTime>,
     frame: gst::ClockTime,
+    headroom: gst::ClockTime,
 }
 
 const UNIT_HEADROOM: gst::ClockTime = gst::ClockTime::from_mseconds(250);
@@ -203,7 +207,7 @@ pub struct Player {
     codec: Codec,
     payload_type: u8,
     units: Mutex<UnitClock>,
-    newest: AtomicU64,
+    newest: Arc<AtomicU64>,
     played: Arc<AtomicU64>,
 }
 
@@ -299,24 +303,41 @@ impl Player {
             });
         }
 
-        if cfg.realtime
+        let newest = Arc::new(AtomicU64::new(0));
+        if (cfg.realtime || cfg.paced)
             && let Some(queue) = pipeline.by_name("out")
             && let Some(pad) = queue.static_pad("src")
         {
             let target_ms = f64::from(cfg.latency_ms);
-            let start_ms = target_ms + SERVO_START_EXTRA_MS;
-            queue.set_property("min-threshold-time", (start_ms * 1e6) as u64);
+            if cfg.realtime {
+                let start_ms = target_ms + SERVO_START_EXTRA_MS;
+                queue.set_property("min-threshold-time", (start_ms * 1e6) as u64);
+            }
             let primed = AtomicBool::new(false);
             let held = queue.downgrade();
             let weak = pipeline.downgrade();
             let servo = Mutex::new(Servo::new(target_ms));
+            let paced = cfg.paced.then(|| newest.clone());
             pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
                 if !primed.swap(true, Ordering::Relaxed)
                     && let Some(queue) = held.upgrade()
                 {
                     queue.set_property("min-threshold-time", 0u64);
                 }
-                let Some(delay) = weak.upgrade().and_then(|p| output_delay(&p)) else {
+                let Some(pipeline) = weak.upgrade() else {
+                    return gst::PadProbeReturn::Ok;
+                };
+                let delay = match &paced {
+                    Some(newest) => {
+                        let pts = info
+                            .buffer()
+                            .and_then(|b| b.pts())
+                            .map_or(UNSET, |p| p.nseconds());
+                        ahead(&pipeline, newest.load(Ordering::Relaxed), pts)
+                    }
+                    None => output_delay(&pipeline),
+                };
+                let Some(delay) = delay else {
                     return gst::PadProbeReturn::Ok;
                 };
                 let frames = match &info.data {
@@ -375,8 +396,13 @@ impl Player {
             units: Mutex::new(UnitClock {
                 next: None,
                 frame: unit_duration(&cfg.codec_data),
+                headroom: if cfg.paced {
+                    gst::ClockTime::ZERO
+                } else {
+                    UNIT_HEADROOM
+                },
             }),
-            newest: AtomicU64::new(0),
+            newest,
             played,
         })
     }
@@ -434,7 +460,7 @@ impl Player {
                 .unwrap_or(gst::ClockTime::ZERO);
             let pts = match clock.next {
                 Some(next) if next >= now => next,
-                _ => now + UNIT_HEADROOM,
+                _ => now + clock.headroom,
             };
             b.set_pts(pts);
             b.set_duration(clock.frame);
@@ -476,19 +502,11 @@ impl Player {
     }
 
     pub fn ahead(&self) -> Option<std::time::Duration> {
-        let newest = self.newest.load(Ordering::Relaxed);
-        let played = self.played.load(Ordering::Relaxed);
-        if newest == 0 || played == UNSET {
-            return None;
-        }
-        let ring = self
-            .pipeline
-            .by_name(SINK_NAME)
-            .and_then(|s| ring_ns(&s))
-            .unwrap_or(0);
-        Some(std::time::Duration::from_nanos(
-            newest.saturating_sub(played) + ring,
-        ))
+        ahead(
+            &self.pipeline,
+            self.newest.load(Ordering::Relaxed),
+            self.played.load(Ordering::Relaxed),
+        )
     }
 
     pub fn decoded(&self) -> Option<(u32, u8)> {
@@ -502,12 +520,26 @@ impl Player {
     }
 }
 
+fn ahead(pipeline: &gst::Pipeline, newest: u64, played: u64) -> Option<std::time::Duration> {
+    if newest == 0 || played == UNSET {
+        return None;
+    }
+    let ring = pipeline
+        .by_name(SINK_NAME)
+        .and_then(|s| ring_ns(&s))
+        .unwrap_or(0);
+    Some(std::time::Duration::from_nanos(
+        newest.saturating_sub(played) + ring,
+    ))
+}
+
 fn output_delay(pipeline: &gst::Pipeline) -> Option<std::time::Duration> {
     let sink = pipeline.by_name(SINK_NAME)?;
     let queued = pipeline
         .by_name("out")
-        .map_or(0, |q| q.property::<u64>("current-level-time"));
-    Some(std::time::Duration::from_nanos(queued + ring_ns(&sink)?))
+        .map_or(0, |q| u64::from(q.property::<u32>("current-level-bytes")));
+    let queued_ns = queued * 1_000_000_000 / (OUT_RATE * FRAME_BYTES as u64);
+    Some(std::time::Duration::from_nanos(queued_ns + ring_ns(&sink)?))
 }
 
 fn ring_ns(sink: &gst::Element) -> Option<u64> {
@@ -559,6 +591,7 @@ mod tests {
             channels: 2,
             latency_ms: 1000,
             realtime,
+            paced: false,
             device: None,
             label: "music".into(),
             codec_data: Vec::new(),
@@ -646,6 +679,17 @@ mod tests {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn a_paced_stream_is_not_held_back_again() {
+        let mut paced = cfg(Codec::AacRaw, false);
+        paced.paced = true;
+        let desc = pipeline_desc(&paced);
+        assert!(desc.contains("clocksync sync=false"), "{desc}");
+        assert!(desc.contains("buffer-time=40000"), "{desc}");
+        let music = pipeline_desc(&cfg(Codec::AacRaw, false));
+        assert!(music.contains("clocksync sync=true"), "{music}");
+    }
+
     #[test]
     fn a_realtime_sink_gets_a_short_ring_and_no_audio_is_thrown_away() {
         let music = pipeline_desc(&cfg(Codec::AacLc, false));

@@ -45,6 +45,7 @@ fn stream_of(info: AudioInfo) -> AudioStream {
         channels: info.channels,
         buffered: info.realtime.map(|r| !r),
         buffer_ms: info.ahead_ms,
+        target_ms: info.target_ms,
     }
 }
 
@@ -60,6 +61,7 @@ mod tests {
             rate: 48_000,
             channels: 2,
             ahead_ms: 190,
+            target_ms: None,
         };
         assert_eq!(stream_of(info(AudioCodec::AacRaw)).bits, 0);
         assert_eq!(stream_of(info(AudioCodec::AacRaw)).codec, "AAC-LC");

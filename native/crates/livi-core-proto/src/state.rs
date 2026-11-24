@@ -417,6 +417,8 @@ pub struct AudioStream {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffered: Option<bool>,
     pub buffer_ms: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_ms: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]

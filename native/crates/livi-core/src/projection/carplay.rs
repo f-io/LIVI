@@ -121,6 +121,7 @@ impl Media for GstMedia {
             latency_ms: req.latency_ms,
             realtime: Some(req.realtime),
             fed: false,
+            paced: false,
             device: req.device,
         };
         async move {

@@ -106,9 +106,9 @@ impl Buffered {
         Ok((Self { control, task }, port))
     }
 
-    pub fn rate(&self, rtp: Option<u32>) {
+    pub fn rate(&self, rtp: Option<u32>, at: Option<Instant>) {
         self.control.send_modify(|c| {
-            c.anchor = rtp.map(|r| (r, Instant::now()));
+            c.anchor = rtp.map(|r| (r, at.unwrap_or_else(Instant::now)));
             c.halts += 1;
         });
     }
@@ -238,7 +238,9 @@ impl Player {
             );
         }
         self.format = Some(format);
-        self.media.open_buffered(format).await;
+        self.media
+            .open_buffered(format, LEAD.as_millis() as u32)
+            .await;
         for kept in &self.kept {
             if kept.format == format && kept.ts.wrapping_sub(anchor) as i32 >= 0 {
                 self.media.push_buffered(&kept.audio);

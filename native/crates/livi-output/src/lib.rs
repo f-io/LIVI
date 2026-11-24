@@ -58,6 +58,7 @@ pub struct AudioConfig {
     pub channels: u8,
     pub latency_ms: u32,
     pub realtime: Option<bool>,
+    pub paced: bool,
     pub device: Option<String>,
     pub key: [u8; 32],
     pub codec_data: Vec<u8>,

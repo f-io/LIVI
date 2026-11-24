@@ -299,6 +299,7 @@
     "audioBuffered": "Mis en tampon",
     "audioRealtime": "Temps réel",
     "audioBuffer": "Tampon",
+    "audioTarget": "Cible",
     "audioLatency": "Latence de sortie",
     "gpsNoHwInfo": "Pas encore de données matériel",
     "gpsAntennaStatus": "Antenne",

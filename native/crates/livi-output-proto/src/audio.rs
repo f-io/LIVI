@@ -39,9 +39,9 @@ pub struct AudioOpts {
     pub clock_rate: u32,
     pub channels: u8,
     pub latency_ms: u32,
-    /// Whether the stream is realtime, as its protocol states it. None when it states nothing.
     pub realtime: Option<bool>,
     pub fed: bool,
+    pub paced: bool,
     pub device: String,
 }
 
@@ -82,7 +82,8 @@ pub fn encode_audio_open(key: &[u8; 32], o: &AudioOpts) -> Vec<u8> {
     out.push(
         u8::from(o.realtime == Some(true))
             | (u8::from(o.fed) << 1)
-            | (u8::from(o.realtime.is_some()) << 2),
+            | (u8::from(o.realtime.is_some()) << 2)
+            | (u8::from(o.paced) << 3),
     );
     out.extend_from_slice(key);
     out.extend_from_slice(o.device.as_bytes());
@@ -100,6 +101,7 @@ pub fn parse_audio_open(rest: &[u8]) -> Option<(AudioOpts, [u8; 32])> {
         latency_ms: u32::from_le_bytes([fixed[7], fixed[8], fixed[9], fixed[10]]),
         realtime: (fixed[11] & 4 != 0).then_some(fixed[11] & 1 != 0),
         fed: fixed[11] & 2 != 0,
+        paced: fixed[11] & 8 != 0,
         device: String::from_utf8(device.to_vec()).ok()?,
     };
     Some((opts, *key))
@@ -112,6 +114,7 @@ pub struct AudioInfo {
     pub rate: u32,
     pub channels: u8,
     pub ahead_ms: u32,
+    pub target_ms: Option<u32>,
 }
 
 const UNKNOWN: u8 = 2;
@@ -121,11 +124,12 @@ pub fn encode_audio_info(i: &AudioInfo) -> Vec<u8> {
     let mut out = vec![i.codec as u8, realtime, i.channels];
     out.extend_from_slice(&i.rate.to_le_bytes());
     out.extend_from_slice(&i.ahead_ms.to_le_bytes());
+    out.extend_from_slice(&i.target_ms.unwrap_or(0).to_le_bytes());
     out
 }
 
 pub fn parse_audio_info(rest: &[u8]) -> Option<AudioInfo> {
-    let (fixed, _) = rest.split_first_chunk::<11>()?;
+    let (fixed, _) = rest.split_first_chunk::<15>()?;
     let le32 =
         |at: usize| u32::from_le_bytes([fixed[at], fixed[at + 1], fixed[at + 2], fixed[at + 3]]);
     Some(AudioInfo {
@@ -134,6 +138,7 @@ pub fn parse_audio_info(rest: &[u8]) -> Option<AudioInfo> {
         channels: fixed[2],
         rate: le32(3),
         ahead_ms: le32(7),
+        target_ms: Some(le32(11)).filter(|ms| *ms > 0),
     })
 }
 
@@ -200,6 +205,7 @@ mod tests {
             latency_ms: 120,
             realtime: Some(true),
             fed: true,
+            paced: true,
             device: "hw:1".into(),
         };
         let key = aac_raw_key(&[0x12, 0x10]);
@@ -216,10 +222,11 @@ mod tests {
             rate: 32_000,
             channels: 1,
             ahead_ms: 48,
+            target_ms: Some(40),
         };
         let wire = encode_audio_info(&info);
         assert_eq!(parse_audio_info(&wire), Some(info));
-        assert_eq!(parse_audio_info(&wire[..10]), None);
+        assert_eq!(parse_audio_info(&wire[..14]), None);
     }
 
     #[test]
@@ -249,6 +256,7 @@ mod tests {
             latency_ms: 0,
             realtime: Some(false),
             fed: false,
+            paced: false,
             device: String::new(),
         };
         let mut wire = encode_audio_open(&[0; 32], &opts);

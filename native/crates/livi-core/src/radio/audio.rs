@@ -44,6 +44,7 @@ impl Audio {
             latency_ms: 0,
             realtime: None,
             fed: true,
+            paced: false,
             device,
         };
         let (id, _, _) = gst.open_audio(&f.key, &opts).await;

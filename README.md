@@ -22,7 +22,7 @@ It runs on Linux desktops and embedded boards as well as on macOS and Android. A
 
 - **Apple CarPlay** (wired & wireless) on Linux, Mac and Android
 - **Android Auto** (wired & wireless) on Linux, Mac and Android - wireless on Mac requires a LIVI Link
-- **AirPlay** audio and Screen Mirroring on Linux, Mac and Android
+- **AirPlay 2** audio streaming and Screen Mirroring on Linux, Mac and Android
 
 ## Native Apple CarPlay Ultra
 
@@ -67,6 +67,12 @@ For a chip on the board, LIVI looks on every I²C bus. Configuration (`config.js
 | `carPlayMfiPowerGpio` | `21`    | GPIO that powers the coprocessor |
 
 Without one of these, native CarPlay is unavailable. All Android Auto paths work regardless.
+
+## AirPlay 2 Audio
+
+Buffered AirPlay 2 audio uses PTP to follow the sender's clock. LIVI binds the PTP ports (319/320) only while a stream is playing. If that fails, e.g. on Android without root, it falls back to the local clock.
+
+Realtime streams (Spotify, for example) don't use PTP. LIVI holds the latency the iPhone requests instead.
 
 ## Wireless
 

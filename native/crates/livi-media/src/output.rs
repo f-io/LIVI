@@ -888,6 +888,7 @@ mod tests {
             latency_ms: 1000,
             realtime: Some(true),
             fed: false,
+            paced: false,
             device: "sink".into(),
         };
         let open = tokio::spawn({

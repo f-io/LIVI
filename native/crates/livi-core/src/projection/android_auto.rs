@@ -437,6 +437,7 @@ impl AaMedia for GstAaMedia {
             latency_ms: 0,
             realtime: None,
             fed: true,
+            paced: false,
             device: self
                 .state
                 .borrow()

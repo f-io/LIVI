@@ -98,6 +98,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("audioChannels", "SpeakerOutlined"),
     ("audioStream", "ScheduleOutlined"),
     ("audioBuffer", "LayersOutlined"),
+    ("audioTarget", "GpsFixedOutlined"),
     ("dab", "RadioOutlined"),
     ("dabReceiver", "SettingsInputAntennaOutlined"),
     ("dabStations", "CellTowerOutlined"),

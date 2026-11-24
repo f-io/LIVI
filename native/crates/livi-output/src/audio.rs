@@ -19,6 +19,7 @@ impl<O: Outside> Host<O> {
             channels: open.channels,
             latency_ms: open.latency_ms,
             realtime: open.realtime,
+            paced: open.paced,
             device: Some(open.device).filter(|d| !d.is_empty()),
             key,
             codec_data: if open.codec == audio::AudioCodec::AacRaw {
@@ -244,6 +245,8 @@ impl<O: Outside> Host<O> {
                 rate,
                 channels,
                 ahead_ms: smoothed.round() as u32,
+                target_ms: (a.cfg.realtime == Some(true) || a.cfg.paced)
+                    .then_some(a.cfg.latency_ms),
             };
             Some((*id, info))
         });

@@ -299,6 +299,7 @@
     "audioBuffered": "Буферизований",
     "audioRealtime": "Реального часу",
     "audioBuffer": "Буфер",
+    "audioTarget": "Ціль",
     "audioLatency": "Затримка виводу",
     "gpsNoHwInfo": "Ще немає даних",
     "gpsAntennaStatus": "Антена",

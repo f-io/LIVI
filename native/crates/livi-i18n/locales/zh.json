@@ -299,6 +299,7 @@
     "audioBuffered": "缓冲",
     "audioRealtime": "实时",
     "audioBuffer": "缓冲",
+    "audioTarget": "目标",
     "audioLatency": "输出延迟",
     "gpsNoHwInfo": "暂无硬件数据",
     "gpsAntennaStatus": "天线",

@@ -29,6 +29,7 @@ use crate::timing_sync::TimingSync;
 use crate::{auth_setup, mfi4, net, tlv8};
 
 mod buffered;
+mod ptp;
 
 const TAG: &str = "[airplay]";
 const TLV_FLAGS: u8 = 0x13;
@@ -222,8 +223,11 @@ pub trait AirplayMedia: Send + Sync {
         latency_ms: u32,
     ) -> Pin<Box<dyn Future<Output = (u16, u16)> + Send + '_>>;
     fn close_audio(&self);
-    fn open_buffered(&self, format: AirplayFormat)
-    -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+    fn open_buffered(
+        &self,
+        format: AirplayFormat,
+        lead_ms: u32,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
     fn push_buffered(&self, frame: &[u8]);
     fn started(&self, id: u64, close: Arc<Notify>, peer: AirplaySender, remote: AirplayRemote);
     fn ended(&self, id: u64);
@@ -294,6 +298,8 @@ struct Conn {
     transient: bool,
     audio: bool,
     buffered: Option<buffered::Buffered>,
+    ptp_timing: bool,
+    ptp: Option<ptp::Ptp>,
     id: u64,
     close: Arc<Notify>,
     started: bool,
@@ -324,6 +330,8 @@ async fn connection(stream: TcpStream, peer: SocketAddr, ctx: Arc<AirplayCtx>) {
         transient: false,
         audio: false,
         buffered: None,
+        ptp_timing: false,
+        ptp: None,
         id: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
         close: Arc::new(Notify::new()),
         started: false,
@@ -537,9 +545,25 @@ impl Conn {
                 .get("rtpTime")
                 .and_then(Value::as_int)
                 .map(|t| t as u32);
-            println!("{TAG} anchor rate {rate} at rtp {rtp:?}");
+            let int = |key: &str| body.get(key).and_then(Value::as_int);
+            let network_ns = int("networkTimeSecs").map(|secs| {
+                let frac = u128::from(int("networkTimeFrac").unwrap_or(0));
+                secs * 1_000_000_000 + ((frac * 1_000_000_000) >> 64) as u64
+            });
+            let at = network_ns
+                .zip(int("networkTimeTimelineID"))
+                .and_then(|(ns, timeline)| self.ptp.as_ref()?.local(timeline, ns));
+            match at {
+                Some(at) => {
+                    let now = tokio::time::Instant::now();
+                    let ms = at.saturating_duration_since(now).as_millis() as i64
+                        - now.saturating_duration_since(at).as_millis() as i64;
+                    println!("{TAG} anchor rate {rate} at rtp {rtp:?}, ptp {ms:+} ms");
+                }
+                None => println!("{TAG} anchor rate {rate} at rtp {rtp:?}, local time"),
+            }
             self.ctx.media.close_audio();
-            buffered.rate(rtp.filter(|_| rate));
+            buffered.rate(rtp.filter(|_| rate), at);
             self.tell(AirplayMeta::Playing(rate));
         }
         if req.method == "FLUSHBUFFERED"
@@ -567,6 +591,7 @@ impl Conn {
         {
             self.audio = false;
             self.buffered = None;
+            self.ptp = None;
             self.ctx.media.close_audio();
             self.tell(AirplayMeta::Playing(false));
         }
@@ -769,6 +794,9 @@ impl Conn {
                 );
                 self.audio = true;
                 if kind == STREAM_BUFFERED_AUDIO {
+                    if self.ptp_timing && self.ptp.is_none() {
+                        self.ptp = ptp::Ptp::join();
+                    }
                     let opened = buffered::Buffered::listen(key, format, self.ctx.media.clone());
                     let port = match opened {
                         Ok((buffered, port)) => {
@@ -798,6 +826,7 @@ impl Conn {
             return plist(&dict([("streams", Value::Array(out))]));
         }
         if body.get("timingProtocol").and_then(Value::as_str) == Some("PTP") {
+            self.ptp_timing = true;
             let own = net::host_of(&self.local);
             return plist(&dict([
                 (

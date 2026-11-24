@@ -176,6 +176,7 @@ async fn open(gst: &Output, device: &str) -> Option<Stream> {
         latency_ms: 0,
         realtime: Some(true),
         fed: true,
+        paced: false,
         device: device.to_string(),
     };
     let (id, _, _) = gst.open_audio(&[0; 32], &opts).await;

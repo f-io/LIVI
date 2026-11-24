@@ -292,6 +292,7 @@ fn audio_opts(
         latency_ms,
         realtime: Some(realtime),
         fed: !realtime,
+        paced: !realtime,
         device: String::new(),
     }
 }
@@ -356,6 +357,7 @@ impl AirplayMedia for GstAirplay {
     fn open_buffered(
         &self,
         format: AirplayFormat,
+        lead_ms: u32,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
         Box::pin(async move {
             self.close_audio();
@@ -367,7 +369,7 @@ impl AirplayMedia for GstAirplay {
                     aac_raw_key(&aac_lc_config(format.rate, format.channels)),
                 ),
             };
-            let opts = audio_opts(codec, format, 0, false);
+            let opts = audio_opts(codec, format, lead_ms, false);
             let (stream, _, _) = self.gst.open_audio(&key, &opts).await;
             self.gst.set_audio_active(stream, true);
             self.audio.opened(stream);
