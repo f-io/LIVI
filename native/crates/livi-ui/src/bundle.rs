@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 pub struct Bundle {
+    pub app: PathBuf,
     pub resources: PathBuf,
 }
 
@@ -14,6 +15,7 @@ pub fn find() -> Option<Bundle> {
     let contents = exe.parent()?.parent()?;
     let app = contents.parent()?;
     app.extension().is_some_and(|e| e == "app").then(|| Bundle {
+        app: app.to_path_buf(),
         resources: contents.join("Resources"),
     })
 }
@@ -44,20 +46,20 @@ impl Bundle {
     }
 
     pub fn relaunch(&self) -> std::io::Result<()> {
-        relaunch_when_gone(&std::env::current_exe()?)
+        relaunch_when_gone(&self.app)
     }
 }
 
-fn relaunch_when_gone(exe: &Path) -> std::io::Result<()> {
+fn relaunch_when_gone(app: &Path) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
     let wait_then_start = format!(
-        "while kill -0 {} 2>/dev/null; do sleep 0.1; done; exec \"$0\"",
+        "while kill -0 {} 2>/dev/null; do sleep 0.1; done; exec /usr/bin/open -n \"$0\"",
         std::process::id()
     );
     Command::new("/bin/sh")
         .arg("-c")
         .arg(wait_then_start)
-        .arg(exe)
+        .arg(app)
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
