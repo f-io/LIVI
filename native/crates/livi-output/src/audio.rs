@@ -245,8 +245,7 @@ impl<O: Outside> Host<O> {
                 rate,
                 channels,
                 ahead_ms: smoothed.round() as u32,
-                target_ms: (a.cfg.realtime == Some(true) || a.cfg.paced)
-                    .then_some(a.cfg.latency_ms),
+                target_ms: speaker.target_ms(),
             };
             Some((*id, info))
         });

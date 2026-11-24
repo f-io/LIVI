@@ -48,6 +48,7 @@ pub trait Speaker: Send + Sync + 'static {
     fn take_visualizer(&self) -> Option<(Vec<u8>, u32)>;
     fn output_delay_ms(&self) -> Option<u32>;
     fn ahead_ms(&self) -> Option<u32>;
+    fn target_ms(&self) -> Option<u32>;
     fn decoded(&self) -> Option<(u32, u8)>;
 }
 

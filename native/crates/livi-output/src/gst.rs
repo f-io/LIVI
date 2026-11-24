@@ -54,6 +54,10 @@ impl Speaker for AudioPipelinePlayer {
         AudioPipelinePlayer::ahead(self).and_then(|d| u32::try_from(d.as_millis()).ok())
     }
 
+    fn target_ms(&self) -> Option<u32> {
+        AudioPipelinePlayer::target_ms(self)
+    }
+
     fn decoded(&self) -> Option<(u32, u8)> {
         AudioPipelinePlayer::decoded(self)
     }

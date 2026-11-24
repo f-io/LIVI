@@ -50,6 +50,21 @@ fn decoder_chain(codec: Codec) -> Option<&'static str> {
     }
 }
 
+const JITTER_MIN_MS: u32 = 100;
+
+fn jitter_ms(latency_ms: u32) -> u32 {
+    latency_ms.max(JITTER_MIN_MS)
+}
+
+fn target_ms(cfg: &Config) -> Option<u32> {
+    if cfg.realtime || cfg.paced {
+        return Some(cfg.latency_ms);
+    }
+    decoder_chain(cfg.codec)
+        .is_some_and(|chain| chain.starts_with("rtpjitterbuffer"))
+        .then(|| jitter_ms(cfg.latency_ms))
+}
+
 const SINK_NAME: &str = "audio-sink";
 const FRAME_BYTES: usize = 4;
 const OUT_RATE: u64 = 48_000;
@@ -152,7 +167,7 @@ pub fn pipeline_desc(cfg: &Config) -> String {
             format!(
                 "{} ! ",
                 chain
-                    .replace("{latency}", &cfg.latency_ms.max(100).to_string())
+                    .replace("{latency}", &jitter_ms(cfg.latency_ms).to_string())
                     .replace("{rate}", &cfg.clock_rate.to_string())
             )
         }
@@ -209,6 +224,7 @@ pub struct Player {
     units: Mutex<UnitClock>,
     newest: Arc<AtomicU64>,
     played: Arc<AtomicU64>,
+    target_ms: Option<u32>,
 }
 
 const UNSET: u64 = u64::MAX;
@@ -404,6 +420,7 @@ impl Player {
             }),
             newest,
             played,
+            target_ms: target_ms(cfg),
         })
     }
 
@@ -495,6 +512,10 @@ impl Player {
         self.level
             .set(now + gst::ClockTime::from_mseconds(ms), target);
         self.volume.set_control_binding_disabled("volume", false);
+    }
+
+    pub fn target_ms(&self) -> Option<u32> {
+        self.target_ms
     }
 
     pub fn output_delay(&self) -> Option<std::time::Duration> {
@@ -688,6 +709,20 @@ mod tests {
         assert!(desc.contains("buffer-time=40000"), "{desc}");
         let music = pipeline_desc(&cfg(Codec::AacRaw, false));
         assert!(music.contains("clocksync sync=true"), "{music}");
+    }
+
+    #[test]
+    fn the_target_is_what_the_stream_is_held_at() {
+        assert_eq!(target_ms(&cfg(Codec::AacLc, false)), Some(1000));
+        let mut siri = cfg(Codec::Opus, false);
+        siri.latency_ms = 80;
+        assert_eq!(target_ms(&siri), Some(JITTER_MIN_MS));
+        let mut paced = cfg(Codec::AacRaw, false);
+        assert_eq!(target_ms(&paced), None);
+        paced.paced = true;
+        paced.latency_ms = 200;
+        assert_eq!(target_ms(&paced), Some(200));
+        assert_eq!(target_ms(&cfg(Codec::Pcm, false)), None);
     }
 
     #[test]

@@ -185,6 +185,10 @@ impl Speaker for FakeSpeaker {
         self.0.lock().unwrap().ahead_ms
     }
 
+    fn target_ms(&self) -> Option<u32> {
+        None
+    }
+
     fn decoded(&self) -> Option<(u32, u8)> {
         None
     }
