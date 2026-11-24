@@ -195,7 +195,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export LIVI_BUILD="${GITHUB_SHA::8}"
+          export LIVI_BUILD="${GITHUB_SHA::7}"
           source scripts/firmware/version.sh
           echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
           echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
@@ -451,7 +451,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LIVI_BUILD: ${{ github.sha }}
-        run: LIVI_BUILD="${LIVI_BUILD::8}" sh scripts/assets.sh publish provision provision
+        run: LIVI_BUILD="${LIVI_BUILD::7}" sh scripts/assets.sh publish provision provision
 
       - name: Commit and push
         shell: bash

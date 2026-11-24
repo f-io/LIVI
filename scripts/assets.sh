@@ -101,7 +101,7 @@ publish_firmware() {
 publish_provision() {
   dir=$ROOT/assets/livi-link-provision
   version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' "$ROOT/native/Cargo.toml")
-  build=${LIVI_BUILD:-$(git -C "$ROOT" rev-parse --short=8 HEAD)}
+  build=${LIVI_BUILD:-$(git -C "$ROOT" rev-parse HEAD | cut -c1-7)}
   mkdir -p "$dir"
   for tool in "$1"/livi-link-provision-*; do
     [ -f "$tool" ] || continue
