@@ -6,7 +6,7 @@ LIVI OS is a standalone operating system for in-vehicle hardware, built on mainl
 
 | Firmware    | SoC              | Wi-Fi module | Bluetooth             | Wi-Fi                       | PHY rate   | Display  | Kernel |
 | ----------- | ---------------- | ------------ | --------------------- | --------------------------- | ---------- | -------- | ------ |
-| `f133b_xfh` | Allwinner F133-B | AIC8800D40L  | Bluetrum AB5301B[^bt] | Wi-Fi 6, 1x1, 5 GHz, 40 MHz | 287 Mbit/s | 452×1280 | 7.3.5  |
+| `f133b_xfh` | Allwinner F133-B | AIC8800D40L  | Bluetrum AB5301B[^bt] | Wi-Fi 6, 1x1, 5 GHz, 40 MHz | 287 Mbit/s | 452×1280 | 7.3.6  |
 
 [^bt]: The module on the unit's UART also carries the audio to the amplifier and the knob.
 
