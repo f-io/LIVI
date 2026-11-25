@@ -101,6 +101,19 @@ fn mask(data: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+fn has_envelope(image: &[u8]) -> bool {
+    image.get(32..32 + ENVELOPE_TAIL.len()) == Some(ENVELOPE_TAIL)
+}
+
+fn unwrap_envelope(image: &[u8]) -> Option<(Vec<u8>, bool)> {
+    if has_envelope(image) {
+        Some((image.to_vec(), false))
+    } else {
+        let plain = mask(image);
+        has_envelope(&plain).then_some((plain, true))
+    }
+}
+
 #[derive(Clone)]
 struct Entry {
     magic: [u8; 6],
@@ -191,15 +204,13 @@ fn write_entries(entries: &[Entry]) -> Vec<u8> {
 
 pub struct Ota {
     entries: Vec<Entry>,
+    masked: bool,
 }
 
 impl Ota {
     pub fn open(image: &[u8]) -> Result<Self, String> {
-        let plain = mask(image);
-        let tail = plain.get(32..32 + ENVELOPE_TAIL.len());
-        if tail != Some(ENVELOPE_TAIL) {
-            return Err("this is not an update image of the vendor's".into());
-        }
+        let (plain, masked) =
+            unwrap_envelope(image).ok_or("this is not an update image of the vendor's")?;
         let body = &plain[32 + ENVELOPE_TAIL.len()..];
         let stated = String::from_utf8_lossy(&plain[..32]).to_ascii_lowercase();
         if stated != md5_hex(body) {
@@ -207,6 +218,7 @@ impl Ota {
         }
         Ok(Self {
             entries: read_entries(body)?,
+            masked,
         })
     }
 
@@ -291,7 +303,11 @@ impl Ota {
         let mut envelope = md5_hex(&body).into_bytes();
         envelope.extend_from_slice(ENVELOPE_TAIL);
         envelope.extend_from_slice(&body);
-        Ok(mask(&envelope))
+        Ok(if self.masked {
+            mask(&envelope)
+        } else {
+            envelope
+        })
     }
 }
 
@@ -439,6 +455,10 @@ mod tests {
     use super::*;
 
     fn fake_package(project: &str, machine: u16) -> Vec<u8> {
+        package(project, machine, true)
+    }
+
+    fn package(project: &str, machine: u16, masked: bool) -> Vec<u8> {
         let mut program = vec![0u8; 64];
         program[..4].copy_from_slice(b"\x7fELF");
         program[4] = 1;
@@ -480,7 +500,7 @@ mod tests {
         let mut envelope = md5_hex(&body).into_bytes();
         envelope.extend_from_slice(ENVELOPE_TAIL);
         envelope.extend_from_slice(&body);
-        mask(&envelope)
+        if masked { mask(&envelope) } else { envelope }
     }
 
     fn file_in(ota: &Ota, path: &str) -> Option<Vec<u8>> {
@@ -522,6 +542,30 @@ mod tests {
         let plain = mask(&fake_package("ly7115", 40));
         let body = &plain[32 + ENVELOPE_TAIL.len()..];
         assert_eq!(write_entries(&read_entries(body).unwrap()), body);
+    }
+
+    #[test]
+    fn a_plaintext_package_is_accepted_and_handed_back_plaintext() {
+        let image = package("ly10201", 40, false);
+        assert!(has_envelope(&image));
+        let ota = Ota::open(&image).unwrap();
+        assert_eq!(ota.project().as_deref(), Some("ly10201"));
+        let out = ota.with_shell(Arch::Arm.shell()).unwrap();
+        assert!(has_envelope(&out));
+        assert!(Ota::open(&out).is_ok());
+    }
+
+    #[test]
+    fn a_masked_package_is_accepted_and_handed_back_masked() {
+        let image = fake_package("ly7115", 40);
+        assert!(!has_envelope(&image));
+        let out = Ota::open(&image)
+            .unwrap()
+            .with_shell(Arch::Arm.shell())
+            .unwrap();
+        assert!(!has_envelope(&out));
+        assert!(has_envelope(&mask(&out)));
+        assert!(Ota::open(&out).is_ok());
     }
 
     #[test]
