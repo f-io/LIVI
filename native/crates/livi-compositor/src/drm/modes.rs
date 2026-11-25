@@ -15,10 +15,6 @@ impl Offered {
     pub(super) fn area(&self) -> u32 {
         u32::from(self.size.0) * u32::from(self.size.1)
     }
-
-    pub(super) fn fits_hd(&self) -> bool {
-        self.area() <= 1280 * 720
-    }
 }
 
 pub(super) fn pick_mode(modes: &[Mode], setting: Option<&str>) -> Option<Mode> {
@@ -52,16 +48,10 @@ pub(super) fn choose(modes: &[Offered], configured: Option<(u16, u16)>) -> Optio
     {
         return Some(i);
     }
-    if let Some(i) = modes.iter().position(|m| m.preferred && m.fits_hd()) {
+    if let Some(i) = modes.iter().position(|m| m.preferred) {
         return Some(i);
     }
-    largest(&Offered::fits_hd).or_else(|| {
-        modes
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, m)| m.area())
-            .map(|(i, _)| i)
-    })
+    largest(&|_| true)
 }
 
 pub(super) fn sizes(modes: &[Mode]) -> Vec<String> {

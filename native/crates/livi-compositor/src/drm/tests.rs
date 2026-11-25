@@ -33,35 +33,25 @@ fn the_setting_wins_with_its_fastest_refresh() {
 }
 
 #[test]
-fn without_a_setting_the_panel_stays_at_most_hd() {
+fn without_a_setting_the_panel_keeps_its_own_mode() {
     let small_panel = [mode(800, 480, 60, true), mode(640, 480, 60, false)];
     assert_eq!(choose(&small_panel, None), Some(0));
-    let xga = [mode(1024, 768, 60, true), mode(800, 600, 60, false)];
-    assert_eq!(
-        choose(&xga, None),
-        Some(0),
-        "a 4:3 panel keeps its native mode below the HD pixel count"
-    );
     let tv = [
+        mode(1280, 720, 60, false),
         mode(3840, 2160, 60, true),
         mode(1920, 1080, 60, false),
-        mode(1280, 720, 60, false),
     ];
-    assert_eq!(
-        choose(&tv, None),
-        Some(2),
-        "a 4k panel drops to 720p like the kiosk did"
-    );
+    assert_eq!(choose(&tv, None), Some(1), "a 4k panel stays at 4k");
     assert_eq!(
         choose(&tv, Some((1366, 768))),
-        Some(2),
+        Some(1),
         "a size the panel lacks falls back"
     );
-    let only_big = [mode(2560, 1440, 60, true), mode(1920, 1080, 60, false)];
+    let unpreferred = [mode(1920, 1080, 60, false), mode(3840, 2160, 30, false)];
     assert_eq!(
-        choose(&only_big, None),
+        choose(&unpreferred, None),
         Some(1),
-        "the smallest when nothing fits"
+        "the largest when the panel prefers none"
     );
     assert_eq!(choose(&[], None), None);
 }
