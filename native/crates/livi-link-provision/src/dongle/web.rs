@@ -76,6 +76,9 @@ pub fn wait_for_update_complete(deadline_secs: u64) -> Result<(), String> {
     let deadline = Duration::from_secs(deadline_secs);
     loop {
         std::thread::sleep(Duration::from_secs(2));
+        if super::shell::is_up() {
+            return Ok(());
+        }
         if let Ok(info) = host() {
             if info.update == 3 {
                 return Ok(());
