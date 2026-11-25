@@ -64,8 +64,19 @@ fn run_dongle(args: &[String]) -> Result<bool, String> {
         (Some("arm"), Some("imx6ul")) => run_imx6ul(rest),
         (Some("arm"), Some("ax520")) => run_ax520(rest),
         (Some("riscv"), Some("v821b")) => run_v821b(rest),
+        (Some("backup"), _) => {
+            let dir = args.get(1).map(PathBuf::from).unwrap_or_else(backup_dir);
+            raw_backup_cmd(&dir).map(|_| true)
+        }
         _ => Err(usage().to_string()),
     }
+}
+
+fn raw_backup_cmd(out_dir: &Path) -> Result<(), String> {
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    let dir = livi_link_provision::dongle::backup::raw(&mut sh, out_dir)?;
+    println!("wrote full backup to {}", livi_link_provision::tilde(&dir));
+    Ok(())
 }
 
 fn run_imx6ul(args: &[String]) -> Result<bool, String> {
@@ -745,6 +756,7 @@ fn report(line: &str) {
 
 fn usage() -> &'static str {
     "usage: livi-link-provision [detect]
+  dongle backup [dir]  full raw dump of every mtd partition, for hardware without a target yet
   dongle arm imx6ul  provision [lfwb] | restore [backup dir] | flash <lfwb> [--write] | kernel <zImage> [--write] | backup [dir] | push <local> <remote> | sh 'CMD' | bootstrap | usbscan
   dongle arm ax520   info | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]
   dongle riscv v821b info | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]"
@@ -823,10 +835,28 @@ fn open_unknown() -> Result<Option<Family>, String> {
     let family = probe.family();
     match family {
         Some(family) => println!("== this is a {}", family.name()),
-        None => println!(
-            "== this hardware is not one we have a LIVI Link image for yet, nothing more was done to it.\n\
-             == Please attach the report to an issue. The dongle's own update page puts the vendor's firmware back."
-        ),
+        None => {
+            println!(
+                "== No LIVI Link image for this hardware yet. Feel free to open an issue with the backup and the report attached."
+            );
+            let dump = ask("Would you like to dump the stock image? [y/N]")?;
+            if dump.eq_ignore_ascii_case("y") {
+                match livi_link_provision::dongle::backup::raw(&mut sh, &backup_dir()) {
+                    Ok(dir) => println!(
+                        "== saved full backup to {}",
+                        livi_link_provision::tilde(&dir)
+                    ),
+                    Err(e) => println!("== backup failed: {e}"),
+                }
+            }
+            let remove = ask("Remove the bind-shell and restore stock? [y/N]")?;
+            if remove.eq_ignore_ascii_case("y") {
+                match hook::restore_stock(&ota_cache_dir()) {
+                    Ok(()) => println!("== stock restored, the bind-shell is gone"),
+                    Err(e) => println!("== could not restore stock: {e}"),
+                }
+            }
+        }
     }
     Ok(family)
 }

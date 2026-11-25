@@ -94,3 +94,27 @@ pub fn wait_for_update_complete(deadline_secs: u64) -> Result<(), String> {
         }
     }
 }
+
+pub fn wait_for_shell_gone(deadline_secs: u64) -> Result<(), String> {
+    let start = std::time::Instant::now();
+    let deadline = Duration::from_secs(deadline_secs);
+    loop {
+        std::thread::sleep(Duration::from_secs(2));
+        if let Ok(info) = host()
+            && info.update > 3
+        {
+            return Err(format!("update failed (code {})", info.update));
+        }
+        if !super::shell::is_up() {
+            std::thread::sleep(Duration::from_secs(3));
+            if !super::shell::is_up() {
+                return Ok(());
+            }
+        }
+        if start.elapsed() > deadline {
+            return Err(format!(
+                "the dongle did not reboot to stock within {deadline_secs}s"
+            ));
+        }
+    }
+}

@@ -43,6 +43,19 @@ pub fn install_bindshell(cache: &Path) -> Result<(), String> {
     Ok(())
 }
 
+pub fn restore_stock(cache: &Path) -> Result<(), String> {
+    if !shell::is_up() {
+        return Err("the dongle has no bind-shell to remove".into());
+    }
+    let info = web::host()?;
+    let image = ota::fetch(&info.sys.appver, cache)?;
+    ota::Ota::open(&image)?;
+    println!("uploading stock update.img ({} B)…", image.len());
+    web::upload(&image)?;
+    println!("waiting for the dongle to reflash stock + reboot…");
+    web::wait_for_shell_gone(300)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
