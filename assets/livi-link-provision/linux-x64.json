@@ -1,7 +1,7 @@
 {
   "version": "10.6.0",
-  "build": "450785e",
+  "build": "42d6acb",
   "file": "livi-link-provision-linux-x64",
-  "size": 61282040,
-  "sha256": "f0bedc37e20f28f08a5a7681a1834aae7537d440841ae8502e53f3a050a2d702"
+  "size": 61292960,
+  "sha256": "34d160a52946bab26e17dcfafa47c2573859792c496464363675fc48b8192ddc"
 }
