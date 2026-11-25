@@ -106,7 +106,6 @@ livi_optional livi_apply_splash
 livi_optional livi_apply_hdmi_pr "$APPIMAGE_PATH"
 
 # --- headless only ---
-livi_optional livi_install_video_mode_helper
 livi_optional livi_install_power_helper
 
 echo "→ Enabling seatd"

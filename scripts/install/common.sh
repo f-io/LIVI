@@ -219,44 +219,6 @@ SUDOEOF
   fi
 }
 
-livi_install_video_mode_helper() {
-  livi_install_root_helper /usr/local/lib/livi/livi-video-mode.sh /etc/sudoers.d/99-LIVI-video \
-    "lets $USER pin the display mode in the kernel cmdline." <<'EOF'
-#!/bin/bash
-# Managed by LIVI. Pins video=<CONNECTOR:WxH@Hz> in the kernel cmdline; "clear" removes it.
-set -euo pipefail
-CMDLINE="/boot/firmware/cmdline.txt"
-arg="${1:-}"
-line="$(tr -d '\n' < "$CMDLINE")"
-read -ra words <<< "$line"
-if [ "$arg" = clear ]; then
-  kept=()
-  for w in "${words[@]}"; do
-    [[ "$w" == video=* ]] || kept+=("$w")
-  done
-  out="${kept[*]-}"
-else
-  [[ "$arg" =~ ^[A-Za-z0-9-]+:[0-9]+x[0-9]+@[0-9]+i?D?$ ]] || {
-    echo "usage: livi-video-mode.sh <CONNECTOR:WxH@Hz>|clear" >&2
-    exit 2
-  }
-  connector="${arg%%:*}"
-  found=""
-  for i in "${!words[@]}"; do
-    w="${words[$i]}"
-    [[ "$w" == "video=$connector:"* ]] || continue
-    options=""
-    [[ "$w" == *,* ]] && options=",${w#*,}"
-    words[$i]="video=$arg$options"
-    found=1
-  done
-  [ -n "$found" ] || words+=("video=$arg")
-  out="${words[*]}"
-fi
-[ "$out" = "$line" ] || echo "$out" > "$CMDLINE"
-EOF
-}
-
 livi_install_power_helper() {
   livi_install_root_helper /usr/local/lib/livi/livi-power.sh /etc/sudoers.d/99-LIVI-power \
     "lets $USER power the host down or reboot it." <<'EOF'

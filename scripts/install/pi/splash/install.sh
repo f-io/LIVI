@@ -115,23 +115,6 @@ add_flag "splash"
 add_flag "plymouth.ignore-serial-consoles"
 add_flag "loglevel=0"
 
-# Keeps the mode LIVI pinned (video=) so plymouth does not render at EDID
-# preferred (often 4K). LIVI_SPLASH_VIDEO overrides it.
-detect_video_mode() {
-  local current
-  current=$(grep -o "video=[^[:space:]]*" <<< "${LINE}" | head -n 1)
-  [[ -n "${current}" ]] || return 1
-  printf "%s" "${current#video=}"
-}
-
-VIDEO_MODE="${LIVI_SPLASH_VIDEO:-$(detect_video_mode || true)}"
-if [[ -n "${VIDEO_MODE}" ]]; then
-  echo "      video mode = ${VIDEO_MODE}"
-  LINE=$(echo "${LINE}" | sed -E 's/[[:space:]]*video=[^[:space:]]+//g')
-  LINE="${LINE} video=${VIDEO_MODE}"
-else
-  echo "      no video mode pinned (plymouth will use EDID preferred)"
-fi
 add_flag "logo.nologo"
 add_flag "vt.global_cursor_default=0"
 
