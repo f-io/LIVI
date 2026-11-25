@@ -10,6 +10,7 @@ import { RowButton } from "actions.slint";
 import { SelectBody, NumberBody, TextBody, ColorBody, SliderBody, PendingBody, PickData, CalibrationBody, KnobData } from "fields.slint";
 import { Focus, FocusZone } from "../focus.slint";
 import { SliderGrab } from "controls.slint";
+import { Keyboard, KeyboardMode, KeyboardPanel } from "../keyboard.slint";
 
 export { RowData, RowKind, PickData, KnobData }
 
@@ -92,6 +93,17 @@ export component SettingsView inherits Rectangle {
 
     property <int> focus-index: Focus.zone == FocusZone.main ? Focus.main-index : -1;
     property <length> lead: Metrics.header-h + Metrics.header-mb;
+    property <bool> typing: Focus.editing && ((SettingsState.kind == ScreenKind.text && Focus.main(SettingsState.focus-base)) || (SettingsState.kind == ScreenKind.number && Focus.main(SettingsState.focus-base + 1)) || (SettingsState.kind == ScreenKind.color && Focus.main(SettingsState.focus-base)));
+    property <bool> keyboard-shown: Keyboard.available && root.typing;
+    property <KeyboardMode> keyboard-mode: SettingsState.kind == ScreenKind.number ? KeyboardMode.number : SettingsState.kind == ScreenKind.color ? KeyboardMode.hex : KeyboardMode.text;
+
+    changed keyboard-shown => {
+        if (root.keyboard-shown) {
+            Keyboard.open(root.keyboard-mode);
+        } else {
+            Keyboard.close();
+        }
+    }
 
     changed focus-index => {
         if (focus-index < 0) {
@@ -263,6 +275,7 @@ export component SettingsView inherits Rectangle {
                 }
             }
         }
+        if root.keyboard-shown: KeyboardPanel {}
     }
 
     if SettingsState.dialog-open: Rectangle {

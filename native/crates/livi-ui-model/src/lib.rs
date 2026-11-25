@@ -5,6 +5,7 @@
 pub mod dashboard;
 pub use livi_i18n as i18n;
 pub mod icons;
+pub mod keyboard;
 pub mod keys;
 pub mod mask;
 pub mod media;

@@ -22,6 +22,7 @@ mod fonts;
 mod fullscreen;
 mod icon_ui;
 mod icons;
+mod keyboard_ui;
 mod keys_ui;
 #[cfg(not(in_process))]
 mod log;
@@ -565,6 +566,7 @@ pub fn run(
     MAIN.with_borrow_mut(|m| *m = Some(weak.clone()));
     let lang = client.mirror().state.config.language.clone();
     settings_ui::wire(&ui, &client, &lang);
+    keyboard_ui::wire(&ui);
     if full_panel {
         own_panel(&ui);
     }

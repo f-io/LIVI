@@ -16,8 +16,9 @@ import { Dashboard, DashState, GaugeData, CapData, TrailData, LabelData, LaneDat
 import { LevelOverlay, PhoneOverlay, OverlayState } from "overlays.slint";
 import { MaskData, ViewArea } from "mask.slint";
 import { TouchCalibration, TouchCalibrationState } from "touch_calibration.slint";
+import { Keyboard, KeyboardMode, KeyKind, KeyData, KeyRow } from "keyboard.slint";
 
-export { Theme, Ui, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaSource, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, LaneData, LaneArrowData, LampData, OverlayState, MaskData, ViewArea, TouchCalibrationState }
+export { Theme, Ui, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaSource, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, LaneData, LaneArrowData, LampData, OverlayState, MaskData, ViewArea, TouchCalibrationState, Keyboard, KeyboardMode, KeyKind, KeyData, KeyRow }
 
 export component AppWindow inherits Window {
     in-out property <Page> page: Page.media;

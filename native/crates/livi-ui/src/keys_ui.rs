@@ -409,6 +409,8 @@ fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> bool 
             settle_after_settings_move(ui, false, from);
         }
         Outcome::Pager(by) => client.act(Action::StepClusterLayout { by }),
+        Outcome::KeyStep(dx, dy) => crate::keyboard_ui::step(ui, dx, dy),
+        Outcome::KeyPress => crate::keyboard_ui::press(ui),
     }
     true
 }
@@ -443,6 +445,7 @@ fn context(ui: &AppWindow, repeat: bool) -> Context {
             f.get_main_index() <= 0
         },
         repeat,
+        keyboard: crate::keyboard_ui::open(),
     }
 }
 

@@ -46,6 +46,7 @@ pub struct Context {
     pub settings_depth: usize,
     pub first: bool,
     pub repeat: bool,
+    pub keyboard: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +66,8 @@ pub enum Outcome {
     Adjust(i32),
     SettingsBack,
     Pager(i32),
+    KeyStep(i32, i32),
+    KeyPress,
 }
 
 pub fn binding<'a>(config: &'a Value, name: &str) -> &'a str {
@@ -182,6 +185,20 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
             }
             return Outcome::ToCore(code.to_string());
         }
+    }
+
+    if ctx.keyboard && (text_entry || number_entry) {
+        return if code == "Escape" || (back && code != "Backspace") {
+            Outcome::StopEditing
+        } else if enter || select_down {
+            Outcome::KeyPress
+        } else if left || right {
+            Outcome::KeyStep(if left { -1 } else { 1 }, 0)
+        } else if up || down {
+            Outcome::KeyStep(0, if up { -1 } else { 1 })
+        } else {
+            Outcome::Pass
+        };
     }
 
     if text_entry {
@@ -346,6 +363,7 @@ mod tests {
             settings_depth: 0,
             first: false,
             repeat: false,
+            keyboard: false,
         }
     }
 
@@ -507,6 +525,22 @@ mod tests {
         assert_eq!(decide("KeyS", c, &config()), Outcome::Pass);
         assert_eq!(decide("Backspace", c, &config()), Outcome::Pass);
         assert_eq!(decide("Escape", c, &config()), Outcome::StopEditing);
+    }
+
+    #[test]
+    fn the_on_screen_keyboard_takes_the_arrows_and_enter() {
+        for focused in [Focused::Text, Focused::Number] {
+            let mut c = ctx(Zone::Main);
+            c.focused = focused;
+            c.editing = true;
+            c.keyboard = true;
+            assert_eq!(decide("ArrowUp", c, &config()), Outcome::KeyStep(0, -1));
+            assert_eq!(decide("ArrowRight", c, &config()), Outcome::KeyStep(1, 0));
+            assert_eq!(decide("Enter", c, &config()), Outcome::KeyPress);
+            assert_eq!(decide("Backspace", c, &config()), Outcome::Pass);
+            assert_eq!(decide("KeyA", c, &config()), Outcome::Pass);
+            assert_eq!(decide("Escape", c, &config()), Outcome::StopEditing);
+        }
     }
 
     #[test]

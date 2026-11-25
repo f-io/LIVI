@@ -1,0 +1,126 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme, Ui } from "theme.slint";
+
+export enum KeyboardMode { text, number, hex }
+export enum KeyKind { char, shift, backspace, space, left, right, done, layer }
+
+export struct KeyData {
+    label: string,
+    units: float,
+    kind: KeyKind,
+}
+
+export struct KeyRow {
+    keys: [KeyData],
+}
+
+export global Keyboard {
+    in property <bool> available;
+    in property <[KeyRow]> rows;
+    in property <float> columns: 10;
+    in property <bool> shifted;
+    in property <int> focus-row: -1;
+    in property <int> focus-col: -1;
+    in-out property <bool> knob;
+    callback open(KeyboardMode);
+    callback close();
+    callback press(int, int);
+}
+
+component KeyCap inherits Rectangle {
+    in property <KeyData> data;
+    in property <bool> focused;
+    in property <length> gap;
+    callback hit();
+    property <bool> repeats: root.data.kind == KeyKind.backspace;
+    property <int> count;
+
+    Rectangle {
+        x: root.gap / 2;
+        y: 0;
+        width: root.width - root.gap;
+        height: root.height;
+        border-radius: 6px;
+        background: root.data.kind == KeyKind.done ? (touch.pressed ? Theme.highlight : Theme.primary) : touch.pressed ? Theme.button-active : Theme.button;
+        border-width: root.focused ? 2px : 0;
+        border-color: root.data.kind == KeyKind.done ? Theme.text : Theme.primary;
+
+        if root.data.kind == KeyKind.char || root.data.kind == KeyKind.layer: Text {
+            text: root.data.label;
+            color: Theme.text;
+            font-size: root.data.kind == KeyKind.layer ? min(parent.height * 0.36, 18px) : min(parent.height * 0.48, 26px);
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        if root.data.kind == KeyKind.shift: Path {
+            width: min(parent.height * 0.5, 24px);
+            height: self.width;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M 12 3 L 21 12 L 16 12 L 16 20 L 8 20 L 8 12 L 3 12 Z";
+            stroke: Theme.text;
+            stroke-width: 1.5px;
+            fill: Keyboard.shifted ? Theme.text : transparent;
+        }
+        if root.data.kind == KeyKind.backspace: Path {
+            width: min(parent.height * 0.5, 24px);
+            height: self.width;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M 8 5 L 21 5 L 21 19 L 8 19 L 2 12 Z M 11 9 L 17 15 M 17 9 L 11 15";
+            stroke: Theme.text;
+            stroke-width: 1.5px;
+        }
+        if root.data.kind == KeyKind.left || root.data.kind == KeyKind.right || root.data.kind == KeyKind.done: Image {
+            width: min(parent.height * 0.5, 24px);
+            height: self.width;
+            source: root.data.kind == KeyKind.left ? @image-url("icons/WestOutlined.svg") : root.data.kind == KeyKind.right ? @image-url("icons/EastOutlined.svg") : @image-url("icons/SubdirectoryArrowLeft.svg");
+            colorize: Theme.text;
+        }
+    }
+    touch := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                Keyboard.knob = false;
+                root.count = 0;
+                root.hit();
+            }
+        }
+    }
+    Timer {
+        interval: root.count == 0 ? 400ms : 70ms;
+        running: root.repeats && touch.pressed;
+        triggered => {
+            root.count += 1;
+            root.hit();
+        }
+    }
+}
+
+export component KeyboardPanel inherits Rectangle {
+    property <length> gap: 6px;
+    property <length> key-h: clamp(Ui.height * 0.075, 34px, 56px);
+    property <length> unit: min((root.width - 2 * root.gap) / max(Keyboard.columns, 1), root.key-h * 1.5);
+
+    height: Keyboard.rows.length * (root.key-h + root.gap) + root.gap;
+    background: Theme.paper;
+    TouchArea {}
+    VerticalLayout {
+        padding: root.gap;
+        spacing: root.gap;
+        for row[r] in Keyboard.rows: HorizontalLayout {
+            alignment: center;
+            height: root.key-h;
+            for k[c] in row.keys: KeyCap {
+                width: k.units * root.unit;
+                data: k;
+                gap: root.gap;
+                focused: Keyboard.knob && Keyboard.focus-row == r && Keyboard.focus-col == c;
+                hit => { Keyboard.press(r, c); }
+            }
+        }
+    }
+}
