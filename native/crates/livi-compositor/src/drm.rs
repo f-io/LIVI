@@ -235,6 +235,7 @@ fn open_device(
     session: &mut LibSeatSession,
     seat: &str,
 ) -> Result<(DrmDevice, DrmDeviceNotifier, DrmDeviceFd), Box<dyn std::error::Error>> {
+    let mut waiting = None;
     for path in udev::all_gpus(seat)? {
         let flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = match session.open(&path, flags) {
@@ -251,12 +252,18 @@ fn open_device(
                 continue;
             }
         };
-        if connectors(&device, false).iter().any(|c| c.connected) {
+        let found = connectors(&device, false);
+        if found.iter().any(|c| c.connected) {
             log::info!("displays on {}", path.display());
             return Ok((device, notifier, fd));
         }
+        if waiting.is_none() && !found.is_empty() {
+            waiting = Some((path, device, notifier, fd));
+        }
     }
-    Err("no connected display".into())
+    let (path, device, notifier, fd) = waiting.ok_or("no display connector")?;
+    log::info!("no display connected yet, waiting on {}", path.display());
+    Ok((device, notifier, fd))
 }
 
 fn plane_formats(device: &DrmDevice) -> FormatSet {
