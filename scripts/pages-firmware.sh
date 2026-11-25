@@ -91,7 +91,7 @@ platform() {
 }
 
 tools() {
-  local dir=$DEST/$1/provision rows= json platforms
+  local dir=$DEST/$1/provision rows= json platforms version build built
   mkdir -p "$dir"
   platforms=$(gh api "repos/$REPO/contents/assets/livi-link-provision?ref=$2" \
     -q '.[] | select(.name | endswith(".json")) | .name | rtrimstr(".json")' 2>/dev/null) || platforms=
@@ -101,15 +101,18 @@ tools() {
       "repos/$REPO/contents/assets/livi-link-provision/$platform.json?ref=$2" > "$json"
     name=$(field "$json" file)
     want=$(field "$json" sha256)
+    version=$(field "$json" version)
+    build=$(field "$json" build)
     gh release download assets --repo "$REPO" --pattern "$name-${want:0:16}" --output "$dir/$name"
     [ "$(sha "$dir/$name")" = "$want" ] || { echo "$1/$name does not match its manifest" >&2; exit 1; }
     rm "$json"
+    built=$(gh api "repos/$REPO/commits/$build" -q .commit.committer.date 2>/dev/null) || built=
     mib=$(($(wc -c < "$dir/$name") / 1048576))
-    rows+="<tr><td>$(platform "$platform")</td><td><a href=\"provision/$name\">$name</a></td><td>$mib MiB</td></tr>"
+    rows+="<tr><td>$(platform "$platform")</td><td>$version ($build)</td><td>$built</td><td><a href=\"provision/$name\">$name</a></td><td>$mib MiB</td></tr>"
     echo "$1/provision: $name" >&2
   done
   [ -n "$rows" ] || { rmdir "$dir"; return; }
-  echo "<h2 id=\"provision\">Provisioning tool</h2><table><tr><th>Platform</th><th>File</th><th>Size</th></tr>$rows</table>"
+  echo "<h2 id=\"provision\">Provisioning tool</h2><table><tr><th>Platform</th><th>Version</th><th>Built</th><th>File</th><th>Size</th></tr>$rows</table>"
 }
 
 # Fills $DEST/<tag>/<target> for one product, prints its table and leaves version, built and count set.
