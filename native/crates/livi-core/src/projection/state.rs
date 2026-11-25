@@ -6,29 +6,43 @@ use super::*;
 
 impl Projection {
     pub(super) fn apply_settings(&mut self) {
-        println!("[core] applying the settings: helper restart, phones reconnect");
         self.apply_due = None;
-        self.hub.apply();
-        self.helper_restart.notify_one();
-        self.cp.send(CpCmd::DropSessions);
+        self.take_effect(self.hub.config());
     }
 
     pub(super) fn apply_when_idle(&mut self) {
-        self.apply_due = (self.sessions.is_empty() && self.hub.apply_pending())
-            .then(|| tokio::time::Instant::now() + APPLY_AFTER_QUIET);
+        let (config, applied) = (self.hub.config(), self.hub.applied_config());
+        let next = apply::held(&config, &applied, !self.sessions.is_empty());
+        self.hub.update(|s| s.system.apply_pending = next != config);
+        self.apply_due = (next != applied).then(|| tokio::time::Instant::now() + APPLY_AFTER_QUIET);
     }
 
     pub(super) fn apply_idle(&mut self) {
         self.apply_due = None;
-        if !self.sessions.is_empty() {
-            return;
+        let next = apply::held(
+            &self.hub.config(),
+            &self.hub.applied_config(),
+            !self.sessions.is_empty(),
+        );
+        self.take_effect(next);
+    }
+
+    fn take_effect(&mut self, next: Config) {
+        if let Some((before, after)) = self.hub.apply(next) {
+            if self.sessions.is_empty() {
+                if helper::starts_differently(&before, &after) {
+                    println!(
+                        "[core] settings applied with no phone connected, the helper restarts"
+                    );
+                    self.helper_restart.notify_one();
+                }
+            } else if apply::restarts_sessions(&before, &after) {
+                println!("[core] applying the settings: helper restart, phones reconnect");
+                self.helper_restart.notify_one();
+                self.cp.send(CpCmd::DropSessions);
+            }
         }
-        if let Some((before, after)) = self.hub.apply()
-            && helper::starts_differently(&before, &after)
-        {
-            println!("[core] settings applied with no phone connected, the helper restarts");
-            self.helper_restart.notify_one();
-        }
+        self.apply_when_idle();
     }
 
     pub(super) fn activity(&self, change: impl FnOnce(&mut Activity)) {

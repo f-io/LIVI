@@ -52,7 +52,7 @@ use slint::platform::WindowEvent;
 use slint::{Color, Model, ModelRc, Timer, TimerMode, VecModel, Weak};
 
 use crate::follow::{Follow, Update};
-use livi_ui_model::shell::{Look, Tab, ui_scale};
+use livi_ui_model::shell::{Look, Tab, dpi_scale, ui_scale};
 
 slint::include_modules!();
 
@@ -66,6 +66,7 @@ thread_local! {
     static PICK: RefCell<Option<Pick>> = const { RefCell::new(None) };
     static BASE_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
     static ZOOM: Cell<f32> = const { Cell::new(1.0) };
+    static SCREEN_MM: Cell<Option<(u32, u32)>> = const { Cell::new(None) };
 }
 
 const BANDS: usize = 24;
@@ -88,6 +89,14 @@ pub(crate) fn apply_zoom(ui: &AppWindow) {
     let Some(base) = BASE_SCALE.get() else { return };
     let window = ui.window();
     let physical = window.size();
+    let base = if (base - 1.0).abs() < 0.01 {
+        dpi_scale(
+            (physical.width as f32, physical.height as f32),
+            SCREEN_MM.get(),
+        )
+    } else {
+        base
+    };
     let scale = ui_scale(base, ZOOM.get(), physical.height as f32);
     if (window.scale_factor() - scale).abs() < 0.001 {
         return;
@@ -224,6 +233,10 @@ fn apply(ui: &AppWindow, update: Update) {
             settle_projection_focus(ui);
         }
         Update::Look(look) => apply_look(ui, look),
+        Update::ScreenMm(mm) => {
+            SCREEN_MM.set(mm);
+            apply_zoom(ui);
+        }
         #[cfg(target_os = "macos")]
         Update::Shape(w, h) => shape_ui::follow(ui, w, h),
         Update::Kiosk(on) => {

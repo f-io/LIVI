@@ -98,7 +98,7 @@ pub async fn run(
 
     let host = HostFacts {
         car_name: system::host::hostname().and_then(|h| system::host::car_name(&h, CAR_NAME_MAX)),
-        panel_px: system::host::panel_native_px(),
+        panel: system::host::panel_native(),
     };
     let config_file = ConfigFile::new(paths.config.clone(), paths.config_backup.clone())
         .with_board(Board::from_env());
@@ -156,6 +156,7 @@ pub async fn run(
     println!("[core] listening on {}", socket.display());
 
     tokio::spawn(dongle::run(core.hub.clone(), dongle_asks));
+    tokio::spawn(core.clone().save_on_apply());
     tokio::spawn(system::wifi_options::follow(core.clone()));
     let (inside, inside_rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(vehicle::telemetry::run(core.clone(), inside_rx, saved));

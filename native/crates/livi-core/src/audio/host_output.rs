@@ -4,7 +4,7 @@
 
 #[cfg(feature = "mutter")]
 use std::collections::HashMap;
-use std::path::Path;
+#[cfg(feature = "mutter")]
 use std::time::Duration;
 
 #[cfg(feature = "mutter")]
@@ -14,12 +14,9 @@ use zbus::OwnedVariant;
 use livi_core_proto::state::Display;
 
 use crate::hub::Hub;
-use crate::system::privileged;
 
 #[cfg(feature = "mutter")]
 const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
-const PIN_TIMEOUT: Duration = Duration::from_secs(5);
-const VIDEO_MODE_HELPER: &str = "/usr/local/lib/livi/livi-video-mode.sh";
 #[cfg(feature = "mutter")]
 const MUTTER: &str = "org.gnome.Mutter.DisplayConfig";
 #[cfg(feature = "mutter")]
@@ -64,16 +61,20 @@ fn mutter_displays_in(monitors: &[MutterMonitor]) -> Vec<Display> {
             let sizes = modes.iter().filter_map(|mode| {
                 Some((u32::try_from(mode.1).ok()?, u32::try_from(mode.2).ok()?))
             });
-            let current = modes.iter().find(|mode| {
-                mode.6
-                    .get("is-current")
-                    .and_then(|v| bool::try_from(v).ok())
-                    .unwrap_or(false)
-            });
+            let flagged = |name: &str| {
+                modes.iter().find(|mode| {
+                    mode.6
+                        .get(name)
+                        .and_then(|v| bool::try_from(v).ok())
+                        .unwrap_or(false)
+                })
+            };
+            let current = flagged("is-current");
             Display {
                 connector: connector.clone(),
                 panel: product.clone(),
                 current: current.map(|m| format!("{}x{}@{}", m.1, m.2, m.3.round() as u32)),
+                panel_default: flagged("is-preferred").map(|m| format!("{}x{}", m.1, m.2)),
                 modes: largest_first(sizes),
                 ..Default::default()
             }
@@ -100,22 +101,6 @@ async fn mutter_displays() -> Vec<Display> {
     match tokio::time::timeout(TOOL_TIMEOUT, state).await {
         Ok(Some((_, monitors, _, _))) => mutter_displays_in(&monitors),
         _ => Vec::new(),
-    }
-}
-
-fn pin_arg(connector: &str, current: &str) -> String {
-    format!("{connector}:{current}")
-}
-
-pub async fn pin(connector: &str, current: &str) {
-    if !Path::new(VIDEO_MODE_HELPER).exists() {
-        return;
-    }
-    let pin = pin_arg(connector, current);
-    if privileged::sudo_within(&[VIDEO_MODE_HELPER, &pin], PIN_TIMEOUT).await {
-        println!("[display] cmdline video pin → {pin}");
-    } else {
-        println!("[display] could not pin {pin} in the cmdline");
     }
 }
 
@@ -171,10 +156,5 @@ mod tests {
         assert_eq!(displays[1].modes, ["1280x720"]);
         assert_eq!(displays[0].current, None);
         assert!(mutter_displays_in(&[]).is_empty());
-    }
-
-    #[test]
-    fn the_pin_names_connector_mode_and_rate() {
-        assert_eq!(pin_arg("HDMI-A-1", "1280x720@60"), "HDMI-A-1:1280x720@60");
     }
 }

@@ -7,7 +7,6 @@ pub mod color;
 pub mod custom;
 pub mod mask;
 pub mod node;
-pub mod restart;
 pub mod schemas;
 pub mod sources;
 pub mod value;

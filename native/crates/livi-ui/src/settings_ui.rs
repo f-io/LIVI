@@ -17,7 +17,6 @@ use livi_ui_model::settings::custom::files::Wanted;
 use livi_ui_model::settings::custom::icon::icons as icon_patch;
 use livi_ui_model::settings::custom::{Watch, set_binding};
 use livi_ui_model::settings::node::{CustomPage, Radio};
-use livi_ui_model::settings::restart::{pending, sessions_open};
 use livi_ui_model::settings::schema;
 use livi_ui_model::settings::view::{
     Change, Dialog, Facts, Local, Presence, Row, RowKind as ModelRowKind, Screen, Settings,
@@ -48,7 +47,6 @@ struct Controller {
     model: Settings,
     stack: Vec<usize>,
     strings: Strings,
-    baseline: Option<Value>,
     hsl: Option<Hsl>,
     last_slide: Option<Instant>,
     rows: Vec<Row>,
@@ -200,7 +198,6 @@ pub fn wire(ui: &AppWindow, client: &Client, lang: &str) {
             model: Settings::new(schema()).with_facts(facts()),
             stack: Vec::new(),
             strings: Strings::readable(lang, &crate::fonts::shown()),
-            baseline: None,
             hsl: None,
             last_slide: None,
             rows: Vec::new(),
@@ -359,8 +356,6 @@ pub fn wire(ui: &AppWindow, client: &Client, lang: &str) {
         let (weak, client) = (weak.clone(), client.clone());
         move || {
             client.act(Action::ApplySettings);
-            let state = client.mirror().json.clone();
-            with(|c| c.baseline = Some(state["config"].clone()));
             if let Some(ui) = weak.upgrade() {
                 render(&ui, &client);
             }

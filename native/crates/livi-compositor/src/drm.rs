@@ -729,6 +729,10 @@ pub fn displays_lines(state: &LiviState) -> Option<String> {
             };
             format!("{w}x{h}@{}{scan}", o.mode.vrefresh())
         });
+        let default = pick_mode(&c.modes, None).map_or("-".to_string(), |m| {
+            let (w, h) = m.size();
+            format!("{w}x{h}")
+        });
         let modes = sizes(&c.modes);
         let modes = if modes.is_empty() {
             "-".to_string()
@@ -736,7 +740,7 @@ pub fn displays_lines(state: &LiviState) -> Option<String> {
             modes.join(",")
         };
         out.push_str(&format!(
-            "display {} {role} {current} {modes} {} {}\n",
+            "display {} {role} {current} {default} {modes} {} {}\n",
             c.name, c.id, c.panel
         ));
     }

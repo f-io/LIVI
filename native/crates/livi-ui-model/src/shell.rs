@@ -45,6 +45,17 @@ pub fn tabs(config: &Config) -> Vec<Tab> {
 
 pub const MIN_UI_HEIGHT: f32 = 292.0;
 
+pub const REFERENCE_PPI: f32 = 140.0;
+
+pub fn dpi_scale((w, h): (f32, f32), screen_mm: Option<(u32, u32)>) -> f32 {
+    let Some((w_mm, h_mm)) = screen_mm else {
+        return 1.0;
+    };
+    let inches = (w_mm as f32).hypot(h_mm as f32) / 25.4;
+    let ppi = w.hypot(h) / inches;
+    ((ppi / REFERENCE_PPI * 4.0).round() / 4.0).clamp(1.0, 3.0)
+}
+
 pub fn ui_scale(base: f32, zoom: f32, physical_height: f32) -> f32 {
     let height = physical_height / base.max(f32::EPSILON);
     let fit = if height > 0.0 {

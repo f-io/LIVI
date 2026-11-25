@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use livi_core_proto::PROTOCOL;
+use livi_core_proto::apply;
+use livi_core_proto::config::Config;
 use livi_core_proto::frame::{Decoder, FrameError, encode};
 use livi_core_proto::message::{Action, FromCore, MediaControl, ToCore};
 use serde_json::Value;
@@ -33,20 +35,20 @@ const SAVE_QUIET: Duration = Duration::from_millis(500);
 struct ConfigSaves {
     file: ConfigFile,
     wanted: AtomicU64,
-    saved: std::sync::Mutex<u64>,
+    on_disk: std::sync::Mutex<Config>,
 }
 
 impl ConfigSaves {
     fn write(&self, hub: &Hub) {
-        let mut saved = self.saved.lock().unwrap_or_else(|e| e.into_inner());
-        let wanted = self.wanted.load(Ordering::SeqCst);
-        if *saved == wanted {
+        let next = apply::saved(&hub.config(), &hub.applied_config());
+        let mut on_disk = self.on_disk.lock().unwrap_or_else(|e| e.into_inner());
+        if *on_disk == next {
             return;
         }
-        if let Err(e) = self.file.save(&hub.config()) {
-            eprintln!("[core] config not saved: {e}");
+        match self.file.save(&next) {
+            Ok(()) => *on_disk = next,
+            Err(e) => eprintln!("[core] config not saved: {e}"),
         }
-        *saved = wanted;
     }
 }
 
@@ -74,12 +76,13 @@ impl Core {
         quit: Arc<Notify>,
         asks: UiSenders,
     ) -> Self {
+        let on_disk = std::sync::Mutex::new(hub.config());
         Self {
             hub: Arc::new(hub),
             config_saves: Arc::new(ConfigSaves {
                 file: config_file,
                 wanted: AtomicU64::new(0),
-                saved: std::sync::Mutex::new(0),
+                on_disk,
             }),
             config_writes: Mutex::new(()),
             quit,
@@ -151,6 +154,13 @@ impl Core {
 
     pub fn flush_config(&self) {
         self.config_saves.write(&self.hub);
+    }
+
+    pub async fn save_on_apply(self: Arc<Self>) {
+        let mut applied = self.hub.applied();
+        while applied.changed().await.is_ok() {
+            self.config_saves.write(&self.hub);
+        }
     }
 
     pub fn activity(&self) -> watch::Receiver<Activity> {
@@ -895,6 +905,30 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(dir.0.join("config.json")).unwrap())
                 .unwrap();
         assert_eq!(saved["huVolume"], 0.5);
+    }
+
+    #[tokio::test]
+    async fn a_setting_that_waits_for_apply_is_saved_once_applied() {
+        use crate::files::config_file::HostFacts;
+
+        let dir = TempDir::new();
+        let (core, _path) = start(&dir);
+        let on_disk = || {
+            ConfigFile::new(dir.0.join("config.json"), dir.0.join("backup.json")).load(&HostFacts {
+                car_name: None,
+                panel: None,
+            })
+        };
+        core.set_config(&json!({ "huVolume": 0.5, "screenWidthMm": { "main": 344 } }))
+            .await
+            .unwrap();
+        core.flush_config();
+        assert_eq!(on_disk().hu_volume, 0.5);
+        assert_eq!(on_disk().screen_width_mm.main, 0);
+
+        core.hub.apply(core.hub.config());
+        core.flush_config();
+        assert_eq!(on_disk().screen_width_mm.main, 344);
     }
 
     #[tokio::test]

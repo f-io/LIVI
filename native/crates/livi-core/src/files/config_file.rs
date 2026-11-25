@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use livi_base::fs::{SHARED, write_atomic};
 use livi_core_proto::config::Config;
 pub use livi_core_proto::config::defaults;
+use livi_media::compositor::Panel;
 use livi_ui_model::settings::{mask, schema};
 use serde_json::{Map, Value};
 
@@ -19,7 +20,25 @@ const OMIT_WHEN_EMPTY: [&str; 3] = ["carplayIcon120", "carplayIcon180", "carplay
 #[derive(Default)]
 pub struct HostFacts {
     pub car_name: Option<String>,
-    pub panel_px: Option<(u32, u32)>,
+    pub panel: Option<Panel>,
+}
+
+fn projection_from_panel(w: u32, h: u32) -> (u32, u32) {
+    let (w, h) = (w.max(h), w.min(h));
+    let (w, h) = if w * 1080 >= h * 1920 {
+        let fit = w.min(1920);
+        (fit, h * fit / w.max(1))
+    } else {
+        let fit = h.min(1080);
+        (w * fit / h, fit)
+    };
+    (w & !1, h & !1)
+}
+
+fn plausible_mm(panel: &Panel) -> bool {
+    let px = f64::from(panel.width_px) / f64::from(panel.height_px.max(1));
+    let mm = f64::from(panel.width_mm) / f64::from(panel.height_mm.max(1));
+    panel.width_mm >= 30 && panel.height_mm >= 30 && (mm / px - 1.0).abs() <= 0.1
 }
 
 #[derive(Default)]
@@ -122,14 +141,25 @@ impl ConfigFile {
         }
         if file.get("projectionWidth").is_none()
             && file.get("projectionHeight").is_none()
-            && let Some((w, h)) = host.panel_px
+            && let Some(panel) = host.panel
         {
-            let (w, h) = (w.max(h) & !1, w.min(h) & !1);
+            let (w, h) = projection_from_panel(panel.width_px, panel.height_px);
             println!("[core] projection defaults from the panel: {w}x{h}");
             defaults.projection_width = w;
             defaults.projection_height = h;
             defaults.cluster_width = w;
             defaults.cluster_height = h;
+        }
+        if file.get("screenWidthMm").is_none()
+            && file.get("screenHeightMm").is_none()
+            && let Some(panel) = host.panel.filter(plausible_mm)
+        {
+            println!(
+                "[core] screen size defaults from the panel: {}x{} mm",
+                panel.width_mm, panel.height_mm
+            );
+            defaults.screen_width_mm.main = panel.width_mm;
+            defaults.screen_height_mm.main = panel.height_mm;
         }
 
         let mut named = current_names(&file);
@@ -393,6 +423,19 @@ pub mod tests {
 
     use super::*;
 
+    fn panel(width_px: u32, height_px: u32, width_mm: u32, height_mm: u32) -> Panel {
+        Panel {
+            width_mm,
+            height_mm,
+            width_px,
+            height_px,
+        }
+    }
+
+    fn px_only(width_px: u32, height_px: u32) -> Panel {
+        panel(width_px, height_px, 0, 0)
+    }
+
     pub struct TempDir(pub PathBuf);
 
     impl TempDir {
@@ -440,15 +483,52 @@ pub mod tests {
         let dir = TempDir::new();
         let host = HostFacts {
             car_name: Some("golf".into()),
-            panel_px: Some((1920, 1200)),
+            panel: Some(px_only(1920, 1200)),
         };
         let config = file_in(&dir).load(&host);
         assert_eq!(config.car_name, "golf");
         assert_eq!(
             (config.projection_width, config.projection_height),
-            (1920, 1200)
+            (1728, 1080)
         );
-        assert_eq!((config.cluster_width, config.cluster_height), (1920, 1200));
+        assert_eq!((config.cluster_width, config.cluster_height), (1728, 1080));
+    }
+
+    #[test]
+    fn a_fresh_install_takes_the_screen_size_the_panel_reports() {
+        let dir = TempDir::new();
+        let host = HostFacts {
+            car_name: None,
+            panel: Some(panel(3840, 2160, 609, 355)),
+        };
+        let config = file_in(&dir).load(&host);
+        assert_eq!(
+            (config.screen_width_mm.main, config.screen_height_mm.main),
+            (609, 355)
+        );
+        assert_eq!(config.screen_width_mm.cluster, 0);
+    }
+
+    #[test]
+    fn a_size_that_does_not_match_the_pixels_is_left_out() {
+        assert!(plausible_mm(&panel(1920, 1080, 344, 194)));
+        assert!(!plausible_mm(&panel(1920, 1080, 16, 9)));
+        assert!(!plausible_mm(&panel(1920, 1080, 300, 300)));
+        assert!(!plausible_mm(&px_only(1920, 1080)));
+        let dir = TempDir::new();
+        let host = HostFacts {
+            car_name: None,
+            panel: Some(panel(1024, 768, 160, 90)),
+        };
+        assert_eq!(file_in(&dir).load(&host).screen_width_mm.main, 0);
+    }
+
+    #[test]
+    fn a_panel_above_1080p_starts_the_projection_at_1080p() {
+        assert_eq!(projection_from_panel(3840, 2160), (1920, 1080));
+        assert_eq!(projection_from_panel(1280, 720), (1280, 720));
+        assert_eq!(projection_from_panel(800, 480), (800, 480));
+        assert_eq!(projection_from_panel(2388, 1668), (1546, 1080));
     }
 
     #[test]
@@ -456,12 +536,12 @@ pub mod tests {
         let dir = TempDir::new();
         let host = HostFacts {
             car_name: None,
-            panel_px: Some((1080, 2400)),
+            panel: Some(px_only(1080, 2400)),
         };
         let config = file_in(&dir).load(&host);
         assert_eq!(
             (config.projection_width, config.projection_height),
-            (2400, 1080)
+            (1920, 864)
         );
     }
 
@@ -490,7 +570,7 @@ pub mod tests {
 
         let host = HostFacts {
             car_name: None,
-            panel_px: None,
+            panel: None,
         };
         let config = file_in(&dir).load(&host);
         assert!(config.cluster_screen_active);
@@ -562,7 +642,7 @@ pub mod tests {
 
         let host = HostFacts {
             car_name: Some("ignored".into()),
-            panel_px: Some((800, 480)),
+            panel: Some(px_only(800, 480)),
         };
         let config = file_in(&dir).load(&host);
         assert_eq!(config.car_name, "Bulli");

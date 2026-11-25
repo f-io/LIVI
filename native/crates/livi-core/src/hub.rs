@@ -78,12 +78,16 @@ impl Hub {
         self.applied.subscribe()
     }
 
+    #[cfg(test)]
     pub fn apply_pending(&self) -> bool {
         *self.applied.borrow() != self.config()
     }
 
-    pub fn apply(&self) -> Option<(Config, Config)> {
-        let next = self.config();
+    pub fn applied_config(&self) -> Config {
+        self.applied.borrow().clone()
+    }
+
+    pub fn apply(&self, next: Config) -> Option<(Config, Config)> {
         let before = self.applied.borrow().clone();
         if before == next {
             return None;

@@ -15,6 +15,7 @@ use livi_aa_stack::commands::{Command, TouchAction, TouchItem};
 use livi_aa_stack::driver::SessionCmd;
 use livi_aa_stack::manager::{AaCmd, AaEvent, AaHandle, SessionId as AaId};
 use livi_aa_stack::media::AudioKind as AaKind;
+use livi_core_proto::apply;
 use livi_core_proto::config::{Config, KeyBindings};
 use livi_core_proto::helper_events::{HelperKind, NowPlayingPatch};
 use livi_core_proto::ids::Ids;

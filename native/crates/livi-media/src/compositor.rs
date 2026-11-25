@@ -92,23 +92,35 @@ fn screen_of(role: &str) -> Option<Screen> {
 }
 
 fn display_of(line: &str) -> Option<Display> {
-    let mut words = line.splitn(7, ' ');
-    let (Some("display"), Some(connector), Some(role), Some(current), Some(modes), Some(id)) = (
+    let mut words = line.splitn(8, ' ');
+    let (
+        Some("display"),
+        Some(connector),
+        Some(role),
+        Some(current),
+        Some(default),
+        Some(modes),
+        Some(id),
+    ) = (
         words.next(),
         words.next(),
         words.next(),
         words.next(),
         words.next(),
         words.next(),
-    ) else {
+        words.next(),
+    )
+    else {
         return None;
     };
+    let given = |v: &str| (v != "-").then(|| v.to_string());
     Some(Display {
         connector: connector.to_string(),
         id: id.to_string(),
         panel: words.next().unwrap_or("").trim().to_string(),
         screen: screen_of(role),
-        current: (current != "-").then(|| current.to_string()),
+        current: given(current),
+        panel_default: given(default),
         modes: if modes == "-" {
             Vec::new()
         } else {
@@ -883,7 +895,7 @@ mod tests {
         ctrl.screen("cluster", true, Some((800, 480)));
         let (mut rd, mut wr) = comp.accept().await;
         assert_eq!(line(&mut rd).await, "screen cluster 1 800 480\n");
-        wr.write_all(b"ui wayland-2 /dev/dri/renderD129\npanel main 344 194 1920 1080\ndisplays 2\ntouchpanel HDMI-A-1 ILITEK ILITEK-TP\ndisplay HDMI-A-1 main 1280x720@60 1920x1080,1280x720 DEL-a0b1-00000001 DELL U2415\ndisplay DSI-1 - - 800x480 DSI-1 \n")
+        wr.write_all(b"ui wayland-2 /dev/dri/renderD129\npanel main 344 194 1920 1080\ndisplays 2\ntouchpanel HDMI-A-1 ILITEK ILITEK-TP\ndisplay HDMI-A-1 main 1280x720@60 1920x1080 1920x1080,1280x720 DEL-a0b1-00000001 DELL U2415\ndisplay DSI-1 - - - 800x480 DSI-1 \n")
             .await
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), ui.changed())
@@ -920,6 +932,7 @@ mod tests {
                     panel: "DELL U2415".into(),
                     screen: Some(Screen::Main),
                     current: Some("1280x720@60".into()),
+                    panel_default: Some("1920x1080".into()),
                     modes: vec!["1920x1080".into(), "1280x720".into()],
                     touch: vec!["ILITEK ILITEK-TP".into()],
                 },
@@ -929,6 +942,7 @@ mod tests {
                     panel: String::new(),
                     screen: None,
                     current: None,
+                    panel_default: None,
                     modes: vec!["800x480".into()],
                     touch: Vec::new(),
                 },

@@ -1219,6 +1219,42 @@ async fn with_no_phone_a_setting_goes_live_once_the_settings_sit_still() {
 }
 
 #[tokio::test]
+async fn with_no_phone_the_screen_waits_for_apply() {
+    let mut rig = Rig::new();
+    let waiting = |rig: &Rig| rig.hub.watch().borrow().system.apply_pending;
+    rig.settings(|c| c.screen_width_mm.main = 344);
+    rig.drain();
+    assert_eq!(rig.p.apply_due, None);
+    assert!(waiting(&rig));
+    rig.settings(|c| c.wireless_aa_enabled = true);
+    rig.p.apply_idle();
+    assert!(rig.hub.apply_pending());
+    assert_eq!(rig.hub.applied().borrow().screen_width_mm.main, 0);
+    assert!(restarted(&rig).await);
+    rig.drain();
+
+    rig.p.apply_settings();
+    assert!(!rig.hub.apply_pending());
+    assert!(!waiting(&rig));
+    assert!(!restarted(&rig).await);
+    assert!(rig.drain().is_empty(), "no phone to drop");
+}
+
+#[tokio::test]
+async fn applying_only_the_screen_keeps_the_phones() {
+    let mut rig = Rig::new();
+    rig.connect(1, true);
+    rig.drain();
+    rig.settings(|c| c.display_rotation.main = 90);
+    assert!(rig.hub.watch().borrow().system.apply_pending);
+    rig.drain();
+    rig.p.apply_settings();
+    assert_eq!(rig.hub.applied().borrow().display_rotation.main, 90);
+    assert!(!restarted(&rig).await);
+    assert!(rig.drain().is_empty(), "the sessions stay");
+}
+
+#[tokio::test]
 async fn with_a_phone_a_setting_waits_until_the_last_phone_leaves() {
     let mut rig = Rig::new();
     rig.connect(1, true);

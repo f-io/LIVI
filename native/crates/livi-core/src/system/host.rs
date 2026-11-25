@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_media::compositor::Panel;
+
 pub fn car_name(hostname: &str, max: usize) -> Option<String> {
     let name = hostname.split('.').next().unwrap_or("").trim();
     if name.is_empty() || name.eq_ignore_ascii_case("localhost") {
@@ -22,7 +24,7 @@ pub fn hostname() -> Option<String> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn edid_native_px(edid: &[u8]) -> Option<(u32, u32)> {
+fn edid_panel(edid: &[u8]) -> Option<Panel> {
     if edid.len() < 128 {
         return None;
     }
@@ -35,7 +37,12 @@ fn edid_native_px(edid: &[u8]) -> Option<(u32, u32)> {
     let height_mm = ((b(14) & 0x0f) << 8) | b(13);
     let width = ((b(4) & 0xf0) << 4) | b(2);
     let height = ((b(7) & 0xf0) << 4) | b(5);
-    (width_mm > 0 && height_mm > 0 && width > 0 && height > 0).then_some((width, height))
+    (width_mm > 0 && height_mm > 0 && width > 0 && height > 0).then_some(Panel {
+        width_mm,
+        height_mm,
+        width_px: width,
+        height_px: height,
+    })
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -52,7 +59,7 @@ fn forced_edid_connector(cmdline: &str) -> Option<&str> {
 }
 
 #[cfg(target_os = "linux")]
-pub fn panel_native_px() -> Option<(u32, u32)> {
+pub fn panel_native() -> Option<Panel> {
     use std::fs;
 
     let cmdline = fs::read_to_string("/proc/cmdline").unwrap_or_default();
@@ -72,12 +79,24 @@ pub fn panel_native_px() -> Option<(u32, u32)> {
         None if connected.len() == 1 => &connected[0],
         None => return None,
     };
-    let px = fs::read(format!("/sys/class/drm/{pick}/edid"))
+    let panel = fs::read(format!("/sys/class/drm/{pick}/edid"))
         .ok()
-        .and_then(|edid| edid_native_px(&edid))
-        .or_else(|| mode_px(&fs::read_to_string(format!("/sys/class/drm/{pick}/modes")).ok()?))?;
-    println!("[core] {pick}: {}x{} px", px.0, px.1);
-    Some(px)
+        .and_then(|edid| edid_panel(&edid))
+        .or_else(|| {
+            let (width_px, height_px) =
+                mode_px(&fs::read_to_string(format!("/sys/class/drm/{pick}/modes")).ok()?)?;
+            Some(Panel {
+                width_mm: 0,
+                height_mm: 0,
+                width_px,
+                height_px,
+            })
+        })?;
+    println!(
+        "[core] {pick}: {}x{} px, {}x{} mm",
+        panel.width_px, panel.height_px, panel.width_mm, panel.height_mm
+    );
+    Some(panel)
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -88,12 +107,12 @@ fn mode_px(modes: &str) -> Option<(u32, u32)> {
 }
 
 #[cfg(not(any(target_os = "linux", in_process)))]
-pub fn panel_native_px() -> Option<(u32, u32)> {
+pub fn panel_native() -> Option<Panel> {
     None
 }
 
 #[cfg(in_process)]
-static SCREEN: std::sync::OnceLock<livi_media::compositor::Panel> = std::sync::OnceLock::new();
+static SCREEN: std::sync::OnceLock<Panel> = std::sync::OnceLock::new();
 
 #[cfg(in_process)]
 pub fn set_screen(width_mm: f64, height_mm: f64, width_px: usize, height_px: usize) {
@@ -109,17 +128,17 @@ pub fn set_screen(width_mm: f64, height_mm: f64, width_px: usize, height_px: usi
 }
 
 #[cfg(in_process)]
-pub fn panel_native_px() -> Option<(u32, u32)> {
-    SCREEN.get().map(|p| (p.width_px, p.height_px))
+pub fn panel_native() -> Option<Panel> {
+    SCREEN.get().copied()
 }
 
 #[cfg(in_process)]
-pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
+pub fn screen_panel() -> Option<Panel> {
     SCREEN.get().copied()
 }
 
 #[cfg(target_os = "macos")]
-pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
+pub fn screen_panel() -> Option<Panel> {
     use std::ffi::c_void;
 
     #[repr(C)]
@@ -161,7 +180,7 @@ pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
 }
 
 #[cfg(not(any(target_os = "macos", in_process)))]
-pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
+pub fn screen_panel() -> Option<Panel> {
     None
 }
 
@@ -171,8 +190,8 @@ fn screen_panel_from(
     height_mm: f64,
     width_px: usize,
     height_px: usize,
-) -> Option<livi_media::compositor::Panel> {
-    let panel = livi_media::compositor::Panel {
+) -> Option<Panel> {
+    let panel = Panel {
         width_mm: width_mm.round() as u32,
         height_mm: height_mm.round() as u32,
         width_px: u32::try_from(width_px).ok()?,
@@ -237,16 +256,21 @@ mod tests {
     }
 
     #[test]
-    fn edid_gives_the_native_mode() {
+    fn edid_gives_the_native_mode_and_size() {
         assert_eq!(
-            edid_native_px(&edid(1920, 1080, 344, 194)),
-            Some((1920, 1080))
+            edid_panel(&edid(1920, 1080, 344, 194)),
+            Some(Panel {
+                width_mm: 344,
+                height_mm: 194,
+                width_px: 1920,
+                height_px: 1080
+            })
         );
-        assert_eq!(edid_native_px(&edid(1024, 600, 0, 0)), None);
-        assert_eq!(edid_native_px(&edid(1920, 1080, 344, 194)[..127]), None);
+        assert_eq!(edid_panel(&edid(1024, 600, 0, 0)), None);
+        assert_eq!(edid_panel(&edid(1920, 1080, 344, 194)[..127]), None);
         let mut no_timing = edid(1920, 1080, 344, 194);
         no_timing[0x36] = 0;
-        assert_eq!(edid_native_px(&no_timing), None);
+        assert_eq!(edid_panel(&no_timing), None);
     }
 
     #[test]

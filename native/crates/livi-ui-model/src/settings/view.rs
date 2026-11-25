@@ -257,7 +257,7 @@ pub fn default_color(path: &str) -> &'static str {
 
 fn resolved(node: &Node, source: OptionSource, state: &Value) -> Option<String> {
     let (screen, field) = match source {
-        OptionSource::DisplayModes(screen) => (screen, "current"),
+        OptionSource::DisplayModes(screen) => (screen, "panelDefault"),
         OptionSource::Connectors => {
             let screen = match node.path.rsplit('.').next()? {
                 "main" => Display::Main,
@@ -751,14 +751,14 @@ mod tests {
         let state = json!({
             "system": {
                 "displaysSettable": true,
-                "displays": [{ "connector": "HDMI-A-1", "screen": "main", "current": "1280x720@60", "modes": ["1280x720@60"] }]
+                "displays": [{ "connector": "HDMI-A-1", "screen": "main", "current": "1920x1080@60", "panelDefault": "3840x2160", "modes": ["3840x2160", "1920x1080"] }]
             },
             "config": { "displayConnector": { "main": "" }, "displayMode": { "main": "" } }
         });
         let rows = list(&["general", "screenSettings", "mainScreen"], &state);
         let value = |l: &str| rows.iter().find(|r| r.label == l).unwrap().value.clone();
         assert_eq!(value("Connector"), "HDMI-A-1 (Automatic)");
-        assert_eq!(value("Display Mode"), "1280x720@60 (Panel default)");
+        assert_eq!(value("Display Mode"), "3840x2160 (Panel default)");
     }
 
     #[test]

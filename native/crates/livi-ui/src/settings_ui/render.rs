@@ -182,15 +182,7 @@ pub(super) fn render_screen(c: &mut Controller, s: &SettingsState, state: &Value
         None => screen,
     };
     s.set_can_back(!c.stack.is_empty() || c.browser.is_some());
-    let open = sessions_open(state);
-    if !open || c.baseline.is_none() {
-        c.baseline = Some(state["config"].clone());
-    }
-    let waiting = c
-        .baseline
-        .as_ref()
-        .is_some_and(|b| pending(&state["config"], b));
-    s.set_show_apply(open && waiting);
+    s.set_show_apply(state["system"]["applyPending"].as_bool().unwrap_or(false));
     s.set_apply_text(c.strings.t("settings.apply", "Apply").into());
     s.set_hue_label(c.strings.t("settings.colorHue", "Hue").into());
     s.set_saturation_label(c.strings.t("settings.colorSaturation", "Saturation").into());

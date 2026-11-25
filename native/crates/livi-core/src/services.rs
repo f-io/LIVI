@@ -76,19 +76,10 @@ async fn follow_displays(
         let Some(list) = displays.borrow_and_update().clone() else {
             continue;
         };
-        let main = list
-            .iter()
-            .find(|d| d.screen == Some(livi_core_proto::state::Screen::Main))
-            .and_then(|d| Some((d.connector.clone(), d.current.clone()?)));
         hub.update(|s| {
             s.system.displays_settable = true;
             s.system.displays = list;
         });
-        let cfg = hub.config();
-        let kiosk = cfg.kiosk.main || std::env::var("LIVI_KIOSK").is_ok_and(|v| v == "1");
-        if kiosk && let Some((connector, current)) = main {
-            crate::audio::host_output::pin(&connector, &current).await;
-        }
     }
 }
 
@@ -287,6 +278,7 @@ impl Services {
             host_ready_rx,
         ));
         tokio::spawn(follow_display_mode(hub.applied(), ctrl.clone()));
+        tokio::spawn(follow_screen_mm(hub.clone()));
         tokio::spawn(forward_touches(
             ctrl.touches(),
             asks.input_from_compositor.clone(),
@@ -735,6 +727,21 @@ fn name_of(screen: Screen) -> &'static str {
         Screen::Main => "main",
         Screen::Cluster => "cluster",
         Screen::Aux => "aux",
+    }
+}
+
+async fn follow_screen_mm(hub: Arc<Hub>) {
+    let mut applied = hub.applied();
+    loop {
+        let mm = {
+            let cfg = applied.borrow_and_update();
+            Some((cfg.screen_width_mm.main, cfg.screen_height_mm.main))
+                .filter(|&(w, h)| w > 0 && h > 0)
+        };
+        hub.update(|s| s.system.screen_mm = mm);
+        if applied.changed().await.is_err() {
+            return;
+        }
     }
 }
 

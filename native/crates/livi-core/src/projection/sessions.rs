@@ -45,6 +45,7 @@ impl Projection {
                 };
                 entry.device.merge(device);
                 self.sessions.push(entry);
+                self.apply_when_idle();
                 index
             }
         };

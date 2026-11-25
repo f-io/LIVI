@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 pub mod aa_events;
+pub mod apply;
 pub mod config;
 pub mod features;
 pub mod frame;

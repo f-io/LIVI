@@ -290,6 +290,10 @@ pub struct System {
     pub muted: bool,
     #[serde(default)]
     pub display_off: bool,
+    #[serde(default)]
+    pub screen_mm: Option<(u32, u32)>,
+    #[serde(default)]
+    pub apply_pending: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -473,6 +477,8 @@ pub struct Display {
     pub panel: String,
     pub screen: Option<Screen>,
     pub current: Option<String>,
+    #[serde(default)]
+    pub panel_default: Option<String>,
     pub modes: Vec<String>,
     pub touch: Vec<String>,
 }
