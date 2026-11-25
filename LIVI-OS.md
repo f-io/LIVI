@@ -1,6 +1,6 @@
 # LIVI OS
 
-LIVI OS is a standalone operating system for in-vehicle hardware, built on mainline Linux.
+LIVI OS is a standalone operating system for embedded hardware, built on mainline Linux.
 
 ## Firmware
 
@@ -25,7 +25,16 @@ installs it. With **Nightly** on it checks the nightly builds instead of the lat
 the unit alone while it flashes. It reboots on its own when it is done.
 
 The [firmware page](https://f-io.github.io/LIVI/firmware/) has every firmware file, so you can also
+
 upload one by hand.
+
+## Examples
+
+### F133-XFH - RISCV, 64MB DDR2, 16MB SPI NOR
+
+<p align="center">
+  <img src="docs/media/livi-os/f133_xfh.png" alt="Cluster on LIVI OS" width="70%" />
+</p>
 
 ## If something goes wrong
 
