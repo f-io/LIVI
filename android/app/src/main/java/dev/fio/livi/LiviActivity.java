@@ -34,6 +34,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import java.io.File;
 import java.io.FileInputStream;
@@ -97,6 +98,7 @@ public class LiviActivity extends NativeActivity {
         bluetoothAddress(LiviBluetooth.address(this));
         super.onCreate(state);
         getWindow().setFormat(PixelFormat.TRANSLUCENT);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         List<String> wanted = new ArrayList<>(Arrays.asList(LiviBluetooth.PERMISSIONS));
         wanted.addAll(Arrays.asList(LiviHotspot.PERMISSIONS));
         wanted.add(Manifest.permission.RECORD_AUDIO);
