@@ -13,8 +13,9 @@ use objc2::runtime::NSObjectProtocol;
 use objc2::{ClassType, MainThreadMarker, MainThreadOnly, Message, define_class, sel};
 use objc2_foundation::{NSNotification, NSNotificationCenter};
 use objc2_ui_kit::{
-    UIApplication, UIResponder, UIScene, UISceneConnectionOptions, UISceneDelegate, UISceneSession,
-    UIWindow, UIWindowDidBecomeVisibleNotification, UIWindowScene,
+    UIApplication, UIApplicationDidBecomeActiveNotification, UIResponder, UIScene,
+    UISceneConnectionOptions, UISceneDelegate, UISceneSession, UIWindow,
+    UIWindowDidBecomeVisibleNotification, UIWindowScene,
 };
 
 thread_local! {
@@ -49,6 +50,12 @@ define_class!(
                     Some(UIWindowDidBecomeVisibleNotification),
                     None,
                 );
+                NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                    self,
+                    sel!(becameActive:),
+                    Some(UIApplicationDidBecomeActiveNotification),
+                    None,
+                );
             }
             #[allow(deprecated)]
             let windows = UIApplication::sharedApplication(self.mtm()).windows();
@@ -59,6 +66,11 @@ define_class!(
     }
 
     impl SceneDelegate {
+        #[unsafe(method(becameActive:))]
+        fn became_active(&self, _note: &NSNotification) {
+            livi_core::foregrounded();
+        }
+
         #[unsafe(method(windowShown:))]
         fn window_shown(&self, note: &NSNotification) {
             let Some(window) = note.object().and_then(|o| o.downcast::<UIWindow>().ok()) else {
@@ -77,6 +89,8 @@ fn adopt(window: &UIWindow, scene: &UIWindowScene) {
     if window.windowScene().is_none() {
         window.setWindowScene(Some(scene));
         window.makeKeyAndVisible();
+        crate::keys::attach(window, scene.mtm());
+        crate::volume::install(window, scene.mtm());
     }
 }
 

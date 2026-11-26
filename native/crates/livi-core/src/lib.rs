@@ -48,7 +48,10 @@ pub use files::log_file;
 pub use files::paths::Paths;
 pub use helper::Helper;
 use hub::Hub;
+#[cfg(target_os = "ios")]
+pub use audio::ios_volume::{IosVolume, register as set_ios_volume};
 pub use livi_media::output::{InProcessOutput, OutputBackend};
+pub use projection::foregrounded;
 pub use resources::Resources;
 use server::Core;
 use services::Services;
@@ -163,7 +166,7 @@ pub async fn run(
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     tokio::spawn(vehicle::car_bridge::run(core.clone(), inside.clone()));
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
     tokio::spawn(audio::system_volume::follow(core.clone()));
     #[cfg(target_os = "linux")]
     tokio::spawn(system::backlight::follow(core.clone()));

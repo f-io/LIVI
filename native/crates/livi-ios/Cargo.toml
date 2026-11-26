@@ -9,6 +9,7 @@ name = "livi"
 path = "src/main.rs"
 
 [target.'cfg(target_os = "ios")'.dependencies]
+block2 = "0.6.2"
 dispatch2 = "0.3.1"
 gstreamer.workspace = true
 libc.workspace = true
@@ -21,7 +22,20 @@ livi-ui.workspace = true
 livi-video-player.workspace = true
 livi-video-view.workspace = true
 objc2 = "0.6.5"
+objc2-avf-audio = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "AVAudioSession",
+  "AVAudioSessionTypes",
+] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-media-player = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "block2",
+  "MPNowPlayingInfoCenter",
+  "MPRemoteCommand",
+  "MPRemoteCommandCenter",
+  "MPRemoteCommandEvent",
+] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
   "std",
   "NSArray",
@@ -43,9 +57,16 @@ objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
   "objc2-uniform-type-identifiers",
   "UIApplication",
   "UIColor",
+  "UIControl",
   "UIDocumentPickerViewController",
+  "UIEvent",
+  "UIKey",
+  "UIKeyConstants",
+  "UIPress",
+  "UIPressesEvent",
   "UIResponder",
   "UIScene",
+  "UISlider",
   "UIScreen",
   "UISceneDefinitions",
   "UISceneOptions",

@@ -49,6 +49,16 @@ use theme_catalog::ThemeId;
 
 pub use ap::ApEvent;
 
+static FOREGROUND: std::sync::OnceLock<broadcast::Sender<()>> = std::sync::OnceLock::new();
+
+fn foreground() -> &'static broadcast::Sender<()> {
+    FOREGROUND.get_or_init(|| broadcast::channel(1).0)
+}
+
+pub fn foregrounded() {
+    let _ = foreground().send(());
+}
+
 mod aa;
 pub mod airplay;
 pub mod android_auto;
@@ -658,6 +668,7 @@ impl Projection {
         let mut created = Some(self.plane.player_created());
         let mut host = Some(self.plane.host_events());
         let mut cluster_created = Some(self.clusters.player_created());
+        let mut foreground = foreground().subscribe();
         let mut back = self
             .phone_back
             .take()
@@ -777,6 +788,12 @@ impl Projection {
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => cluster_created = None,
                 },
+                fg = foreground.recv() => {
+                    if fg.is_ok() {
+                        self.plane.refresh();
+                        self.clusters.refresh();
+                    }
+                }
             }
         }
     }

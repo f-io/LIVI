@@ -63,12 +63,55 @@ mod output {
     }
 }
 
+#[cfg(target_os = "ios")]
+mod output {
+    use tokio::sync::mpsc;
+
+    use super::{Fault, OutputEvent, SAME};
+
+    pub struct Watch(tokio::task::JoinHandle<()>);
+
+    impl Drop for Watch {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+
+    pub async fn get(_device: &str) -> Result<f64, Fault> {
+        crate::audio::ios_volume::get().ok_or(Fault::Missing)
+    }
+
+    pub async fn set(_device: &str, level: f64) -> Result<(), Fault> {
+        crate::audio::ios_volume::set(level);
+        Ok(())
+    }
+
+    pub fn watch(tx: mpsc::UnboundedSender<OutputEvent>) -> Watch {
+        Watch(tokio::spawn(async move {
+            let mut last: Option<f64> = None;
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(200));
+            loop {
+                tick.tick().await;
+                if let Some(v) = crate::audio::ios_volume::get()
+                    && last.is_none_or(|l| (v - l).abs() >= SAME)
+                {
+                    last = Some(v);
+                    if tx.send(OutputEvent::Changed).is_err() {
+                        break;
+                    }
+                }
+            }
+        }))
+    }
+}
+
 const ECHO_WINDOW: Duration = Duration::from_millis(400);
 const READ_DEBOUNCE: Duration = Duration::from_millis(120);
 const SAME: f64 = 0.005;
 
 pub enum Fault {
     Missing,
+    #[cfg_attr(target_os = "ios", allow(dead_code))]
     Other(String),
 }
 
@@ -84,6 +127,7 @@ impl std::fmt::Display for Fault {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputEvent {
     Changed,
+    #[cfg_attr(target_os = "ios", allow(dead_code))]
     New,
 }
 

@@ -12,11 +12,14 @@ use livi_helper::in_process::{Host, InProcessHelper};
 const CORE_START: Duration = Duration::from_secs(15);
 
 pub fn start() -> Result<(), Box<dyn std::error::Error>> {
+    // SAFETY: set before any other thread starts.
+    unsafe { std::env::set_var("LIVI_BOARD_HIDDEN", "screenSettings,softwareUpdate") };
     let mtm = objc2::MainThreadMarker::new().ok_or("not on the main thread")?;
     crate::scene::register(mtm);
     crate::screen::report(mtm);
     crate::gst::init()?;
     let socket = core()?;
+    crate::remote::start();
     livi_ui::run(
         || livi_core_client::wait_for_socket(&socket, CORE_START),
         None,

@@ -7,6 +7,8 @@ mod app;
 #[cfg(target_os = "ios")]
 mod gst;
 #[cfg(target_os = "ios")]
+mod keys;
+#[cfg(target_os = "ios")]
 mod media;
 #[cfg(target_os = "ios")]
 mod paths;
@@ -15,10 +17,13 @@ mod picker;
 #[cfg(target_os = "ios")]
 mod planes;
 #[cfg(target_os = "ios")]
+mod remote;
 #[cfg(target_os = "ios")]
 mod scene;
 #[cfg(target_os = "ios")]
 mod screen;
+#[cfg(target_os = "ios")]
+mod volume;
 
 #[cfg(target_os = "ios")]
 fn main() {

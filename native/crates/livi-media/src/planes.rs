@@ -205,6 +205,17 @@ impl MainPlane {
             self.gst.stop(self.id);
         }
     }
+
+    pub fn refresh(&self) {
+        let create = {
+            let st = self.state();
+            (st.started && !st.gave_way).then(|| (st.codec, st.codec_data.clone()))
+        };
+        if let Some((Some(codec), data)) = create {
+            self.gst.create_player(self.id, codec, &data);
+            let _ = self.created.send(());
+        }
+    }
 }
 
 pub struct VideoPlane {
@@ -408,6 +419,26 @@ impl ClusterPlanes {
         for i in 0..CLUSTER_SCREENS.len() {
             self.stop(i);
         }
+    }
+
+    pub fn refresh(&self) {
+        let jobs: Vec<(usize, VideoCodec, Vec<u8>)> = {
+            let st = self.state();
+            match st.codec {
+                Some(codec) => (0..CLUSTER_SCREENS.len())
+                    .filter(|&i| st.slots[i].started)
+                    .map(|i| (i, codec, st.codec_data.clone()))
+                    .collect(),
+                None => return,
+            }
+        };
+        if jobs.is_empty() {
+            return;
+        }
+        for (i, codec, data) in jobs {
+            self.gst.create_player(cluster_plane(i), codec, &data);
+        }
+        let _ = self.created.send(());
     }
 
     fn start(self: &Arc<Self>, i: usize) {
