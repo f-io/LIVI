@@ -10,6 +10,7 @@ pub fn unix_ms() -> f64 {
         .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
 }
 
+#[cfg(not(target_os = "ios"))]
 pub fn set_clock(secs: i64) -> std::io::Result<()> {
     let at = libc::timespec {
         tv_sec: secs as _,
@@ -23,6 +24,11 @@ pub fn set_clock(secs: i64) -> std::io::Result<()> {
         .arg("save")
         .output();
     Ok(())
+}
+
+#[cfg(target_os = "ios")]
+pub fn set_clock(_secs: i64) -> std::io::Result<()> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
 }
 
 pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
