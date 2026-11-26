@@ -6,7 +6,7 @@
 
 LIVI is an open-source Apple CarPlay and Android Auto head unit built in Rust with a Slint UI.
 
-It runs on Linux desktops and embedded boards as well as on macOS and Android. A native zero-copy GStreamer pipeline handles hardware-decoded video and low-latency audio. Multitouch and D-Pad navigation are built in, and it works even on very small embedded and OEM displays.
+It runs on Linux desktops and embedded boards as well as on macOS, Android and iOS. A native zero-copy GStreamer pipeline handles hardware-decoded video and low-latency audio. Multitouch and D-Pad navigation are built in, and it works even on very small embedded and OEM displays.
 
 LIVI also comes as a fully embedded system on mainline Linux: [LIVI OS](LIVI-OS.md)
 
@@ -316,6 +316,12 @@ Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
 - Wired and wireless CarPlay and Android Auto, wireless over the device's own Bluetooth and Wi-Fi or over a LIVI Link
 - LIVI asks once for a local VPN, it uses it to reach the iPhone and the LIVI Link over USB. Android runs one VPN at a time, so turn other VPNs off
 - The LIVI Link's web page is at http://10.10.10.1, Android does not resolve `livi-link.local` over a VPN
+
+## iOS (arm64)
+
+LIVI also runs on iOS and iPadOS, but there is no CI build and no prebuilt binary. Apple does not let an unsigned app onto a device, so a binary built by someone else would not install for you. Build it yourself and sign it with your own Apple developer account, then deploy it to your device from Xcode.
+
+Building needs a Mac with Xcode (including the iOS SDK); the app is produced with `cargo xtask package-ios`.
 
 ## Build Environment
 
