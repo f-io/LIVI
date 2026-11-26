@@ -59,11 +59,13 @@ slint::include_modules!();
 
 type Kiosk = Box<dyn Fn(bool)>;
 type Pick = Box<dyn Fn()>;
+type MediaSink = Box<dyn Fn(bool)>;
 
 thread_local! {
     static CLIENT: RefCell<Option<Client>> = const { RefCell::new(None) };
     static MAIN: RefCell<Option<Weak<AppWindow>>> = const { RefCell::new(None) };
     static KIOSK: RefCell<Option<Kiosk>> = const { RefCell::new(None) };
+    static MEDIA_SINK: RefCell<Option<MediaSink>> = const { RefCell::new(None) };
     static PICK: RefCell<Option<Pick>> = const { RefCell::new(None) };
     static BASE_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
     static ZOOM: Cell<f32> = const { Cell::new(1.0) };
@@ -506,6 +508,39 @@ pub fn key(code: &str, printed: Option<&str>, down: bool, repeat: bool) {
     CLIENT.with_borrow(|c| {
         if let Some(c) = c {
             keys_ui::key(&ui, c, code, printed, down, repeat);
+        }
+    });
+}
+
+pub fn set_media_sink(sink: impl Fn(bool) + 'static) {
+    MEDIA_SINK.with_borrow_mut(|s| *s = Some(Box::new(sink)));
+}
+
+pub(crate) fn media_state(playing: bool) {
+    MEDIA_SINK.with_borrow(|s| {
+        if let Some(s) = s {
+            s(playing);
+        }
+    });
+}
+
+pub fn media(code: i32) {
+    use livi_core_proto::message::MediaControl;
+    use livi_ui_model::media::Pressed;
+    let (which, control) = match code {
+        0 => (Pressed::Play, MediaControl::PlayPause),
+        1 => (Pressed::Play, MediaControl::Play),
+        2 => (Pressed::Play, MediaControl::Pause),
+        3 => (Pressed::Next, MediaControl::Next),
+        4 => (Pressed::Prev, MediaControl::Prev),
+        _ => return,
+    };
+    let Some(ui) = MAIN.with_borrow(|m| m.as_ref().and_then(Weak::upgrade)) else {
+        return;
+    };
+    CLIENT.with_borrow(|c| {
+        if let Some(c) = c {
+            media_ui::act(&ui, c, which, control);
         }
     });
 }

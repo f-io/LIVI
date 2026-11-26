@@ -15,6 +15,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageInstaller;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.media.session.MediaSession;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -59,6 +60,7 @@ public class LiviActivity extends NativeActivity {
     private final AtomicInteger lastPlane = new AtomicInteger();
     private FrameLayout stage;
     private volatile boolean kiosk;
+    private MediaSession mediaSession;
 
     static {
         System.loadLibrary("gstreamer_android");
@@ -66,6 +68,8 @@ public class LiviActivity extends NativeActivity {
     }
 
     private static native void key(int scancode, int typed, boolean down, boolean repeat);
+
+    static native void media(int control);
 
     private static native void surface(int plane, Surface surface);
 
@@ -105,6 +109,15 @@ public class LiviActivity extends NativeActivity {
         });
         addContentView(stage, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        mediaSession = LiviMedia.start(this);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (mediaSession != null) {
+            mediaSession.release();
+        }
+        super.onDestroy();
     }
 
     private int plane(int rank) {
@@ -221,6 +234,14 @@ public class LiviActivity extends NativeActivity {
     private void kiosk(boolean on) {
         kiosk = on;
         runOnUiThread(this::applyKiosk);
+    }
+
+    private void mediaState(boolean playing) {
+        runOnUiThread(() -> {
+            if (mediaSession != null) {
+                LiviMedia.setPlaying(mediaSession, playing);
+            }
+        });
     }
 
     @Override

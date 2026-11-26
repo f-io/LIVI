@@ -25,6 +25,7 @@ struct Live {
     duration_ms: f64,
     radios: Option<Radios>,
     on_air: Option<MediaSource>,
+    media_playing: Option<bool>,
     radio_playing: bool,
     radio_guess: Guess,
     tuned: Option<(u32, bool)>,
@@ -49,22 +50,31 @@ fn rgb([r, g, b]: [u8; 3]) -> Color {
 
 fn tick(ui: &AppWindow) {
     let now = Instant::now();
-    let keep = LIVE.with_borrow_mut(|l| {
+    let (keep, emit) = LIVE.with_borrow_mut(|l| {
         let shown = l.playback.tick(now);
         ui.set_progress(shown.progress);
         ui.set_elapsed_ms(shown.elapsed_ms as f32);
         ui.set_playing(shown.playing);
-        ui.global::<DabState>()
-            .set_playing(l.radio_guess.shown(l.radio_playing, now));
+        let radio_playing = l.radio_guess.shown(l.radio_playing, now);
+        ui.global::<DabState>().set_playing(radio_playing);
         if l.picked.is_some_and(|(_, until)| now >= until) {
             l.picked = None;
             ui.global::<DabState>().set_picked(-1);
         }
-        l.playback.running()
+        let playing = shown.playing || radio_playing;
+        let emit = (l.media_playing != Some(playing)).then(|| {
+            l.media_playing = Some(playing);
+            playing
+        });
+        let keep = l.playback.running()
             || l.playback.guessing(now)
             || l.radio_guess.pending(now)
-            || l.picked.is_some()
+            || l.picked.is_some();
+        (keep, emit)
     });
+    if let Some(playing) = emit {
+        crate::media_state(playing);
+    }
     let wanted =
         keep && (ui.get_page() == Page::Media || ui.get_video_shown() || ui.get_mirrored());
     TICK.with(|t| match (wanted, t.running()) {
@@ -348,6 +358,22 @@ pub fn pressed_feedback(ui: &AppWindow, which: Pressed) {
     tick(ui);
 }
 
+pub(crate) fn act(ui: &AppWindow, client: &Client, which: Pressed, control: MediaControl) {
+    pressed_feedback(ui, which);
+    let d = ui.global::<DabState>();
+    let view = d.get_view();
+    if !d.get_receiver() || view == MediaSource::Phone {
+        client.act(Action::PhoneMedia { control });
+        return;
+    }
+    let idle = LIVE.with_borrow(|l| l.on_air != Some(view));
+    match view {
+        MediaSource::Dab if idle => client.act(Action::DabResume),
+        MediaSource::Fm if idle => client.act(Action::FmResume),
+        _ => client.act(Action::Media { control }),
+    }
+}
+
 pub fn wire(ui: &AppWindow, client: &Client) {
     let weak = ui.as_weak();
     let button = |which: Pressed, control: MediaControl| {
@@ -355,19 +381,7 @@ pub fn wire(ui: &AppWindow, client: &Client) {
         let weak = weak.clone();
         move || {
             let Some(ui) = weak.upgrade() else { return };
-            pressed_feedback(&ui, which);
-            let d = ui.global::<DabState>();
-            let view = d.get_view();
-            if !d.get_receiver() || view == MediaSource::Phone {
-                c.act(Action::PhoneMedia { control });
-                return;
-            }
-            let idle = LIVE.with_borrow(|l| l.on_air != Some(view));
-            match view {
-                MediaSource::Dab if idle => c.act(Action::DabResume),
-                MediaSource::Fm if idle => c.act(Action::FmResume),
-                _ => c.act(Action::Media { control }),
-            }
+            act(&ui, &c, which, control);
         }
     };
     ui.on_play_pause(button(Pressed::Play, MediaControl::PlayPause));

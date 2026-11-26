@@ -50,6 +50,11 @@ fn start(app: AndroidApp) -> Result<(), Box<dyn std::error::Error>> {
     );
     let socket = CORE.get_or_init(|| core(&app)).clone()?;
     slint::android::init(app.clone())?;
+    livi_ui::set_media_sink(|playing| {
+        if let Err(e) = call(jni_str!("mediaState"), playing) {
+            eprintln!("[android] media state: {e}");
+        }
+    });
     livi_ui::run(
         || livi_core_client::wait_for_socket(&socket, CORE_START),
         None,
@@ -253,4 +258,13 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_key<'caller>(
         .map(String::from);
     let _ =
         slint::invoke_from_event_loop(move || livi_ui::key(code, typed.as_deref(), down, repeat));
+}
+
+#[unsafe(no_mangle)]
+extern "system" fn Java_dev_fio_livi_LiviActivity_media<'caller>(
+    _env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    control: jint,
+) {
+    let _ = slint::invoke_from_event_loop(move || livi_ui::media(control));
 }
