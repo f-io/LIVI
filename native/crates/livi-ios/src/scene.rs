@@ -57,8 +57,10 @@ define_class!(
                     None,
                 );
             }
+            let app = UIApplication::sharedApplication(self.mtm());
+            app.setIdleTimerDisabled(true);
             #[allow(deprecated)]
-            let windows = UIApplication::sharedApplication(self.mtm()).windows();
+            let windows = app.windows();
             for window in windows.iter() {
                 adopt(&window, &scene);
             }
