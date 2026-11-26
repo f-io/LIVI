@@ -29,6 +29,10 @@ on:
         description: "Build Android arm64 (apk)"
         type: boolean
         default: true
+      ios_arm64:
+        description: "Build iOS arm64 (unsigned ipa)"
+        type: boolean
+        default: true
       publish_nightly:
         description: "Publish nightly release"
         type: boolean
@@ -59,6 +63,7 @@ jobs:
           IN_MACOS_ARM64: ${{ inputs.macos_arm64 }}
           IN_MACOS_X64: ${{ inputs.macos_x64 }}
           IN_ANDROID_ARM64: ${{ inputs.android_arm64 }}
+          IN_IOS_ARM64: ${{ inputs.ios_arm64 }}
         run: |
           set -euo pipefail
 
@@ -74,6 +79,7 @@ jobs:
           if want "$IN_MACOS_ARM64"; then add macos macos-latest arm64 dmg; fi
           if want "$IN_MACOS_X64"; then add macos macos-latest x64 dmg; fi
           if want "$IN_ANDROID_ARM64"; then add android ubuntu-24.04 arm64 apk; fi
+          if want "$IN_IOS_ARM64"; then add ios macos-latest arm64 ipa; fi
 
           matrix="{\"include\":[$(IFS=,; echo "${entries[*]-}")]}"
           is_empty=$([[ ${#entries[@]} -eq 0 ]] && echo true || echo false)
@@ -128,7 +134,7 @@ jobs:
           sudo rm -rf /var/lib/apt/lists/*
 
       - name: Install deps (brew) [macos]
-        if: matrix.os == 'macos'
+        if: matrix.os == 'macos' || matrix.os == 'ios'
         shell: bash
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -179,6 +185,7 @@ jobs:
           set -euo pipefail
           rustup update stable --no-self-update
           rustup toolchain install
+          if [[ "${{ matrix.os }}" == ios ]]; then rustup target add aarch64-apple-ios; fi
           rustc --version
 
       - name: Restore cargo cache
@@ -236,6 +243,15 @@ jobs:
           fi
           rm -rf ../dist
           cargo xtask package-android
+
+      - name: Build and package [ios]
+        if: matrix.os == 'ios'
+        working-directory: native
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf ../dist
+          cargo xtask package-ios
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

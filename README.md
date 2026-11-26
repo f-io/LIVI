@@ -319,9 +319,13 @@ Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
 
 ## iOS (arm64)
 
-LIVI also runs on iOS and iPadOS, but there is no CI build and no prebuilt binary. Apple does not let an unsigned app onto a device, so a binary built by someone else would not install for you. Build it yourself and sign it with your own Apple developer account, then deploy it to your device from Xcode.
+LIVI also runs on iOS and iPadOS. The releases carry an unsigned `ipa`, which Apple does not let onto a device as it is. Sign it with your own Apple developer account on a Mac with Xcode:
 
-Building needs a Mac with Xcode (including the iOS SDK); the app is produced with `cargo xtask package-ios`.
+```bash
+scripts/ios/sign.sh LIVI-<version>-ios-arm64.ipa "<signing identity>" <profile.mobileprovision> [bundle id]
+```
+
+The bundle id is taken from the profile, a wildcard profile needs it passed. Install the signed `ipa` with Xcode or `xcrun devicectl device install app`. To build the app yourself, use `cargo xtask package-ios`.
 
 ## Build Environment
 
