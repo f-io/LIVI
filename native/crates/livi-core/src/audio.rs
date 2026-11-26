@@ -6,8 +6,8 @@
 pub mod audio_devices;
 pub mod heard;
 pub mod host_output;
-pub mod spectrum;
 #[cfg(target_os = "ios")]
 pub mod ios_volume;
+pub mod spectrum;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
 pub mod system_volume;

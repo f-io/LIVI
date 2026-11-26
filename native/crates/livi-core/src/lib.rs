@@ -42,14 +42,14 @@ mod vehicle;
 
 pub use app::main;
 
+#[cfg(target_os = "ios")]
+pub use audio::ios_volume::{IosVolume, register as set_ios_volume};
 use devices::Shared;
 use files::config_file::{Board, CAR_NAME_MAX, ConfigFile, HostFacts};
 pub use files::log_file;
 pub use files::paths::Paths;
 pub use helper::Helper;
 use hub::Hub;
-#[cfg(target_os = "ios")]
-pub use audio::ios_volume::{IosVolume, register as set_ios_volume};
 pub use livi_media::output::{InProcessOutput, OutputBackend};
 pub use projection::foregrounded;
 pub use resources::Resources;
