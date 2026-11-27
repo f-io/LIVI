@@ -15,6 +15,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageInstaller;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.media.AudioManager;
 import android.media.session.MediaSession;
 import android.net.Uri;
 import android.os.Build;
@@ -68,7 +69,7 @@ public class LiviActivity extends NativeActivity {
         System.loadLibrary("livi");
     }
 
-    private static native void key(int keycode, int typed, boolean down, boolean repeat);
+    private static native void key(int keycode, int scancode, int typed, boolean down, boolean repeat);
 
     static native void media(int control);
 
@@ -244,6 +245,20 @@ public class LiviActivity extends NativeActivity {
                 LiviMedia.setPlaying(mediaSession, playing);
             }
         });
+    }
+
+    private float volume() {
+        AudioManager audio = getSystemService(AudioManager.class);
+        int max = audio == null ? 0 : audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        return max > 0 ? (float) audio.getStreamVolume(AudioManager.STREAM_MUSIC) / max : -1f;
+    }
+
+    private void setVolume(float level) {
+        AudioManager audio = getSystemService(AudioManager.class);
+        if (audio != null) {
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(level * max), 0);
+        }
     }
 
     @Override
@@ -423,6 +438,7 @@ public class LiviActivity extends NativeActivity {
         }
         key(
                 event.getKeyCode(),
+                event.getScanCode(),
                 event.getUnicodeChar(),
                 action == KeyEvent.ACTION_DOWN,
                 event.getRepeatCount() > 0);

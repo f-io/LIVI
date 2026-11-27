@@ -19,7 +19,17 @@ const F_KEYS: [&str; 12] = [
     "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
 ];
 
-pub fn code(keycode: i32) -> Option<&'static str> {
+pub fn name(keycode: i32, scancode: i32) -> Option<String> {
+    if let Some(code) = code(keycode) {
+        return Some(code.to_string());
+    }
+    if keycode > 0 {
+        return Some(format!("Android{keycode}"));
+    }
+    (scancode > 0).then(|| format!("Scan{scancode}"))
+}
+
+fn code(keycode: i32) -> Option<&'static str> {
     let at = |table: &'static [&'static str], first: i32| {
         table.get(usize::try_from(keycode - first).ok()?).copied()
     };
@@ -130,5 +140,13 @@ mod tests {
     fn unknown_keycodes_have_no_code() {
         assert_eq!(code(0), None);
         assert_eq!(code(600), None);
+    }
+
+    #[test]
+    fn every_key_that_arrives_has_a_name() {
+        assert_eq!(name(87, 0).as_deref(), Some("MediaTrackNext"));
+        assert_eq!(name(289, 0).as_deref(), Some("Android289"));
+        assert_eq!(name(0, 402).as_deref(), Some("Scan402"));
+        assert_eq!(name(0, 0), None);
     }
 }

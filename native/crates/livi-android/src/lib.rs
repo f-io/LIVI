@@ -13,6 +13,7 @@ mod logcat;
 mod media;
 mod planes;
 mod update;
+mod volume;
 
 use std::io;
 use std::os::fd::{FromRawFd, OwnedFd};
@@ -79,6 +80,7 @@ fn core(app: &AndroidApp) -> Result<PathBuf, String> {
     let files = app.internal_data_path().ok_or("no app data dir")?;
     let paths = Paths::within(&files, files.join("run"));
     let socket = paths.socket();
+    livi_core::set_device_volume(volume::Volume);
     livi_aaudio::register().map_err(|e| format!("no AAudio elements: {e}"))?;
     livi_aaudio::set_lister(audio::lister());
     livi_video_player::set_views(planes::Planes);
@@ -241,11 +243,12 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_key<'caller>(
     _env: EnvUnowned<'caller>,
     _class: JClass<'caller>,
     keycode: jint,
+    scancode: jint,
     typed: jint,
     down: jboolean,
     repeat: jboolean,
 ) {
-    let Some(code) = livi_ui_model::keycode::code(keycode) else {
+    let Some(code) = livi_ui_model::keycode::name(keycode, scancode) else {
         return;
     };
     let typed = u32::try_from(typed)
@@ -254,7 +257,7 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_key<'caller>(
         .and_then(char::from_u32)
         .map(String::from);
     let _ =
-        slint::invoke_from_event_loop(move || livi_ui::key(code, typed.as_deref(), down, repeat));
+        slint::invoke_from_event_loop(move || livi_ui::key(&code, typed.as_deref(), down, repeat));
 }
 
 #[unsafe(no_mangle)]
