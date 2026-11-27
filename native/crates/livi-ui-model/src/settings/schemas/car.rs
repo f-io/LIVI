@@ -159,6 +159,21 @@ pub fn schema() -> Node {
                 "carPlayVehicleClimate",
             )
             .icon("carPlayVehicleClimate"),
+            Node::checkbox(
+                Label::new("settings.clusterCompass", "Compass"),
+                "carPlayClusterCompass",
+            )
+            .icon("compass"),
+            Node::checkbox(
+                Label::new("settings.clusterEta", "Arrival Time"),
+                "carPlayClusterEta",
+            )
+            .icon("eta"),
+            Node::checkbox(
+                Label::new("settings.clusterSpeedLimit", "Speed Limit"),
+                "carPlayClusterSpeedLimit",
+            )
+            .icon("speedLimit"),
             Node::custom(
                 Label::new("settings.carData", "Car Data"),
                 "carType",

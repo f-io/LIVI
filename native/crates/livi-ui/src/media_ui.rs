@@ -11,7 +11,7 @@ use livi_core_proto::message::{Action, MediaControl};
 use livi_ui_model::media::{Guess, Playback, Pressed, Station};
 use slint::{Color, ComponentHandle, Image, Model, ModelRc, Timer, TimerMode, VecModel};
 
-use crate::media::{MediaView, RadioView, Radios};
+use crate::media::{EMPTY, MediaView, Pixels, RadioView, Radios};
 use crate::{AppWindow, DabState, MediaSource, MediaText, Page, Press, StationData};
 
 const UI_INTERVAL: Duration = Duration::from_millis(120);
@@ -31,6 +31,8 @@ struct Live {
     tuned: Option<(u32, bool)>,
     picked: Option<(u32, Instant)>,
     rows: Option<Rows>,
+    meta: Option<(String, String, String, f64)>,
+    art: Option<Pixels>,
 }
 
 struct Rows {
@@ -96,22 +98,44 @@ pub fn follow(ui: &AppWindow) {
 }
 
 pub fn apply_media(ui: &AppWindow, client: Option<&Client>, mut m: MediaView) {
+    let plain = |s: &str| {
+        if s == EMPTY {
+            String::new()
+        } else {
+            s.to_owned()
+        }
+    };
+    let meta = (
+        plain(&m.title),
+        plain(&m.artist),
+        m.album.clone(),
+        m.duration_ms,
+    );
     ui.set_track_title(m.title.into());
     ui.set_artist(m.artist.into());
     ui.set_album(m.album.into());
     ui.set_app(m.app.into());
     ui.set_can_seek(m.can_seek);
     ui.set_total_ms(m.duration_ms as f32);
-    match m.artwork.take() {
+    let artwork = m.artwork.take();
+    match &artwork {
         Some(Some(buf)) => {
-            ui.set_artwork(Image::from_rgba8(buf));
+            ui.set_artwork(Image::from_rgba8(buf.clone()));
             ui.set_has_artwork(true);
         }
         Some(None) => ui.set_has_artwork(false),
         None => {}
     }
     let track = format!("{}\u{1f}{}", ui.get_track_title(), ui.get_artist());
-    let new_session = LIVE.with_borrow_mut(|l| {
+    let (new_session, now) = LIVE.with_borrow_mut(|l| {
+        let fresh = artwork.is_some() || l.meta.as_ref() != Some(&meta);
+        if let Some(art) = artwork {
+            l.art = art;
+        }
+        let now = fresh.then(|| {
+            l.meta = Some(meta.clone());
+            l.art.clone()
+        });
         let changed = l.session.as_ref().is_some_and(|s| *s != m.session);
         l.session = Some(m.session);
         l.duration_ms = m.duration_ms;
@@ -125,8 +149,17 @@ pub fn apply_media(ui: &AppWindow, client: Option<&Client>, mut m: MediaView) {
             m.playing,
             Instant::now(),
         );
-        changed
+        (changed, now)
     });
+    if let Some(art) = now {
+        crate::now_playing(&crate::NowPlaying {
+            title: &meta.0,
+            artist: &meta.1,
+            album: &meta.2,
+            duration_ms: meta.3,
+            artwork: art.as_ref().map(|p| (p.as_bytes(), p.width(), p.height())),
+        });
+    }
     if new_session && ui.get_show_spectrum() {
         ui.set_show_spectrum(false);
         if let Some(c) = client {

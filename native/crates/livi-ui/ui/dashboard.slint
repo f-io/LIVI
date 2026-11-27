@@ -148,7 +148,7 @@ export component Dashboard inherits Rectangle {
             font-size: 20 * root.u;
             font-weight: 500;
             letter-spacing: 0.5 * root.u;
-            color: Theme.text;
+            color: DashState.enabled && DashState.map ? (DashState.map-dark ? #ffffff : #000000) : Theme.text;
         }
 
         Level {

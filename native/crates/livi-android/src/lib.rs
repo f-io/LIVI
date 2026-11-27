@@ -56,6 +56,11 @@ fn start(app: AndroidApp) -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("[android] media state: {e}");
         }
     });
+    livi_ui::set_now_playing_sink(|now| {
+        if let Err(e) = now_playing(now) {
+            eprintln!("[android] now playing: {e}");
+        }
+    });
     livi_ui::run(
         || livi_core_client::wait_for_socket(&socket, CORE_START),
         None,
@@ -140,6 +145,37 @@ fn call(method: &jni::strings::JNIStr, flag: bool) -> jni::errors::Result<()> {
     activity::with(|env, activity| {
         env.call_method(activity, method, jni_sig!("(Z)V"), &[JValue::Bool(flag)])
             .map(drop)
+    })
+}
+
+fn now_playing(now: &livi_ui::NowPlaying) -> jni::errors::Result<()> {
+    activity::with(|env, activity| {
+        let title = env.new_string(now.title)?;
+        let artist = env.new_string(now.artist)?;
+        let album = env.new_string(now.album)?;
+        let (art, width, height) = match now.artwork {
+            Some((pixels, w, h)) => (
+                JObject::from(env.byte_array_from_slice(pixels)?),
+                jint::try_from(w).unwrap_or(0),
+                jint::try_from(h).unwrap_or(0),
+            ),
+            None => (JObject::null(), 0, 0),
+        };
+        env.call_method(
+            activity,
+            jni_str!("nowPlaying"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J[BII)V"),
+            &[
+                JValue::Object(&title),
+                JValue::Object(&artist),
+                JValue::Object(&album),
+                JValue::Long(now.duration_ms as i64),
+                JValue::Object(&art),
+                JValue::Int(width),
+                JValue::Int(height),
+            ],
+        )
+        .map(drop)
     })
 }
 

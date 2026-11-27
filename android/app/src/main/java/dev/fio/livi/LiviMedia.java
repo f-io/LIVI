@@ -6,10 +6,16 @@ package dev.fio.livi;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
 import android.view.KeyEvent;
+import java.nio.ByteBuffer;
 
 final class LiviMedia {
     private static final int PLAY_PAUSE = 0;
@@ -18,10 +24,21 @@ final class LiviMedia {
     private static final int NEXT = 3;
     private static final int PREV = 4;
 
-    private LiviMedia() {}
+    private final MediaSession session;
+    private final AudioManager audio;
+    private final AudioFocusRequest focus;
+    private boolean held;
 
-    static MediaSession start(Context context) {
-        MediaSession session = new MediaSession(context, "LIVI");
+    LiviMedia(Context context) {
+        audio = context.getSystemService(AudioManager.class);
+        focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build())
+                .setOnAudioFocusChangeListener(change -> held = change == AudioManager.AUDIOFOCUS_GAIN)
+                .build();
+        session = new MediaSession(context, "LIVI");
         session.setCallback(new MediaSession.Callback() {
             @Override
             public void onPlay() {
@@ -61,11 +78,40 @@ final class LiviMedia {
         });
         session.setPlaybackState(state(false));
         session.setActive(true);
-        return session;
     }
 
-    static void setPlaying(MediaSession session, boolean playing) {
+    void setPlaying(boolean playing) {
+        if (playing && !held && audio != null) {
+            held = audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        }
         session.setPlaybackState(state(playing));
+    }
+
+    void setMetadata(String title, String artist, String album, long durationMs, byte[] art, int width, int height) {
+        if (title.isEmpty() && artist.isEmpty() && album.isEmpty()) {
+            session.setMetadata(null);
+            return;
+        }
+        MediaMetadata.Builder meta = new MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, album);
+        if (durationMs > 0) {
+            meta.putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs);
+        }
+        if (art != null && width > 0 && height > 0 && art.length == width * height * 4) {
+            Bitmap cover = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            cover.copyPixelsFromBuffer(ByteBuffer.wrap(art));
+            meta.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cover);
+        }
+        session.setMetadata(meta.build());
+    }
+
+    void release() {
+        if (audio != null) {
+            audio.abandonAudioFocusRequest(focus);
+        }
+        session.release();
     }
 
     private static PlaybackState state(boolean playing) {

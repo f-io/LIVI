@@ -180,7 +180,7 @@ export component Strip inherits Rectangle {
         }
     }
 
-    if DashState.nav-active && (DashState.nav-eta != "" || DashState.nav-time-left != "" || DashState.nav-destination-distance != ""): Plate {
+    if DashState.nav-active && !DashState.phone-eta && (DashState.nav-eta != "" || DashState.nav-time-left != "" || DashState.nav-destination-distance != ""): Plate {
         u: root.u;
         x: root.pad;
         y: root.map-h - 30 * root.u - self.height;
@@ -214,25 +214,26 @@ export component Strip inherits Rectangle {
         }
     }
 
-    HorizontalLayout {
+    corner := HorizontalLayout {
         x: 0;
         width: root.width - root.pad;
         y: 24 * root.u;
         height: 40 * root.u;
         spacing: 26 * root.u;
         alignment: end;
+        property <color> ink: DashState.enabled && DashState.map ? (DashState.map-dark ? #ffffff : #000000) : Theme.text;
         if DashState.ambient != "": Text {
             text: DashState.ambient;
             font-size: 26 * root.u;
             font-weight: 500;
-            color: Theme.text;
+            color: corner.ink;
             vertical-alignment: center;
         }
         Text {
             text: DashState.clock;
             font-size: 26 * root.u;
             font-weight: 500;
-            color: Theme.text;
+            color: corner.ink;
             vertical-alignment: center;
         }
     }

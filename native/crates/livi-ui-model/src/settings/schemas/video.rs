@@ -251,21 +251,6 @@ pub fn schema() -> Node {
                     .icon("clusterContent")
                     .display_value()
                     .page(Label::new("settings.clusterContent", "CarPlay Content")),
-                    Node::checkbox(
-                        Label::new("settings.clusterCompass", "Compass"),
-                        "carPlayClusterCompass",
-                    )
-                    .icon("compass"),
-                    Node::checkbox(
-                        Label::new("settings.clusterEta", "Arrival Time"),
-                        "carPlayClusterEta",
-                    )
-                    .icon("eta"),
-                    Node::checkbox(
-                        Label::new("settings.clusterSpeedLimit", "Speed Limit"),
-                        "carPlayClusterSpeedLimit",
-                    )
-                    .icon("speedLimit"),
                 ],
             )
             .icon("clusterVideo"),

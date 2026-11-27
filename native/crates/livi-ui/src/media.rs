@@ -9,7 +9,7 @@ use livi_core_proto::state::{Protocol, State};
 use livi_ui_model::media::{Radio, Station, dab, fm};
 use slint::{Rgba8Pixel, SharedPixelBuffer};
 
-const EMPTY: &str = "—";
+pub(crate) const EMPTY: &str = "—";
 
 pub type Pixels = SharedPixelBuffer<Rgba8Pixel>;
 

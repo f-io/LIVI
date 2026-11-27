@@ -5,8 +5,9 @@
 use std::rc::Rc;
 
 use livi_core_client::Client;
+use livi_core_proto::config::ClusterContent;
 use livi_core_proto::message::Action;
-use livi_core_proto::state::{Screen, State};
+use livi_core_proto::state::{Protocol, Screen, State};
 use livi_ui_model::dashboard::gauge::{self, Drawing, Scale, Spec, draw, groups, label_overflow};
 use livi_ui_model::dashboard::layout::{Center, pages, spec};
 use livi_ui_model::dashboard::nav::{Lane, Nav, nav};
@@ -60,6 +61,8 @@ pub struct DashView {
     ring_shift: f64,
     gauges: bool,
     map: bool,
+    map_dark: bool,
+    phone_eta: bool,
     center: Center,
     strip: bool,
     page_count: usize,
@@ -157,6 +160,11 @@ impl DashReader {
             ring_shift,
             gauges: layout.gauges,
             map: layout.map,
+            map_dark: state.config.cluster_map_night_mode,
+            phone_eta: layout.map
+                && state.sessions.active == Some(Protocol::Carplay)
+                && state.config.car_play_cluster_eta
+                && state.config.car_play_cluster_content != ClusterContent::Maneuver,
             center: layout.center,
             strip: layout.strip,
             page_count: p.count,
@@ -265,6 +273,8 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     d.set_enabled(r.enabled);
     d.set_gauges(v.gauges);
     d.set_map(v.map);
+    d.set_map_dark(v.map_dark);
+    d.set_phone_eta(v.phone_eta);
     d.set_strip(v.strip);
     d.set_mask(mask_data(v.mask));
     d.set_center(match v.center {

@@ -60,12 +60,14 @@ slint::include_modules!();
 type Kiosk = Box<dyn Fn(bool)>;
 type Pick = Box<dyn Fn()>;
 type MediaSink = Box<dyn Fn(bool)>;
+type NowSink = Box<dyn Fn(&NowPlaying)>;
 
 thread_local! {
     static CLIENT: RefCell<Option<Client>> = const { RefCell::new(None) };
     static MAIN: RefCell<Option<Weak<AppWindow>>> = const { RefCell::new(None) };
     static KIOSK: RefCell<Option<Kiosk>> = const { RefCell::new(None) };
     static MEDIA_SINK: RefCell<Option<MediaSink>> = const { RefCell::new(None) };
+    static NOW_SINK: RefCell<Option<NowSink>> = const { RefCell::new(None) };
     static PICK: RefCell<Option<Pick>> = const { RefCell::new(None) };
     static BASE_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
     static ZOOM: Cell<f32> = const { Cell::new(1.0) };
@@ -520,6 +522,26 @@ pub(crate) fn media_state(playing: bool) {
     MEDIA_SINK.with_borrow(|s| {
         if let Some(s) = s {
             s(playing);
+        }
+    });
+}
+
+pub struct NowPlaying<'a> {
+    pub title: &'a str,
+    pub artist: &'a str,
+    pub album: &'a str,
+    pub duration_ms: f64,
+    pub artwork: Option<(&'a [u8], u32, u32)>,
+}
+
+pub fn set_now_playing_sink(sink: impl Fn(&NowPlaying) + 'static) {
+    NOW_SINK.with_borrow_mut(|s| *s = Some(Box::new(sink)));
+}
+
+pub(crate) fn now_playing(now: &NowPlaying) {
+    NOW_SINK.with_borrow(|s| {
+        if let Some(s) = s {
+            s(now);
         }
     });
 }

@@ -16,7 +16,6 @@ import android.content.pm.PackageInstaller;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.media.AudioManager;
-import android.media.session.MediaSession;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -62,7 +61,7 @@ public class LiviActivity extends NativeActivity {
     private final AtomicInteger lastPlane = new AtomicInteger();
     private FrameLayout stage;
     private volatile boolean kiosk;
-    private MediaSession mediaSession;
+    private LiviMedia mediaSession;
 
     static {
         System.loadLibrary("gstreamer_android");
@@ -112,7 +111,7 @@ public class LiviActivity extends NativeActivity {
         });
         addContentView(stage, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mediaSession = LiviMedia.start(this);
+        mediaSession = new LiviMedia(this);
     }
 
     @Override
@@ -242,7 +241,15 @@ public class LiviActivity extends NativeActivity {
     private void mediaState(boolean playing) {
         runOnUiThread(() -> {
             if (mediaSession != null) {
-                LiviMedia.setPlaying(mediaSession, playing);
+                mediaSession.setPlaying(playing);
+            }
+        });
+    }
+
+    private void nowPlaying(String title, String artist, String album, long durationMs, byte[] art, int width, int height) {
+        runOnUiThread(() -> {
+            if (mediaSession != null) {
+                mediaSession.setMetadata(title, artist, album, durationMs, art, width, height);
             }
         });
     }
