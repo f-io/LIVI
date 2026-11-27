@@ -8,12 +8,12 @@ use std::time::Instant;
 
 use livi_core_client::Client;
 use livi_core_proto::input::Input;
-use livi_core_proto::message::Action;
+use livi_core_proto::message::{Action, MediaControl};
 use livi_ui_model::keys::{
     Context, Focused, HELD_GAP, MirrorKey, Outcome, Zone, bound_to, code_for, decide, held_factor,
     released, resolve,
 };
-use livi_ui_model::media::pressed;
+use livi_ui_model::media::{Pressed, pressed};
 #[cfg(winit)]
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model};
@@ -467,6 +467,14 @@ pub fn key(
     let config = client.mirror().json["config"].clone();
     let name = pressed_as(code, printed, down, &config);
     let code = name.as_str();
+    if down
+        && !repeat
+        && bound_to(&config, code).is_none()
+        && let Some((which, control)) = unbound_media(code)
+    {
+        crate::media_ui::act(ui, client, which, control);
+        return true;
+    }
     if down && crate::video_ui::mirror_on_screen(ui) {
         match livi_ui_model::keys::mirror_key(code, &config, ui.get_mirror_shown()) {
             MirrorKey::Leave => {
@@ -509,6 +517,17 @@ pub fn from_core(ui: &AppWindow, client: &Client, name: &str) {
     if !apply(ui, client, &code, outcome) {
         type_key(ui, &code);
     }
+}
+
+fn unbound_media(code: &str) -> Option<(Pressed, MediaControl)> {
+    Some(match code {
+        "MediaPlayPause" => (Pressed::Play, MediaControl::PlayPause),
+        "MediaPlay" => (Pressed::Play, MediaControl::Play),
+        "MediaPause" => (Pressed::Play, MediaControl::Pause),
+        "MediaTrackNext" => (Pressed::Next, MediaControl::Next),
+        "MediaTrackPrevious" => (Pressed::Prev, MediaControl::Prev),
+        _ => return None,
+    })
 }
 
 fn type_key(ui: &AppWindow, code: &str) {

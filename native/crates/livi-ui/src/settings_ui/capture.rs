@@ -30,7 +30,7 @@ pub fn captured(ui: &AppWindow, client: &Client, code: &str, printed: Option<&st
     }
     let binding = with(|c| c.capturing).flatten();
     stop_capture(ui);
-    if code == "Escape" {
+    if livi_ui_model::keys::always_back(code) {
         return;
     }
     if let Some(binding) = binding {

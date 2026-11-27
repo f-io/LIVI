@@ -68,7 +68,7 @@ public class LiviActivity extends NativeActivity {
         System.loadLibrary("livi");
     }
 
-    private static native void key(int scancode, int typed, boolean down, boolean repeat);
+    private static native void key(int keycode, int typed, boolean down, boolean repeat);
 
     static native void media(int control);
 
@@ -422,7 +422,7 @@ public class LiviActivity extends NativeActivity {
             return super.dispatchKeyEvent(event);
         }
         key(
-                event.getScanCode(),
+                event.getKeyCode(),
                 event.getUnicodeChar(),
                 action == KeyEvent.ACTION_DOWN,
                 event.getRepeatCount() > 0);

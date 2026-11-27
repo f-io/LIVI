@@ -92,6 +92,10 @@ pub fn typed_name(typed: &str) -> Option<String> {
         .then(|| typed.to_string())
 }
 
+pub fn always_back(code: &str) -> bool {
+    matches!(code, "Escape" | "BrowserBack")
+}
+
 pub fn resolve(code: &str, typed: Option<&str>, config: &Value) -> String {
     typed
         .and_then(typed_name)
@@ -138,7 +142,7 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     let right = is("right", "ArrowRight") || knob("knobRight");
     let up = is("up", "ArrowUp") || knob("knobUp");
     let down = is("down", "ArrowDown") || knob("knobDown");
-    let back = (!b("back").is_empty() && code == b("back")) || code == "Escape";
+    let back = (!b("back").is_empty() && code == b("back")) || always_back(code);
     let enter = code == "Enter" || code == "NumpadEnter";
     let select_down = !b("selectDown").is_empty() && code == b("selectDown");
     let text_entry = ctx.focused == Focused::Text && ctx.editing;
@@ -188,7 +192,7 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     }
 
     if ctx.keyboard && (text_entry || number_entry) {
-        return if code == "Escape" || (back && code != "Backspace") {
+        return if always_back(code) || (back && code != "Backspace") {
             Outcome::StopEditing
         } else if enter || select_down {
             Outcome::KeyPress
@@ -202,14 +206,14 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     }
 
     if text_entry {
-        if code == "Escape" || enter {
+        if always_back(code) || enter {
             return Outcome::StopEditing;
         }
         return Outcome::Pass;
     }
 
     if number_entry {
-        if code == "Escape" || enter {
+        if always_back(code) || enter {
             return Outcome::StopEditing;
         }
         if up || right {
@@ -314,7 +318,7 @@ pub fn mirror_key(code: &str, config: &Value, shown: bool) -> MirrorKey {
         return MirrorKey::Pass;
     }
     let bound = |name: &str| !b(name).is_empty() && code == b(name);
-    let leave = code == "Escape"
+    let leave = always_back(code)
         || code == "Enter"
         || code == "NumpadEnter"
         || bound("back")
@@ -440,6 +444,15 @@ mod tests {
         c.projection = true;
         c.streaming = true;
         assert_eq!(decide("KeyE", c, &config), Outcome::ToCore("KeyE".into()));
+    }
+
+    #[test]
+    fn the_back_key_always_goes_back() {
+        let mut c = ctx(Zone::Main);
+        c.settings_depth = 2;
+        assert_eq!(decide("BrowserBack", c, &config()), Outcome::SettingsBack);
+        c.settings_depth = 0;
+        assert_eq!(decide("BrowserBack", c, &config()), Outcome::ToNav);
     }
 
     #[test]

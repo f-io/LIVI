@@ -240,15 +240,12 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_surface<'caller>(
 extern "system" fn Java_dev_fio_livi_LiviActivity_key<'caller>(
     _env: EnvUnowned<'caller>,
     _class: JClass<'caller>,
-    scancode: jint,
+    keycode: jint,
     typed: jint,
     down: jboolean,
     repeat: jboolean,
 ) {
-    let Some(code) = u16::try_from(scancode)
-        .ok()
-        .and_then(livi_ui_model::scancode::code)
-    else {
+    let Some(code) = livi_ui_model::keycode::code(keycode) else {
         return;
     };
     let typed = u32::try_from(typed)
