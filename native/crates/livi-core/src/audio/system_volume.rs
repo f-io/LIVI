@@ -215,6 +215,7 @@ pub async fn follow(core: Arc<Core>) {
     let (tx, mut events) = mpsc::unbounded_channel();
     let mut read_at: Option<Instant> = None;
     let mut last: Option<f64> = None;
+    let mut unreadable = false;
     loop {
         let (level, linked, device, muted) = {
             let s = state.borrow_and_update();
@@ -235,14 +236,16 @@ pub async fn follow(core: Arc<Core>) {
                 watcher = Some(output::watch(tx.clone()));
                 println!("[volume] watching the output for changes made outside LIVI");
             }
-            let level = mixer.get(device.as_deref()).await;
-            match level {
-                Some(level) => take_system_level(&core, level, "starts from the system").await,
-                None => mixer.set(target, device.as_deref()).await,
+            if let Some(level) = mixer.get(device.as_deref()).await {
+                take_system_level(&core, level, "starts from the system").await;
+                following = Some(device);
+                applied = Some(level);
+                last = Some(level);
+                unreadable = false;
+            } else if !unreadable {
+                unreadable = true;
+                eprintln!("[volume] the system volume cannot be read, LIVI leaves it as it is");
             }
-            following = Some(device);
-            applied = Some(level.unwrap_or(target));
-            last = level;
         } else if applied.is_none_or(|a| (target - a).abs() >= SAME) {
             applied = Some(target);
             mixer
