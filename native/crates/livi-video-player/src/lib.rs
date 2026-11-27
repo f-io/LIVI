@@ -12,8 +12,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Once};
 
 mod camera;
+mod frame_png;
 #[cfg(in_process)]
 mod in_process_view;
+mod newest;
 mod url_player;
 #[cfg_attr(
     all(target_os = "macos", feature = "window-view"),
@@ -462,6 +464,7 @@ impl Player {
             apply_gamma(&d, [1.0; 5]);
         }
         force_sinks_realtime(&d.pipeline);
+        keep_frames(&d.pipeline);
         if let Some(dec) = d.pipeline.by_name("dec") {
             if cfg!(target_vendor = "apple") && self.decoder == "avdec_h265" {
                 dec.set_property_from_str("thread-type", "frame");
@@ -777,6 +780,44 @@ fn usable(name: &str) -> bool {
     dec.find_property("device-path").is_none()
         || dec.property::<Option<String>>("device-path").as_deref() == Some(node.as_str())
 }
+
+/// Writes the frames the `frames` appsink receives as PNGs to `frame-<w>x<h>.png` in the frame
+/// directory, at most two a second and always the newest, through a temporary file, so a reader
+/// never sees half a frame. Only the frames written are converted to RGB, on the writer's thread.
+fn keep_frames(pipeline: &gst::Pipeline) {
+    let (Some(dir), Some(sink)) = (
+        livi_video::codec::frame_dir(),
+        pipeline
+            .by_name(livi_video::codec::FRAMES_SINK)
+            .and_then(|e| e.downcast::<gst_app::AppSink>().ok()),
+    ) else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let save = newest::newest_every(FRAME_EVERY, move |sample: gst::Sample| {
+        let Some(s) = sample.caps().and_then(|c| c.structure(0)) else {
+            return;
+        };
+        let (Ok(w), Ok(h)) = (s.get::<i32>("width"), s.get::<i32>("height")) else {
+            return;
+        };
+        let path = dir.join(format!("frame-{w}x{h}.png"));
+        let part = dir.join(format!(".frame-{w}x{h}.png.part"));
+        if frame_png::write(&sample, &part).is_ok() {
+            let _ = std::fs::rename(&part, &path);
+        }
+    });
+    sink.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            .new_sample(move |sink| {
+                save(sink.pull_sample().map_err(|_| gst::FlowError::Eos)?);
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
+}
+
+const FRAME_EVERY: std::time::Duration = std::time::Duration::from_millis(500);
 
 pub fn reserve_scanout(handle: usize) {
     #[cfg(all(livi_os, not(in_process)))]

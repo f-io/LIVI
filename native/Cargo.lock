@@ -4674,6 +4674,7 @@ dependencies = [
 name = "livi-video"
 version = "10.6.0"
 dependencies = [
+ "libc 1.0.0-alpha.5",
  "livi-output-proto",
 ]
 
@@ -4690,6 +4691,7 @@ dependencies = [
  "livi-cfg",
  "livi-output-proto",
  "livi-video",
+ "png",
 ]
 
 [[package]]

@@ -171,12 +171,63 @@ pub fn calibration() -> &'static str {
     }
 }
 
+const FRAME_DIR_ENV: &str = "LIVI_FRAME_DIR";
+
+/// Where each video plane keeps its latest frame as a PNG: the directory `LIVI_FRAME_DIR` names,
+/// else a `frames` directory in LIVI's runtime directory, beside core.sock, when one exists.
+pub fn frame_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os(FRAME_DIR_ENV)
+        .filter(|s| !s.is_empty())
+        .map(Into::into)
+        .or_else(|| {
+            runtime_dir()
+                .map(|dir| dir.join("frames"))
+                .filter(|dir| dir.is_dir())
+        })
+}
+
+/// LIVI's runtime directory, where core.sock is.
+fn runtime_dir() -> Option<std::path::PathBuf> {
+    Some(
+        match std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()) {
+            Some(dir) => std::path::PathBuf::from(dir).join("livi"),
+            // SAFETY: getuid has no preconditions and cannot fail.
+            None => std::env::temp_dir().join(format!("livi-{}", unsafe { libc::getuid() })),
+        },
+    )
+}
+
+/// The appsink that receives the decoded frames, unconverted, when frames are kept.
+pub const FRAMES_SINK: &str = "frames";
+
 pub fn pipeline_desc(
     codec: VideoCodec,
     decoder: &str,
     cal: &str,
     sink_override: Option<&str>,
 ) -> String {
+    pipeline_desc_keeping(codec, decoder, cal, sink_override, frame_dir().is_some())
+}
+
+pub fn pipeline_desc_keeping(
+    codec: VideoCodec,
+    decoder: &str,
+    cal: &str,
+    sink_override: Option<&str>,
+    keep_frames: bool,
+) -> String {
+    let (tee, frames) = if keep_frames {
+        (
+            "tee name=frametee ! queue ! ",
+            format!(
+                " frametee. ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 \
+                 leaky=downstream ! appsink name={FRAMES_SINK} caps=video/x-raw \
+                 sync=false max-buffers=1 drop=true"
+            ),
+        )
+    } else {
+        ("", String::new())
+    };
     format!(
         "appsrc name=src is-live=true do-timestamp=true format=time \
          min-latency=0 max-latency=0 caps={caps} \
@@ -184,7 +235,7 @@ pub fn pipeline_desc(
          ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 \
          ! {decoder} name=dec \
          ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream \
-         ! {presink}{cal}{sink}",
+         ! {tee}{presink}{cal}{sink}{frames}",
         caps = caps_for(codec).to_str().unwrap_or(""),
         parser = parser_for(codec).to_str().unwrap_or(""),
         presink = presink(decoder),
@@ -321,6 +372,11 @@ mod tests {
 mod pipeline_tests {
     use super::*;
 
+    /// Without kept frames, whatever this machine's runtime directory holds.
+    fn pipeline_desc(codec: VideoCodec, decoder: &str, cal: &str, sink: Option<&str>) -> String {
+        pipeline_desc_keeping(codec, decoder, cal, sink, false)
+    }
+
     #[test]
     fn the_description_names_source_parser_decoder_and_sink() {
         let d = pipeline_desc(VideoCodec::H265, "avdec_h265", "", None);
@@ -381,6 +437,29 @@ mod pipeline_tests {
 
         assert!(i > d.find("name=dec").unwrap());
         assert!(i < d.find("name=sink").unwrap());
+    }
+
+    #[test]
+    fn kept_frames_branch_off_after_the_decoder_into_their_own_sink() {
+        let d = pipeline_desc_keeping(VideoCodec::H264, "avdec_h264", "", None, true);
+        let tee = d.find("tee name=frametee").unwrap();
+
+        assert!(tee > d.find("name=dec").unwrap());
+        assert!(tee < d.find("name=sink").unwrap());
+        assert!(d.find("frametee. ! ").unwrap() > d.find("name=sink").unwrap());
+        assert!(d.contains("leaky=downstream ! appsink name=frames caps=video/x-raw"));
+        assert!(
+            !d.contains("videoconvert"),
+            "every frame would be converted, not just those written"
+        );
+    }
+
+    #[test]
+    fn without_kept_frames_there_is_no_tee() {
+        let d = pipeline_desc_keeping(VideoCodec::H264, "avdec_h264", "", None, false);
+
+        assert!(!d.contains("tee"));
+        assert!(!d.contains("name=frames"));
     }
 
     #[test]

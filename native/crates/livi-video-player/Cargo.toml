@@ -10,21 +10,16 @@ livi-video.workspace = true
 gstreamer = { workspace = true, features = ["v1_24"] }
 gstreamer-app = { workspace = true, features = ["v1_24"] }
 gstreamer-base = { workspace = true, features = ["v1_24"] }
-livi-output-proto.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
-gstreamer-video = { workspace = true, features = ["v1_24"], optional = true }
-
-[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 gstreamer-video = { workspace = true, features = ["v1_24"] }
+livi-output-proto.workspace = true
+png = "0.18.1"
 
 [target.'cfg(livi_os)'.dependencies]
-gstreamer-video = { workspace = true, features = ["v1_24"] }
 drm = "0.14.1"
 libc.workspace = true
 
 [features]
-window-view = ["dep:gstreamer-video"]
+window-view = []
 
 [build-dependencies]
 livi-cfg.workspace = true
