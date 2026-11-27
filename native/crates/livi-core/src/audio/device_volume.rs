@@ -4,14 +4,14 @@
 
 use std::sync::OnceLock;
 
-pub trait IosVolume: Send + Sync {
+pub trait DeviceVolume: Send + Sync {
     fn get(&self) -> Option<f64>;
     fn set(&self, level: f64);
 }
 
-static PROVIDER: OnceLock<Box<dyn IosVolume>> = OnceLock::new();
+static PROVIDER: OnceLock<Box<dyn DeviceVolume>> = OnceLock::new();
 
-pub fn register(provider: impl IosVolume + 'static) {
+pub fn register(provider: impl DeviceVolume + 'static) {
     let _ = PROVIDER.set(Box::new(provider));
 }
 

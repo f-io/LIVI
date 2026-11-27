@@ -23,7 +23,7 @@ thread_local! {
 
 struct Volume;
 
-impl livi_core::IosVolume for Volume {
+impl livi_core::DeviceVolume for Volume {
     fn get(&self) -> Option<f64> {
         // SAFETY: the shared audio session; outputVolume is a readable property.
         let level = unsafe { AVAudioSession::sharedInstance().outputVolume() };
@@ -55,5 +55,5 @@ pub fn install(window: &UIWindow, mtm: MainThreadMarker) {
     view.setAlpha(0.01);
     window.addSubview(&view);
     VOLUME_VIEW.with_borrow_mut(|v| *v = Some(view));
-    livi_core::set_ios_volume(Volume);
+    livi_core::set_device_volume(Volume);
 }

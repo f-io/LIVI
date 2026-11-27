@@ -63,7 +63,7 @@ mod output {
     }
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 mod output {
     use tokio::sync::mpsc;
 
@@ -78,11 +78,11 @@ mod output {
     }
 
     pub async fn get(_device: &str) -> Result<f64, Fault> {
-        crate::audio::ios_volume::get().ok_or(Fault::Missing)
+        crate::audio::device_volume::get().ok_or(Fault::Missing)
     }
 
     pub async fn set(_device: &str, level: f64) -> Result<(), Fault> {
-        crate::audio::ios_volume::set(level);
+        crate::audio::device_volume::set(level);
         Ok(())
     }
 
@@ -92,7 +92,7 @@ mod output {
             let mut tick = tokio::time::interval(std::time::Duration::from_millis(200));
             loop {
                 tick.tick().await;
-                if let Some(v) = crate::audio::ios_volume::get()
+                if let Some(v) = crate::audio::device_volume::get()
                     && last.is_none_or(|l| (v - l).abs() >= SAME)
                 {
                     last = Some(v);
@@ -111,7 +111,7 @@ const SAME: f64 = 0.005;
 
 pub enum Fault {
     Missing,
-    #[cfg_attr(target_os = "ios", allow(dead_code))]
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     Other(String),
 }
 
@@ -127,7 +127,7 @@ impl std::fmt::Display for Fault {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputEvent {
     Changed,
-    #[cfg_attr(target_os = "ios", allow(dead_code))]
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     New,
 }
 

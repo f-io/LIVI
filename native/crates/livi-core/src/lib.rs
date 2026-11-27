@@ -42,8 +42,8 @@ mod vehicle;
 
 pub use app::main;
 
-#[cfg(target_os = "ios")]
-pub use audio::ios_volume::{IosVolume, register as set_ios_volume};
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub use audio::device_volume::{DeviceVolume, register as set_device_volume};
 use devices::Shared;
 use files::config_file::{Board, CAR_NAME_MAX, ConfigFile, HostFacts};
 pub use files::log_file;
@@ -166,7 +166,12 @@ pub async fn run(
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     tokio::spawn(vehicle::car_bridge::run(core.clone(), inside.clone()));
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android"
+    ))]
     tokio::spawn(audio::system_volume::follow(core.clone()));
     #[cfg(target_os = "linux")]
     tokio::spawn(system::backlight::follow(core.clone()));
