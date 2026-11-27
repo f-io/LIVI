@@ -51,7 +51,9 @@ fn lanes(n: &Navigation) -> Vec<Lane> {
                     arrows: l
                         .angles
                         .iter()
-                        .map(|&angle| LaneArrow {
+                        .copied()
+                        .chain(l.highlight_angle.filter(|h| !l.angles.contains(h)))
+                        .map(|angle| LaneArrow {
                             angle,
                             on: l.highlight_angle == Some(angle),
                         })
@@ -181,5 +183,33 @@ mod tests {
             ]
         );
         assert!(guidance(false).lanes.is_empty());
+    }
+
+    #[test]
+    fn the_highlight_angle_is_drawn_when_the_angles_leave_it_out() {
+        let n = nav(&crate::testing::state(json!({ "navigation": {
+            "laneGuidanceShown": true,
+            "laneGuidanceIndex": 2,
+            "laneGuidance": [
+                { "index": 2, "lanes": [
+                    { "status": 0, "angles": [-45] },
+                    { "status": 2, "angles": [-45], "highlightAngle": 45 },
+                    { "status": 2, "angles": [], "highlightAngle": 45 }
+                ] }
+            ]
+        } })));
+        let arrows: Vec<_> = n
+            .lanes
+            .iter()
+            .map(|l| l.arrows.iter().map(|a| (a.angle, a.on)).collect::<Vec<_>>())
+            .collect();
+        assert_eq!(
+            arrows,
+            [
+                vec![(-45, false)],
+                vec![(-45, false), (45, true)],
+                vec![(45, true)]
+            ]
+        );
     }
 }
