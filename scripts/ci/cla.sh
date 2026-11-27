@@ -28,6 +28,7 @@ store() {
   else
     git -C "$ROOT" worktree add -q --orphan -b "$BRANCH" "$STORE"
   fi
+  git -C "$STORE" sparse-checkout disable
   git -C "$STORE" config user.name "github-actions[bot]"
   git -C "$STORE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
   mkdir -p "$STORE/$(dirname "$FILE")"
