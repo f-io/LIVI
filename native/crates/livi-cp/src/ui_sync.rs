@@ -49,6 +49,7 @@ pub struct Layout {
 
 #[derive(Default)]
 pub struct UiSync {
+    display: Option<String>,
     session: u64,
     next_tx: u64,
     last_rx: u64,
@@ -63,8 +64,16 @@ pub struct UiSync {
 }
 
 impl UiSync {
+    pub fn for_display(display: Option<String>) -> Self {
+        Self {
+            display,
+            ..Self::default()
+        }
+    }
+
     pub fn reopen(&mut self) {
         *self = Self {
+            display: self.display.take(),
             wanted: self.wanted.take(),
             light: self.light,
             ..Self::default()
@@ -107,6 +116,17 @@ impl UiSync {
         let Some(opack::Value::Dict(frame)) = opack::decode(message) else {
             return Vec::new();
         };
+        // This state machine owns the cluster's layout and choices. Other
+        // displays have independent reset/sequence state on the same channel.
+        if let Some(display) = &self.display
+            && frame
+                .iter()
+                .find(|(k, _)| *k == opack::Value::str("displayUUID"))
+                .and_then(|(_, v)| v.as_str())
+                != Some(display.as_str())
+        {
+            return Vec::new();
+        }
         let data = opack::Value::str("data");
         let Some(header) = frame
             .iter()
@@ -362,6 +382,120 @@ mod tests {
 
     fn int(h: &bplist::Value, k: &str) -> Option<u64> {
         h.get(k).and_then(bplist::Value::as_int)
+    }
+
+    fn on_display(message: &[u8], display: &str) -> Vec<u8> {
+        let opack::Value::Dict(mut frame) = opack::decode(message).unwrap() else {
+            panic!("expected envelope");
+        };
+        let (_, value) = frame
+            .iter_mut()
+            .find(|(key, _)| *key == opack::Value::str("displayUUID"))
+            .unwrap();
+        *value = opack::Value::str(display);
+        opack::encode(&opack::Value::Dict(frame))
+    }
+
+    fn reset() -> Vec<u8> {
+        framed(vec![("type", Int(RESET)), ("id", S("phone".into()))])
+    }
+
+    fn complete() -> Vec<u8> {
+        framed(vec![
+            ("type", Int(RESET_COMPLETE)),
+            ("ssn", Int(1)),
+            ("psn", Int(1)),
+            ("version", Int(VERSION)),
+        ])
+    }
+
+    #[test]
+    fn another_display_cannot_reset_or_retarget_the_cluster() {
+        let mut sync = UiSync::for_display(Some("Cluster_Display".into()));
+        sync.handle(&reset());
+        sync.handle(&complete());
+        assert!(
+            sync.handle(&on_display(&reset(), "Center_Display"))
+                .is_empty()
+        );
+        assert!(
+            sync.handle(&on_display(&complete(), "Center_Display"))
+                .is_empty()
+        );
+        let out = sync.select(Layout {
+            id: "cluster-layout".into(),
+            palette: "blue".into(),
+            active: vec![],
+        });
+        assert_eq!(out.len(), 1);
+        let h = header_of(&out[0]);
+        assert_eq!(int(&h, "ssn"), Some(1));
+        assert_eq!(int(&h, "psn"), Some(5));
+    }
+
+    #[test]
+    fn another_display_cannot_change_cluster_choices_or_ack_state() {
+        let mut sync = UiSync::for_display(Some("Cluster_Display".into()));
+        sync.handle(&reset());
+        sync.handle(&complete());
+        let command = bplist::dict([
+            ("type", Int(START_LAYOUT_TRANSITION)),
+            (
+                "data",
+                bplist::dict([("layoutID", S("center-layout".into()))]),
+            ),
+        ]);
+        let foreign = on_display(
+            &framed(vec![
+                ("type", Int(COMMAND)),
+                ("ssn", Int(1)),
+                ("psn", Int(99)),
+                ("data", bplist::Value::Data(bplist::encode(&command))),
+            ]),
+            "Center_Display",
+        );
+        assert!(sync.handle(&foreign).is_empty());
+        assert!(sync.take_choices().is_empty());
+        let ours = framed(vec![
+            ("type", Int(COMMAND)),
+            ("ssn", Int(1)),
+            ("psn", Int(2)),
+        ]);
+        let out = sync.handle(&ours);
+        let h = header_of(&out[0]);
+        assert_eq!(int(&h, "psn"), Some(5));
+        assert_eq!(int(&h, "asn"), Some(2));
+    }
+
+    #[test]
+    fn configured_display_is_retained_when_the_channel_reopens() {
+        let mut sync = UiSync::for_display(Some("custom-cluster".into()));
+        sync.handle(&on_display(&reset(), "custom-cluster"));
+        sync.reopen();
+        assert!(sync.handle(&reset()).is_empty());
+        let out = sync.handle(&on_display(&reset(), "custom-cluster"));
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            opack::decode(&out[0])
+                .unwrap()
+                .get("displayUUID")
+                .and_then(opack::Value::as_str),
+            Some("custom-cluster")
+        );
+    }
+
+    #[test]
+    fn a_configured_display_requires_a_matching_envelope() {
+        let mut sync = UiSync::for_display(Some("Cluster_Display".into()));
+        let opack::Value::Dict(mut frame) = opack::decode(&reset()).unwrap() else {
+            panic!("expected envelope");
+        };
+        frame.retain(|(k, _)| *k != opack::Value::str("displayUUID"));
+        assert!(
+            sync.handle(&opack::encode(&opack::Value::Dict(frame)))
+                .is_empty()
+        );
+        assert_eq!(sync.handle(&reset()).len(), 1);
     }
 
     #[test]

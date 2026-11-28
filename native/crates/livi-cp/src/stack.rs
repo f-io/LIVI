@@ -569,6 +569,13 @@ pub async fn run<M: Media>(
             .with_images(&cfg.images)
     };
     let appearance_setting = ctx.config.borrow().info.appearance_setting;
+    let sync_display = ctx
+        .config
+        .borrow()
+        .info
+        .theme_displays
+        .as_ref()
+        .map(|d| d.cluster.clone());
     let mut conn = Conn {
         ctx,
         events,
@@ -603,7 +610,7 @@ pub async fn run<M: Media>(
         ui_sync_on: false,
         ui_sync: None,
         ui_sync_out: None,
-        ui_sync_state: ui_sync::UiSync::default(),
+        ui_sync_state: ui_sync::UiSync::for_display(sync_display),
         vehicle_state: Some(vehicle_state),
         offered_vehicle_state: false,
         told_info: None,
